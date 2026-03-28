@@ -6353,6 +6353,28 @@ describe('phase 3 simulation re-ingestion — computeSimulationAdjustment', () =
     assert.equal(adjustment, 0);
   });
 
+  it('T6b: bucket+channel nested under marketContext (production packet shape) gives +0.08', () => {
+    // Production candidatePackets nest topBucketId/topChannel under marketContext,
+    // not at the top level. This test guards against regressions where the code
+    // reads the wrong level and pathBucket/pathChannel fall back to ''.
+    const path = { type: 'expanded', pathId: 'path-test', candidateStateId: 'state-1', direct: null, second: null, third: null, pathScore: 0.60, acceptanceScore: 0.55, candidate: { routeFacilityKey: 'Strait of Hormuz', commodityKey: 'crude_oil' } };
+    const simResult = {
+      theaterId: 'state-1',
+      topPaths: [{ label: 'Oil supply disruption escalation via Hormuz', summary: 'Crude oil supply disruption', keyActors: [] }],
+      invalidators: [],
+      stabilizers: [],
+    };
+    const packetWithMarketContext = {
+      candidateStateId: 'state-1',
+      routeFacilityKey: 'Strait of Hormuz',
+      commodityKey: 'crude_oil',
+      marketContext: { topBucketId: 'energy', topChannel: 'energy_supply_shock' },
+    };
+    const { adjustment, details } = computeSimulationAdjustment(path, simResult, packetWithMarketContext);
+    assert.equal(adjustment, 0.08);
+    assert.equal(details.bucketChannelMatch, true);
+  });
+
   it('T7: actor overlap below 2 does not add +0.04', () => {
     const path = makePath('energy', 'energy_supply_shock', ['Iran']);
     const simResult = {
@@ -6446,6 +6468,29 @@ describe('phase 3 simulation re-ingestion — applySimulationMerge', () => {
     assert.equal(simulationEvidence.theaterCount, 1);
     assert.ok(Array.isArray(simulationEvidence.adjustments));
   });
+
+  it('T13: candidateStateId-keyed lookup works when theaterId is a positional ID (production scenario)', () => {
+    // Regression test: before the fix, theaterResults only stored theaterId="theater-1"
+    // and the map lookup by candidateStateId="state-eca8696a31" always returned undefined.
+    const candidateStateId = 'state-eca8696a31';
+    const path = makeExpandedPath(candidateStateId, 0.52);  // routeFacilityKey='Red Sea' from fixture
+    const evaluation = makeEval('completed', [path]);
+    const simOutcome = {
+      runId: 'sim-run-002',
+      isCurrentRun: true,
+      theaterResults: [{
+        theaterId: 'theater-1',        // positional — diverges from candidateStateId
+        candidateStateId,              // production fix: stored alongside theaterId
+        topPaths: [],
+        invalidators: ['Red Sea reopened after ceasefire agreement'],
+        stabilizers: [],
+      }],
+    };
+    const candidatePackets = [{ candidateStateId, routeFacilityKey: 'Red Sea', commodityKey: 'crude_oil', topBucketId: 'energy', topChannel: 'energy_supply_shock' }];
+    const { simulationEvidence } = applySimulationMerge(evaluation, simOutcome, candidatePackets, { generatedAt: Date.now(), impactExpansionCandidates: candidatePackets }, null);
+    assert.equal(simulationEvidence.pathsDemoted, 1, 'path should be demoted via candidateStateId lookup');
+    assert.equal(simulationEvidence.adjustments.length, 1);
+  });
 });
 
 describe('phase 3 simulation re-ingestion — matching helpers', () => {
@@ -6479,9 +6524,18 @@ describe('phase 3 simulation re-ingestion — matching helpers', () => {
     assert.ok(!contradictsPremise('Red Sea shipping restored', path));
   });
 
-  it('contradictsPremise returns false without negation language', () => {
+  it('contradictsPremise returns false without negation language (default)', () => {
     const path = { candidate: { routeFacilityKey: 'Strait of Hormuz', commodityKey: '' } };
     assert.ok(!contradictsPremise('Strait of Hormuz under continued risk', path));
+  });
+
+  it('contradictsPremise fromSimulation=true: fires on simulation-style invalidator without negation terms', () => {
+    // Regression: simulation invalidators use neutral language ("clearance of the Suez Canal")
+    // not geopolitical resolution language ("reopened"). fromSimulation=true skips the negation guard.
+    const path = { candidate: { routeFacilityKey: 'Suez Canal', commodityKey: '' } };
+    assert.ok(contradictsPremise('Immediate and complete clearance of the Suez Canal within 24 hours.', path, true));
+    // Still false when route not mentioned, even in simulation context
+    assert.ok(!contradictsPremise('Global economic downturn dampening energy demand.', path, true));
   });
 
   it('negatesDisruption detects commodity restoration', () => {

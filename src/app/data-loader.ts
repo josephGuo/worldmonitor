@@ -151,6 +151,8 @@ import {
   UcdpEventsPanel,
   TradePolicyPanel,
   SupplyChainPanel,
+  DiseaseOutbreaksPanel,
+  SocialVelocityPanel,
 } from '@/components';
 import { SatelliteFiresPanel } from '@/components/SatelliteFiresPanel';
 import { classifyNewsItem } from '@/services/positive-classifier';
@@ -167,6 +169,7 @@ import { fetchPositiveGeoEvents, geocodePositiveNewsItems, type PositiveGeoEvent
 import type { HappyContentCategory } from '@/services/positive-classifier';
 import { fetchKindnessData } from '@/services/kindness-data';
 import { getPersistentCache, setPersistentCache } from '@/services/persistent-cache';
+import { getActiveFrameworkForPanel, subscribeFrameworkChange } from '@/services/analysis-framework-store';
 import {
   buildDailyMarketBrief,
   cacheDailyMarketBrief,
@@ -180,6 +183,13 @@ import { fetchCachedRiskScores } from '@/services/cached-risk-scores';
 import type { ThreatLevel as ClientThreatLevel } from '@/types';
 import type { NewsItem as ProtoNewsItem, ThreatLevel as ProtoThreatLevel } from '@/generated/client/worldmonitor/news/v1/service_client';
 import { fetchMarketImplications } from '@/services/market-implications';
+import { fetchDiseaseOutbreaks } from '@/services/disease-outbreaks';
+import { fetchSocialVelocity } from '@/services/social-velocity';
+import { fetchShippingStress } from '@/services/supply-chain';
+import { getTopActiveGeoHubs } from '@/services/geo-activity';
+import { getTopActiveHubs } from '@/services/tech-activity';
+import type { GeoHubsPanel } from '@/components/GeoHubsPanel';
+import type { TechHubsPanel } from '@/components/TechHubsPanel';
 
 const PROTO_TO_CLIENT_LEVEL: Record<ProtoThreatLevel, ClientThreatLevel> = {
   THREAT_LEVEL_UNSPECIFIED: 'info',
@@ -240,6 +250,9 @@ export class DataLoaderManager implements AppModule {
 
   private boundMarketWatchlistHandler: (() => void) | null = null;
   private satellitePropagationCleanup: (() => void) | null = null;
+  private dailyBriefGeneration = 0;
+  private dailyBriefFrameworkUnsubscribe: (() => void) | null = null;
+  private marketImplicationsFrameworkUnsubscribe: (() => void) | null = null;
   private cachedSatRecs: SatRecEntry[] | null = null;
 
   private digestBreaker = { state: 'closed' as 'closed' | 'open' | 'half-open', failures: 0, cooldownUntil: 0 };
@@ -267,6 +280,13 @@ export class DataLoaderManager implements AppModule {
       });
     };
     window.addEventListener('wm-market-watchlist-changed', this.boundMarketWatchlistHandler as EventListener);
+
+    this.dailyBriefFrameworkUnsubscribe = subscribeFrameworkChange('daily-market-brief', () => {
+      void this.loadDailyMarketBrief(true);
+    });
+    this.marketImplicationsFrameworkUnsubscribe = subscribeFrameworkChange('market-implications', () => {
+      void this.loadMarketImplications();
+    });
   }
 
   destroy(): void {
@@ -278,6 +298,10 @@ export class DataLoaderManager implements AppModule {
       window.removeEventListener('wm-market-watchlist-changed', this.boundMarketWatchlistHandler as EventListener);
       this.boundMarketWatchlistHandler = null;
     }
+    this.dailyBriefFrameworkUnsubscribe?.();
+    this.dailyBriefFrameworkUnsubscribe = null;
+    this.marketImplicationsFrameworkUnsubscribe?.();
+    this.marketImplicationsFrameworkUnsubscribe = null;
   }
 
   private refreshCiiAndBrief(forceLocal = false): void {
@@ -501,6 +525,8 @@ export class DataLoaderManager implements AppModule {
       tasks.push({ name: 'firms', task: runGuarded('firms', () => this.loadFirmsData()) });
     }
     if (this.ctx.mapLayers.natural) tasks.push({ name: 'natural', task: runGuarded('natural', () => this.loadNatural()) });
+    if (this.ctx.mapLayers.diseaseOutbreaks || shouldLoad('disease-outbreaks')) tasks.push({ name: 'diseaseOutbreaks', task: runGuarded('diseaseOutbreaks', () => this.loadDiseaseOutbreaks()) });
+    if (shouldLoad('social-velocity')) tasks.push({ name: 'socialVelocity', task: runGuarded('socialVelocity', () => this.loadSocialVelocity()) });
     if (SITE_VARIANT !== 'happy' && this.ctx.mapLayers.weather) tasks.push({ name: 'weather', task: runGuarded('weather', () => this.loadWeatherAlerts()) });
     if (SITE_VARIANT !== 'happy' && !isDesktopRuntime() && this.ctx.mapLayers.ais) tasks.push({ name: 'ais', task: runGuarded('ais', () => this.loadAisSignals()) });
     if (SITE_VARIANT !== 'happy' && this.ctx.mapLayers.cables) tasks.push({ name: 'cables', task: runGuarded('cables', () => this.loadCableActivity()) });
@@ -639,6 +665,9 @@ export class DataLoaderManager implements AppModule {
         case 'climate':
         case 'gpsJamming':
           await this.loadIntelligenceSignals();
+          break;
+        case 'diseaseOutbreaks':
+          await this.loadDiseaseOutbreaks();
           break;
       }
     } finally {
@@ -1103,6 +1132,11 @@ export class DataLoaderManager implements AppModule {
       const insightsPanel = this.ctx.panels['insights'] as InsightsPanel | undefined;
       insightsPanel?.updateInsights(this.ctx.latestClusters);
 
+      (this.ctx.panels['geo-hubs'] as GeoHubsPanel | undefined)
+        ?.setActivities(getTopActiveGeoHubs(this.ctx.latestClusters));
+      (this.ctx.panels['tech-hubs'] as TechHubsPanel | undefined)
+        ?.setActivities(getTopActiveHubs(this.ctx.latestClusters));
+
       const geoLocated = this.ctx.latestClusters
         .filter((c): c is typeof c & { lat: number; lon: number } => c.lat != null && c.lon != null)
         .map(c => ({
@@ -1421,6 +1455,8 @@ export class DataLoaderManager implements AppModule {
     if (!hasPremiumAccess()) return;
     if (this.ctx.isDestroyed || this.ctx.inFlight.has('dailyMarketBrief')) return;
 
+    this.dailyBriefGeneration++;
+    const gen = this.dailyBriefGeneration;
     this.ctx.inFlight.add('dailyMarketBrief');
     try {
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -1454,7 +1490,10 @@ export class DataLoaderManager implements AppModule {
         regimeContext,
         yieldCurveContext,
         sectorContext,
+        frameworkAppend: getActiveFrameworkForPanel('daily-market-brief')?.systemPromptAppend,
       });
+
+      if (this.dailyBriefGeneration !== gen) return;
 
       if (!brief.available) {
         if (!cached?.available) {
@@ -1571,7 +1610,7 @@ export class DataLoaderManager implements AppModule {
     if (this.ctx.isDestroyed || this.ctx.inFlight.has('marketImplications')) return;
     this.ctx.inFlight.add('marketImplications');
     try {
-      const data = await fetchMarketImplications();
+      const data = await fetchMarketImplications(getActiveFrameworkForPanel('market-implications')?.id ?? '');
       if (!data) {
         this.callPanel('market-implications', 'showUnavailable');
         return;
@@ -2663,19 +2702,22 @@ export class DataLoaderManager implements AppModule {
     if (!scPanel) return;
 
     try {
-      const [shipping, chokepoints, minerals] = await Promise.allSettled([
+      const [shipping, chokepoints, minerals, stress] = await Promise.allSettled([
         fetchShippingRates(),
         fetchChokepointStatus(),
         fetchCriticalMinerals(),
+        fetchShippingStress(),
       ]);
 
       const shippingData = shipping.status === 'fulfilled' ? shipping.value : null;
       const chokepointData = chokepoints.status === 'fulfilled' ? chokepoints.value : null;
       const mineralsData = minerals.status === 'fulfilled' ? minerals.value : null;
+      const stressData = stress.status === 'fulfilled' ? stress.value : null;
 
       if (shippingData) scPanel.updateShippingRates(shippingData);
       if (chokepointData) scPanel.updateChokepointStatus(chokepointData);
       if (mineralsData) scPanel.updateCriticalMinerals(mineralsData);
+      if (stressData) scPanel.updateShippingStress(stressData);
 
       const totalItems = (shippingData?.indices.length || 0) + (chokepointData?.chokepoints.length || 0) + (mineralsData?.minerals.length || 0);
       const anyUnavailable = shippingData?.upstreamUnavailable || chokepointData?.upstreamUnavailable || mineralsData?.upstreamUnavailable;
@@ -2692,6 +2734,32 @@ export class DataLoaderManager implements AppModule {
       this.callPanel('supply-chain', 'showError', undefined, () => void this.loadSupplyChain());
       this.ctx.statusPanel?.updateApi('SupplyChain', { status: 'error' });
       dataFreshness.recordError('supply_chain', String(e));
+    }
+  }
+
+  async loadDiseaseOutbreaks(): Promise<void> {
+    try {
+      const data = await fetchDiseaseOutbreaks();
+      if (data.outbreaks?.length) {
+        const panel = this.ctx.panels['disease-outbreaks'] as DiseaseOutbreaksPanel | undefined;
+        panel?.updateData(data.outbreaks);
+        this.ctx.map?.setDiseaseOutbreaks(data.outbreaks);
+        this.ctx.map?.setLayerReady('diseaseOutbreaks', true);
+      }
+    } catch (e) {
+      console.error('[App] Disease outbreaks load failed:', e);
+    }
+  }
+
+  async loadSocialVelocity(): Promise<void> {
+    try {
+      const data = await fetchSocialVelocity();
+      if (data.posts?.length) {
+        const panel = this.ctx.panels['social-velocity'] as SocialVelocityPanel | undefined;
+        panel?.updateData(data.posts);
+      }
+    } catch (e) {
+      console.error('[App] Social velocity load failed:', e);
     }
   }
 
@@ -2712,6 +2780,10 @@ export class DataLoaderManager implements AppModule {
         ingestNewsForCII(this.ctx.latestClusters);
         dataFreshness.recordUpdate('gdelt', this.ctx.latestClusters.length);
         this.refreshCiiAndBrief();
+        (this.ctx.panels['geo-hubs'] as GeoHubsPanel | undefined)
+          ?.setActivities(getTopActiveGeoHubs(this.ctx.latestClusters));
+        (this.ctx.panels['tech-hubs'] as TechHubsPanel | undefined)
+          ?.setActivities(getTopActiveHubs(this.ctx.latestClusters));
       }
 
       const signals = await analysisWorker.analyzeCorrelations(

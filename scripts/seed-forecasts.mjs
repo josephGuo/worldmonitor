@@ -11322,11 +11322,13 @@ const NEGATION_TERMS = ['ceasefire', 'reopen', 'reopened', 'resolv', 'diplomatic
 const SIMULATION_MERGE_ACCEPT_THRESHOLD = 0.50;
 const SIMULATION_ELIGIBILITY_RANK_THRESHOLD = 0.40;
 
-function contradictsPremise(invalidator, expandedPath) {
+function contradictsPremise(invalidator, expandedPath, fromSimulation = false) {
   if (!invalidator || typeof invalidator !== 'string') return false;
   const text = invalidator.toLowerCase();
-  const hasNegation = NEGATION_TERMS.some((t) => text.includes(t));
-  if (!hasNegation) return false;
+  if (!fromSimulation) {
+    const hasNegation = NEGATION_TERMS.some((t) => text.includes(t));
+    if (!hasNegation) return false;
+  }
   const routeKey = expandedPath?.candidate?.routeFacilityKey || '';
   const commodityKey = expandedPath?.candidate?.commodityKey || '';
   if (routeKey || commodityKey) {
@@ -11359,7 +11361,7 @@ function negatesDisruption(stabilizer, candidatePacket) {
   }
   // Non-maritime: match on stateKind and bucket keywords.
   const stateKind = candidatePacket?.stateKind || '';
-  const bucket = candidatePacket?.topBucketId || '';
+  const bucket = candidatePacket?.marketContext?.topBucketId || candidatePacket?.topBucketId || '';
   const subjectKeywords = [...stateKind.toLowerCase().split('_'), ...bucket.toLowerCase().split('_')]
     .filter((w) => w.length >= 4);
   return subjectKeywords.some((kw) => text.includes(kw));
@@ -11370,8 +11372,8 @@ function computeSimulationAdjustment(expandedPath, simTheaterResult, candidatePa
   const details = { bucketChannelMatch: false, actorOverlapCount: 0, invalidatorHit: false, stabilizerHit: false };
 
   const { topPaths = [], invalidators = [], stabilizers = [] } = simTheaterResult || {};
-  const pathBucket = expandedPath?.direct?.targetBucket || candidatePacket?.topBucketId || '';
-  const pathChannel = expandedPath?.direct?.channel || candidatePacket?.topChannel || '';
+  const pathBucket = expandedPath?.direct?.targetBucket || candidatePacket?.marketContext?.topBucketId || candidatePacket?.topBucketId || '';
+  const pathChannel = expandedPath?.direct?.channel || candidatePacket?.marketContext?.topChannel || candidatePacket?.topChannel || '';
   const pathActors = extractPathActors(expandedPath);
 
   const bucketChannelMatch = topPaths.find(
@@ -11389,7 +11391,7 @@ function computeSimulationAdjustment(expandedPath, simTheaterResult, candidatePa
   }
 
   for (const inv of invalidators) {
-    if (contradictsPremise(inv, expandedPath)) {
+    if (contradictsPremise(inv, expandedPath, true)) {
       adjustment -= 0.12;
       details.invalidatorHit = true;
       break;
@@ -11416,7 +11418,7 @@ function applySimulationMerge(evaluation, simulationOutcome, candidatePackets, s
   let anyPathChanged = false;
 
   const simByTheater = new Map(
-    (simulationOutcome.theaterResults || []).map((t) => [t.theaterId, t])
+    (simulationOutcome.theaterResults || []).map((t) => [t.candidateStateId || t.theaterId, t])
   );
 
   const selectedPaths = evaluation.selectedPaths || [];
@@ -16268,6 +16270,7 @@ async function processNextSimulationTask(options = {}) {
 
         theaterResults.push({
           theaterId: theater.theaterId,
+          candidateStateId: theater.candidateStateId || '',
           theaterLabel: theater.label || theater.dominantRegion || theater.theaterId,
           stateKind: theater.stateKind || '',
           topPaths: mergedPaths,

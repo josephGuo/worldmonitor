@@ -74,6 +74,8 @@ const FULL_PANELS: Record<string, PanelConfig> = {
   'etf-flows': { name: 'BTC ETF Tracker', enabled: true, priority: 2 },
   stablecoins: { name: 'Stablecoins', enabled: true, priority: 2 },
   'ucdp-events': { name: 'UCDP Conflict Events', enabled: true, priority: 2 },
+  'disease-outbreaks': { name: 'Disease Outbreaks', enabled: true, priority: 2 },
+  'social-velocity': { name: 'Social Velocity', enabled: true, priority: 2 },
   giving: { name: 'Global Giving', enabled: false, priority: 2 },
   displacement: { name: 'UNHCR Displacement', enabled: true, priority: 2 },
   climate: { name: 'Climate Anomalies', enabled: true, priority: 2 },
@@ -91,6 +93,9 @@ const FULL_PANELS: Record<string, PanelConfig> = {
   'national-debt': { name: 'Global Debt Clock', enabled: true, priority: 2 },
   'cross-source-signals': { name: 'Cross-Source Signals', enabled: true, priority: 2 },
   'market-implications': { name: 'AI Market Implications', enabled: true, priority: 1, premium: 'locked' as const },
+  'deduction': { name: 'Deduct Situation', enabled: true, priority: 1, premium: 'locked' as const },
+  'geo-hubs': { name: 'Geopolitical Hubs', enabled: false, priority: 2 },
+  'tech-hubs': { name: 'Hot Tech Hubs', enabled: false, priority: 2 },
 };
 
 const FULL_MAP_LAYERS: MapLayers = {
@@ -152,7 +157,7 @@ const FULL_MAP_LAYERS: MapLayers = {
   processingPlants: false,
   commodityPorts: false,
   webcams: false,
-  weatherRadar: false,
+  weatherRadar: false, diseaseOutbreaks: false,
 };
 
 const FULL_MOBILE_MAP_LAYERS: MapLayers = {
@@ -214,7 +219,7 @@ const FULL_MOBILE_MAP_LAYERS: MapLayers = {
   processingPlants: false,
   commodityPorts: false,
   webcams: false,
-  weatherRadar: false,
+  weatherRadar: false, diseaseOutbreaks: false,
 };
 
 // ============================================
@@ -235,7 +240,7 @@ const TECH_PANELS: Record<string, PanelConfig> = {
   accelerators: { name: 'Accelerators & Demo Days', enabled: true, priority: 1 },
   security: { name: 'Cybersecurity', enabled: true, priority: 1 },
   policy: { name: 'AI Policy & Regulation', enabled: true, priority: 1 },
-  regulation: { name: 'AI Regulation Dashboard', enabled: true, priority: 1 },
+  regulation: { name: 'AI Regulation News', enabled: true, priority: 1 },
   layoffs: { name: 'Layoffs Tracker', enabled: true, priority: 1 },
   markets: { name: 'Tech Stocks', enabled: true, priority: 2 },
   finance: { name: 'Financial News', enabled: true, priority: 2 },
@@ -259,6 +264,8 @@ const TECH_PANELS: Record<string, PanelConfig> = {
   'airline-intel': { name: 'Airline Intelligence', enabled: true, priority: 2 },
   'world-clock': { name: 'World Clock', enabled: true, priority: 2 },
   monitors: { name: 'My Monitors', enabled: true, priority: 2 },
+  'tech-hubs': { name: 'Hot Tech Hubs', enabled: false, priority: 2 },
+  'ai-regulation': { name: 'AI Regulation Dashboard', enabled: false, priority: 2 },
 };
 
 const TECH_MAP_LAYERS: MapLayers = {
@@ -319,7 +326,7 @@ const TECH_MAP_LAYERS: MapLayers = {
   processingPlants: false,
   commodityPorts: false,
   webcams: false,
-  weatherRadar: false,
+  weatherRadar: false, diseaseOutbreaks: false,
 };
 
 const TECH_MOBILE_MAP_LAYERS: MapLayers = {
@@ -380,7 +387,7 @@ const TECH_MOBILE_MAP_LAYERS: MapLayers = {
   processingPlants: false,
   commodityPorts: false,
   webcams: false,
-  weatherRadar: false,
+  weatherRadar: false, diseaseOutbreaks: false,
 };
 
 // ============================================
@@ -499,7 +506,7 @@ const FINANCE_MAP_LAYERS: MapLayers = {
   processingPlants: false,
   commodityPorts: false,
   webcams: false,
-  weatherRadar: false,
+  weatherRadar: false, diseaseOutbreaks: false,
 };
 
 const FINANCE_MOBILE_MAP_LAYERS: MapLayers = {
@@ -560,7 +567,7 @@ const FINANCE_MOBILE_MAP_LAYERS: MapLayers = {
   processingPlants: false,
   commodityPorts: false,
   webcams: false,
-  weatherRadar: false,
+  weatherRadar: false, diseaseOutbreaks: false,
 };
 
 // ============================================
@@ -637,7 +644,7 @@ const HAPPY_MAP_LAYERS: MapLayers = {
   processingPlants: false,
   commodityPorts: false,
   webcams: false,
-  weatherRadar: false,
+  weatherRadar: false, diseaseOutbreaks: false,
 };
 
 const HAPPY_MOBILE_MAP_LAYERS: MapLayers = {
@@ -698,7 +705,7 @@ const HAPPY_MOBILE_MAP_LAYERS: MapLayers = {
   processingPlants: false,
   commodityPorts: false,
   webcams: false,
-  weatherRadar: false,
+  weatherRadar: false, diseaseOutbreaks: false,
 };
 
 // ============================================
@@ -792,7 +799,7 @@ const COMMODITY_MAP_LAYERS: MapLayers = {
   processingPlants: true,
   commodityPorts: true,
   webcams: false,
-  weatherRadar: false,
+  weatherRadar: false, diseaseOutbreaks: false,
 };
 
 const COMMODITY_MOBILE_MAP_LAYERS: MapLayers = {
@@ -853,7 +860,7 @@ const COMMODITY_MOBILE_MAP_LAYERS: MapLayers = {
   processingPlants: false,
   commodityPorts: true,
   webcams: false,
-  weatherRadar: false,
+  weatherRadar: false, diseaseOutbreaks: false,
 };
 
 // ============================================
@@ -923,7 +930,7 @@ export const FREE_MAX_SOURCES = 80;
  */
 export function isPanelEntitled(key: string, config: PanelConfig, isPro = false): boolean {
   if (!config.premium) return true;
-  const apiKeyPanels = ['stock-analysis', 'stock-backtest', 'daily-market-brief', 'market-implications'];
+  const apiKeyPanels = ['stock-analysis', 'stock-backtest', 'daily-market-brief', 'market-implications', 'deduction'];
   if (apiKeyPanels.includes(key)) {
     return getSecretState('WORLDMONITOR_API_KEY').present || isPro;
   }
