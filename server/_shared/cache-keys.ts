@@ -39,6 +39,7 @@ export const DIGEST_ACCUMULATOR_TTL = 172800; // 48h — lookback window for dig
  */
 export const SIMULATION_OUTCOME_LATEST_KEY = 'forecast:simulation-outcome:latest';
 export const SIMULATION_PACKAGE_LATEST_KEY = 'forecast:simulation-package:latest';
+export const REGULATORY_ACTIONS_KEY = 'regulatory:actions:v1';
 export const CLIMATE_ANOMALIES_KEY = 'climate:anomalies:v2';
 export const CLIMATE_AIR_QUALITY_KEY = 'climate:air-quality:v1';
 export const CLIMATE_ZONE_NORMALS_KEY = 'climate:zone-normals:v1';
@@ -46,6 +47,9 @@ export const CLIMATE_CO2_MONITORING_KEY = 'climate:co2-monitoring:v1';
 export const CLIMATE_OCEAN_ICE_KEY = 'climate:ocean-ice:v1';
 export const CLIMATE_NEWS_KEY = 'climate:news-intelligence:v1';
 export const HEALTH_AIR_QUALITY_KEY = 'health:air-quality:v1';
+
+export const ENERGY_MIX_KEY_PREFIX = 'energy:mix:v1:';
+export const ENERGY_EXPOSURE_INDEX_KEY = 'energy:exposure:v1:index';
 
 /**
  * Static cache keys for the bootstrap endpoint.
@@ -69,6 +73,7 @@ export const BOOTSTRAP_CACHE_KEYS: Record<string, string> = {
   minerals:         'supply_chain:minerals:v2',
   giving:           'giving:summary:v1',
   climateAnomalies: 'climate:anomalies:v2',
+  climateDisasters: 'climate:disasters:v1',
   co2Monitoring:    'climate:co2-monitoring:v1',
   oceanIce:         'climate:ocean-ice:v1',
   climateNews:      'climate:news-intelligence:v1',
@@ -126,6 +131,7 @@ export const BOOTSTRAP_CACHE_KEYS: Record<string, string> = {
   pizzint:          'intelligence:pizzint:seed:v1',
   diseaseOutbreaks: 'health:disease-outbreaks:v1',
   economicStress:   'economic:stress-index:v1',
+  faoFoodPriceIndex: 'economic:fao-ffpi:v1',
 };
 
 export const BOOTSTRAP_TIERS: Record<string, 'slow' | 'fast'> = {
@@ -133,7 +139,7 @@ export const BOOTSTRAP_TIERS: Record<string, 'slow' | 'fast'> = {
   minerals: 'slow', giving: 'slow', sectors: 'slow',
   progressData: 'slow', renewableEnergy: 'slow',
   etfFlows: 'slow', shippingRates: 'fast', wildfires: 'slow',
-  climateAnomalies: 'slow', co2Monitoring: 'slow', oceanIce: 'slow', climateNews: 'slow', sanctionsPressure: 'slow', radiationWatch: 'slow', thermalEscalation: 'slow', crossSourceSignals: 'slow', cyberThreats: 'slow', techReadiness: 'slow',
+  climateAnomalies: 'slow', climateDisasters: 'slow', co2Monitoring: 'slow', oceanIce: 'slow', climateNews: 'slow', sanctionsPressure: 'slow', radiationWatch: 'slow', thermalEscalation: 'slow', crossSourceSignals: 'slow', cyberThreats: 'slow', techReadiness: 'slow',
   theaterPosture: 'fast', naturalEvents: 'slow',
   cryptoQuotes: 'slow', gulfQuotes: 'slow', stablecoinMarkets: 'slow',
   unrestEvents: 'slow', ucdpEvents: 'slow', techEvents: 'slow',
@@ -169,4 +175,5 @@ export const BOOTSTRAP_TIERS: Record<string, 'slow' | 'fast'> = {
   pizzint: 'slow',
   diseaseOutbreaks: 'slow',
   economicStress: 'slow',
+  faoFoodPriceIndex: 'slow',
 };

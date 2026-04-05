@@ -27,6 +27,7 @@ const API = 'https://backboard.railway.app/graphql/v2';
 const USES_SHARED_CONFIG = new Set([
   'seed-commodity-quotes', 'seed-crypto-quotes', 'seed-etf-flows',
   'seed-gulf-quotes', 'seed-market-quotes', 'seed-stablecoin-markets',
+  'seed-climate-disasters',
 ]);
 
 const SERVICE_OVERRIDES = {
@@ -42,6 +43,25 @@ const SERVICE_OVERRIDES = {
     ],
     startCommand: 'node seed-resilience-static.mjs',
     cronSchedule: '0 */4 1-3 10 *',
+  },
+  'seed-owid-energy-mix': {
+    watchPatterns: [
+      'scripts/seed-owid-energy-mix.mjs',
+      'scripts/_seed-utils.mjs',
+      'scripts/_country-resolver.mjs',
+      'scripts/package.json',
+    ],
+    startCommand: 'node seed-owid-energy-mix.mjs',
+    cronSchedule: '0 3 1 * *', // 03:00 UTC on the 1st of every month
+  },
+  'seed-regulatory-actions': {
+    watchPatterns: [
+      'scripts/seed-regulatory-actions.mjs',
+      'scripts/_seed-utils.mjs',
+      'scripts/package.json',
+    ],
+    startCommand: 'node seed-regulatory-actions.mjs',
+    cronSchedule: '0 */2 * * *',
   },
 };
 
@@ -70,6 +90,10 @@ export function buildExpectedServiceConfig(serviceName) {
 
   if (serviceName === 'seed-iran-events') {
     config.watchPatterns.push('scripts/data/iran-events-latest.json');
+  }
+
+  if (serviceName === 'seed-climate-disasters') {
+    config.watchPatterns.push('public/data/countries.geojson');
   }
 
   return config;
