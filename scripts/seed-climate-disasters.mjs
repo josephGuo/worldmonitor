@@ -27,18 +27,19 @@ const RELIEFWEB_TYPE_TO_CANONICAL = {
 
 const COUNTRY_BBOXES = loadSharedConfig('country-bboxes.json');
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const COUNTRY_GEOJSON = JSON.parse(readFileSync(join(__dirname, '..', 'public', 'data', 'countries.geojson'), 'utf8'));
+const ISO3_TO_ISO2 = loadSharedConfig('iso3-to-iso2.json');
+const COUNTRY_NAMES_RAW = loadSharedConfig('country-names.json');
+
+function titleCase(str) {
+  return str.replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 const COUNTRY_NAME_BY_CODE = {};
-const ISO3_TO_ISO2 = {};
-
-for (const feature of COUNTRY_GEOJSON?.features || []) {
-  const properties = feature?.properties || {};
-  const iso2 = String(properties['ISO3166-1-Alpha-2'] || '').trim().toUpperCase();
-  const iso3 = String(properties['ISO3166-1-Alpha-3'] || '').trim().toUpperCase();
-  const name = String(properties.name || '').trim();
-  if (/^[A-Z]{2}$/.test(iso2) && name) COUNTRY_NAME_BY_CODE[iso2] = name;
-  if (/^[A-Z]{2}$/.test(iso2) && /^[A-Z]{3}$/.test(iso3)) ISO3_TO_ISO2[iso3] = iso2;
+for (const [name, iso2] of Object.entries(COUNTRY_NAMES_RAW)) {
+  const code = String(iso2 || '').trim().toUpperCase();
+  if (/^[A-Z]{2}$/.test(code) && name && !COUNTRY_NAME_BY_CODE[code]) {
+    COUNTRY_NAME_BY_CODE[code] = titleCase(name);
+  }
 }
 
 const COUNTRY_CODES_BY_BBOX_AREA = Object.entries(COUNTRY_BBOXES)
@@ -98,15 +99,19 @@ function getNaturalSourceMeta(event) {
   const id = String(event?.id || '');
   if (name === 'nasa firms' || name.startsWith('firms') || url.includes('firms.modaps.')) return { source: 'NASA FIRMS' };
   if (name === 'gdacs' || name.startsWith('gdacs') || url.includes('gdacs.org') || id.startsWith('gdacs-')) return { source: 'GDACS' };
+  if (url.includes('eonet.') || id.startsWith('EONET_') || name.startsWith('eonet')) return { source: 'EONET' };
+  if (name || url) return { source: 'OTHER' };
   return null;
 }
+
+const CLIMATE_CATEGORIES = new Set(['floods', 'wildfires', 'volcanoes', 'drought']);
 
 function isClimateNaturalEvent(event) {
   if (!event || typeof event !== 'object') return false;
   const sourceMeta = getNaturalSourceMeta(event);
   if (!sourceMeta) return false;
 
-  if (event.category === 'floods' || event.category === 'wildfires') return true;
+  if (CLIMATE_CATEGORIES.has(event.category)) return true;
   if (event.category !== 'severeStorms') return false;
   if (sourceMeta.source !== 'GDACS') return false;
 
@@ -119,6 +124,8 @@ function mapNaturalType(event) {
   if (event.category === 'floods') return 'flood';
   if (event.category === 'wildfires') return 'wildfire';
   if (event.category === 'severeStorms') return 'cyclone';
+  if (event.category === 'volcanoes') return 'volcano';
+  if (event.category === 'drought') return 'drought';
   return '';
 }
 
@@ -206,11 +213,7 @@ function resolveCountryInfo({ code = '', iso3 = '', name = '', lat = NaN, lng = 
 // before enabling this seed, or ReliefWeb fetches will fail closed.
 function getReliefWebAppname() {
   const appname = String(process.env.RELIEFWEB_APPNAME || process.env.RELIEFWEB_APP_NAME || '').trim();
-  if (!appname) {
-    const err = new Error('RELIEFWEB_APPNAME is required; ReliefWeb now requires a pre-approved appname');
-    err.isConfigError = true;
-    throw err;
-  }
+  if (!appname) return null;
   return appname;
 }
 
@@ -282,6 +285,10 @@ function mapReliefItem(item) {
 
 async function fetchReliefWeb() {
   const appname = getReliefWebAppname();
+  if (!appname) {
+    console.warn('  [ReliefWeb] RELIEFWEB_APPNAME not set, skipping ReliefWeb fetch');
+    return [];
+  }
   const requestBodies = buildReliefWebRequestBodies();
 
   let lastError = null;
@@ -332,7 +339,7 @@ function mapNaturalEvent(event) {
   if (!type) return null;
 
   const source = mapNaturalSource(event);
-  if (source !== 'GDACS' && source !== 'NASA FIRMS') return null;
+  if (!source) return null;
   const severity = mapNaturalSeverity(event, source);
   const status = mapNaturalStatus(event, severity);
   const lat = Number(event.lat);
@@ -363,12 +370,22 @@ function mapNaturalEvent(event) {
 }
 
 async function fetchNaturalClimateDisasters() {
-  const data = await verifySeedKey(NATURAL_EVENTS_KEY).catch(() => null);
+  let data;
+  try {
+    data = await verifySeedKey(NATURAL_EVENTS_KEY);
+  } catch (err) {
+    console.warn(`  [NaturalEvents] Redis read failed: ${err?.message || err}`);
+    return [];
+  }
+  if (!data) {
+    console.warn('  [NaturalEvents] natural:events:v1 key is empty or missing in Redis');
+    return [];
+  }
   const events = asArray(data?.events);
-  return events
-    .filter(isClimateNaturalEvent)
-    .map(mapNaturalEvent)
-    .filter(Boolean);
+  console.log(`  [NaturalEvents] ${events.length} raw events from natural:events:v1`);
+  const climate = events.filter(isClimateNaturalEvent);
+  console.log(`  [NaturalEvents] ${climate.length} matched climate filter`);
+  return climate.map(mapNaturalEvent).filter(Boolean);
 }
 
 function dedupeAndSort(entries) {
