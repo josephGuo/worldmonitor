@@ -709,11 +709,16 @@ export async function scoreEnergy(
     ? (energyMixRaw as Record<string, unknown>)
     : null;
 
-  const dependency  = safeNum(staticRecord?.iea?.energyImportDependency?.value);
-  const gasShare    = mix && typeof mix.gasShare === 'number' ? mix.gasShare : null;
-  const coalShare   = mix && typeof mix.coalShare === 'number' ? mix.coalShare : null;
-  const renewShare  = mix && typeof mix.renewShare === 'number' ? mix.renewShare : null;
-  const energyStress = getEnergyPriceStress(energyPricesRaw);
+  const dependency             = safeNum(staticRecord?.iea?.energyImportDependency?.value);
+  const gasShare               = mix && typeof mix.gasShare === 'number' ? mix.gasShare : null;
+  const coalShare              = mix && typeof mix.coalShare === 'number' ? mix.coalShare : null;
+  const renewShare             = mix && typeof mix.renewShare === 'number' ? mix.renewShare : null;
+  const energyStress           = getEnergyPriceStress(energyPricesRaw);
+  // EG.USE.ELEC.KH.PC: per-capita electricity consumption (kWh/year).
+  // Very low consumption signals grid collapse (blackouts, crisis), not efficiency.
+  // Countries absent from Eurostat (non-EU) have no IEA import-dependency figure, so
+  // this metric becomes the primary indicator of actual energy infrastructure health.
+  const electricityConsumption = getStaticIndicatorValue(staticRecord, 'infrastructure', 'EG.USE.ELEC.KH.PC');
 
   const storageFillPct = storageRaw != null && typeof storageRaw === 'object'
     ? (() => {
@@ -726,12 +731,13 @@ export async function scoreEnergy(
     : null;
 
   return weightedBlend([
-    { score: dependency    == null ? null : normalizeLowerBetter(dependency, 0, 100),        weight: 0.30 },
-    { score: gasShare      == null ? null : normalizeLowerBetter(gasShare, 0, 100),          weight: 0.20 },
-    { score: coalShare     == null ? null : normalizeLowerBetter(coalShare, 0, 100),         weight: 0.15 },
-    { score: renewShare    == null ? null : normalizeHigherBetter(renewShare, 0, 100),       weight: 0.15 },
-    { score: storageStress == null ? null : normalizeLowerBetter(storageStress * 100, 0, 100), weight: 0.10 },
-    { score: energyStress  == null ? null : normalizeLowerBetter(energyStress, 0, 25),       weight: 0.10 },
+    { score: dependency             == null ? null : normalizeLowerBetter(dependency, 0, 100),              weight: 0.25 },
+    { score: gasShare               == null ? null : normalizeLowerBetter(gasShare, 0, 100),                weight: 0.12 },
+    { score: coalShare              == null ? null : normalizeLowerBetter(coalShare, 0, 100),               weight: 0.08 },
+    { score: renewShare             == null ? null : normalizeHigherBetter(renewShare, 0, 100),             weight: 0.05 },
+    { score: storageStress          == null ? null : normalizeLowerBetter(storageStress * 100, 0, 100),     weight: 0.10 },
+    { score: energyStress           == null ? null : normalizeLowerBetter(energyStress, 0, 25),             weight: 0.10 },
+    { score: electricityConsumption == null ? null : normalizeHigherBetter(electricityConsumption, 200, 8000), weight: 0.30 },
   ]);
 }
 

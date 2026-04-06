@@ -87,7 +87,9 @@ const BOOTSTRAP_CACHE_KEYS = {
   pizzint:           'intelligence:pizzint:seed:v1',
   diseaseOutbreaks:  'health:disease-outbreaks:v1',
   economicStress:    'economic:stress-index:v1',
-  electricityPrices: 'energy:electricity:v1:index',
+  electricityPrices:    'energy:electricity:v1:index',
+  jodiOil:              'energy:jodi-oil:v1:_countries',
+  chokepointBaselines:  'energy:chokepoint-baselines:v1',
 };
 
 const SLOW_KEYS = new Set([
@@ -120,6 +122,8 @@ const SLOW_KEYS = new Set([
   'economicStress',
   'pizzint',
   'electricityPrices',
+  'jodiOil',
+  'chokepointBaselines',
 ]);
 const FAST_KEYS = new Set([
   'earthquakes', 'outages', 'serviceStatuses', 'ddosAttacks', 'trafficAnomalies', 'macroSignals', 'chokepoints', 'chokepointTransits',

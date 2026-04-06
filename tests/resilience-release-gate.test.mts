@@ -12,7 +12,7 @@ import {
   buildReleaseGateFixtures,
 } from './helpers/resilience-release-fixtures.mts';
 
-const REQUIRED_DIMENSION_COUNTRIES = ['US', 'GB', 'DE', 'FR', 'JP', 'CN', 'IN', 'BR', 'NG', 'YE'] as const;
+const REQUIRED_DIMENSION_COUNTRIES = ['US', 'GB', 'DE', 'FR', 'JP', 'CN', 'IN', 'BR', 'NG', 'LB', 'YE'] as const;
 const CHOROPLETH_TARGET_COUNTRIES = [...new Set([...G20_COUNTRIES, ...EU27_COUNTRIES])];
 const HIGH_SANITY_COUNTRIES = ['NO', 'CH', 'DK'] as const;
 const LOW_SANITY_COUNTRIES = ['YE', 'SO', 'HT'] as const;
@@ -108,6 +108,30 @@ describe('resilience release gate', () => {
       );
       assert.equal(response.lowConfidence, true, `${countryCode} should be flagged as low confidence`);
     }
+  });
+
+  it('Lebanon (fragile) scores lower than South Africa (stressed)', async () => {
+    installRedisFixtures();
+
+    const [lb, za] = await Promise.all([
+      getResilienceScore({ request: new Request('https://example.com?countryCode=LB') } as never, { countryCode: 'LB' }),
+      getResilienceScore({ request: new Request('https://example.com?countryCode=ZA') } as never, { countryCode: 'ZA' }),
+    ]);
+
+    assert.ok(
+      lb.overallScore < za.overallScore,
+      `Lebanon (fragile, ${lb.overallScore}) should score lower than South Africa (stressed, ${za.overallScore})`,
+    );
+  });
+
+  it('US is not low-confidence with full 8/8 dataset coverage', async () => {
+    installRedisFixtures();
+
+    const us = await getResilienceScore(
+      { request: new Request('https://example.com?countryCode=US') } as never,
+      { countryCode: 'US' },
+    );
+    assert.equal(us.lowConfidence, false, `US has full 8/8 dataset coverage in fixtures and should not be flagged low-confidence`);
   });
 
   it('produces complete ranking and choropleth entries for the full G20 + EU27 release set', async () => {
