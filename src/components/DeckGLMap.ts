@@ -357,6 +357,7 @@ export class DeckGLMap {
   private aptGroups: import('@/types').APTGroup[] = [];
   private aptGroupsLoaded = false;
   private aptGroupsLayerFailed = false;
+  private satelliteImageryLayerFailed = false;
   private iranEvents: IranEvent[] = [];
   private aisDisruptions: AisDisruptionEvent[] = [];
   private aisDensity: AisDensityZone[] = [];
@@ -838,6 +839,11 @@ export class DeckGLMap {
         console.warn('[DeckGLMap] Render error (non-fatal):', error.message);
         if (error.message.includes('apt-groups-layer')) {
           this.aptGroupsLayerFailed = true;
+        }
+        if (error.message.includes('satellite-imagery-layer')) {
+          this.satelliteImageryLayerFailed = true;
+          console.warn('[DeckGLMap] Satellite imagery layer failed (likely Intel GPU driver incompatibility) — rebuilding layer stack without it');
+          try { this.deckOverlay?.setProps({ layers: this.buildLayers() }); } catch { /* map mid-teardown */ }
         }
       },
     });
@@ -1728,7 +1734,7 @@ export class DeckGLMap {
       layers.push(this.createRenewableInstallationsLayer());
     }
 
-    if (mapLayers.satellites && filteredImageryScenes.length > 0) {
+    if (mapLayers.satellites && filteredImageryScenes.length > 0 && !this.satelliteImageryLayerFailed) {
       layers.push(this.createImageryFootprintLayer(filteredImageryScenes));
     }
 
@@ -3775,6 +3781,9 @@ export class DeckGLMap {
         if (!resilienceEntry) {
           return { html: `<div class="deckgl-tooltip"><strong>${text(resilienceName)}</strong><br/><span style="opacity:.7">No resilience data</span></div>` };
         }
+        if (resilienceEntry.level === 'insufficient_data') {
+          return { html: `<div class="deckgl-tooltip"><strong>${text(resilienceName)}</strong><br/><span style="opacity:.7">Insufficient data</span></div>` };
+        }
         const [red, green, blue] = RESILIENCE_CHOROPLETH_COLORS[resilienceEntry.level];
         const levelColor = `rgb(${red}, ${green}, ${blue})`;
         return {
@@ -5282,8 +5291,8 @@ export class DeckGLMap {
     this.render();
   }
 
-  public setResilienceRanking(items: ResilienceRankingItem[]): void {
-    this.resilienceScoresMap = buildResilienceChoroplethMap(items);
+  public setResilienceRanking(items: ResilienceRankingItem[], greyedOut: ResilienceRankingItem[] = []): void {
+    this.resilienceScoresMap = buildResilienceChoroplethMap(items, greyedOut);
     this.resilienceScoresVersion++;
     this.render();
   }

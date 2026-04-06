@@ -91,7 +91,10 @@ async function fetchTextDirect(url, accept, timeoutMs) {
     headers: { Accept: accept, 'User-Agent': CHROME_UA },
     signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) {
+    const err = Object.assign(new Error(`HTTP ${response.status}`), { status: response.status });
+    throw err;
+  }
   return { text: await response.text(), contentType: response.headers.get('content-type') || '' };
 }
 
@@ -524,21 +527,11 @@ function parseDelimitedText(text, delimiter) {
   });
 }
 
-async function fetchGpiDataset() {
-  const currentYear = new Date().getUTCFullYear();
-  let csvText;
-  let resolvedYear = currentYear;
+export function gpiUrlForYear(yr) {
+  return `https://www.visionofhumanity.org/wp-content/uploads/${yr}/06/GPI_${yr}_${yr}.csv`;
+}
 
-  const urlForYear = (yr) =>
-    `https://www.visionofhumanity.org/wp-content/uploads/${yr}/06/GPI_${yr}_${yr}.csv`;
-
-  try {
-    ({ text: csvText } = await withRetry(() => fetchText(urlForYear(currentYear), { accept: 'text/csv' }), 1, 750));
-  } catch {
-    resolvedYear = currentYear - 1;
-    ({ text: csvText } = await withRetry(() => fetchText(urlForYear(resolvedYear), { accept: 'text/csv' }), 2, 750));
-  }
-
+export function parseGpiRows(csvText, resolvedYear) {
   const rows = parseDelimitedText(csvText, ',');
   const parsed = new Map();
   for (const row of rows) {
@@ -560,10 +553,32 @@ async function fetchGpiDataset() {
   return parsed;
 }
 
-async function fetchFsinDataset() {
-  const hdxUrl =
-    'https://data.humdata.org/dataset/7a7e7428-b8d7-4d2e-91d3-19100500e016/resource/2e4f7475-105b-4fae-81f7-7c32076096b6/download/ipc_global_national_wide_latest.csv';
-  const { text: csvText } = await withRetry(() => fetchText(hdxUrl, { accept: 'text/csv' }), 2, 750);
+export async function resolveGpiCsv(
+  currentYear,
+  {
+    directFetch = (url) => fetchTextDirect(url, 'text/csv', 30_000),
+    retryFetch = (url) => withRetry(() => fetchText(url, { accept: 'text/csv' }), 2, 750),
+  } = {},
+) {
+  try {
+    const { text } = await directFetch(gpiUrlForYear(currentYear));
+    return { resolvedYear: currentYear, csvText: text };
+  } catch (err) {
+    if (err.status !== 404) throw err;
+    const resolvedYear = currentYear - 1;
+    console.info(`  [gpi] ${currentYear} report not yet available — using ${resolvedYear}`);
+    const { text } = await retryFetch(gpiUrlForYear(resolvedYear));
+    return { resolvedYear, csvText: text };
+  }
+}
+
+async function fetchGpiDataset() {
+  const currentYear = new Date().getUTCFullYear();
+  const { resolvedYear, csvText } = await resolveGpiCsv(currentYear);
+  return parseGpiRows(csvText, resolvedYear);
+}
+
+export function parseFsinRows(csvText) {
   const rows = parseDelimitedText(csvText, ',');
   const parsed = new Map();
   for (const row of rows) {
@@ -573,57 +588,56 @@ async function fetchFsinDataset() {
     const phase3plus = safeNum(row['Phase 3+ #'] ?? row['Phase 3+ number current']);
     const phase4 = safeNum(row['Phase 4 #'] ?? row['Phase 4 number current']);
     const phase5 = safeNum(row['Phase 5 #'] ?? row['Phase 5 number current']);
-    if (phase3plus == null && phase4 == null && phase5 == null) continue;
+    // Skip rows where no crisis-phase data is present (null or zero — IPC only lists active crises).
+    if (!phase3plus && !phase4 && !phase5) continue;
     const yearCandidates = Object.keys(row)
       .filter((k) => /period|date|year/i.test(k))
       .map((k) => safeNum(String(row[k]).slice(0, 4)))
       .filter((v) => v != null && v > 2000);
     const year = yearCandidates.length ? Math.max(...yearCandidates) : null;
+    const highestPhase = phase5 ? 5 : phase4 ? 4 : 3;
     parsed.set(iso2, {
       source: 'hdx-ipc',
       year,
-      phase3plus: phase3plus != null ? roundMetric(phase3plus, 0) : null,
-      phase4: phase4 != null ? roundMetric(phase4, 0) : null,
-      phase5: phase5 != null ? roundMetric(phase5, 0) : null,
+      // Output matches the shape that scoreFoodWater() reads from staticRecord.fao.
+      // phase3plus == total people in Phase 3 or above (IPC definition of "in crisis").
+      peopleInCrisis: phase3plus != null ? roundMetric(phase3plus, 0) : null,
+      phase: `IPC Phase ${highestPhase}`,
     });
   }
   if (parsed.size === 0) throw new Error('HDX IPC CSV returned no usable rows');
   return parsed;
 }
 
-async function fetchAquastatDataset() {
-  const aquastatUrl =
-    'https://api.data.apps.fao.org/api/v2/bigquery?sql_url=https://data.apps.fao.org/catalog/dataset/945666e6-7803-4621-b8ef-cfd885a84596/resource/4a000a1b-24f0-4328-aab6-b9b525892090/download/query_en.sql&area=World&variable=4550,4192,4190&year=2021&type=country';
-  const { text: csvText } = await withRetry(() => fetchText(aquastatUrl, { accept: 'text/csv' }), 2, 750);
-  const rows = parseDelimitedText(csvText, ',');
+async function fetchFsinDataset() {
+  const hdxUrl =
+    'https://data.humdata.org/dataset/7a7e7428-b8d7-4d2e-91d3-19100500e016/resource/2e4f7475-105b-4fae-81f7-7c32076096b6/download/ipc_global_national_wide_latest.csv';
+  const { text: csvText } = await withRetry(() => fetchText(hdxUrl, { accept: 'text/csv' }), 2, 750);
+  return parseFsinRows(csvText);
+}
 
-  const VARIABLE_MAP = {
-    '4550': 'waterStress',
-    '4192': 'dependencyRatio',
-    '4190': 'renewablePerCapita',
-  };
+// WB indicator ER.H2O.FWST.ZS = "Level of water stress: freshwater withdrawal as a proportion
+// of available freshwater resources". Matches scoreAquastatValue()'s 'stress' keyword branch.
+const WB_WATER_STRESS_INDICATOR = 'ER.H2O.FWST.ZS';
 
+export function buildAquastatWbMap(waterStressLatest) {
   const byCountry = new Map();
-  for (const row of rows) {
-    const countryName = String(row.Country || '').trim();
-    const iso2 = resolveIso2({ name: countryName });
-    if (!iso2) continue;
-    const varCode = String(row.VariableCode || row.Variable_Id || '').trim();
-    const metricKey = VARIABLE_MAP[varCode];
-    if (!metricKey) continue;
-    const value = safeNum(row.Value);
-    const year = safeNum(row.Year);
-    if (value == null) continue;
-
-    const existing = byCountry.get(iso2) || { source: 'fao-aquastat' };
-    const prev = existing[metricKey];
-    if (!prev || (year != null && (prev.year == null || year > prev.year))) {
-      existing[metricKey] = { value: roundMetric(value), year };
-    }
-    byCountry.set(iso2, existing);
+  for (const [iso2, entry] of waterStressLatest.entries()) {
+    byCountry.set(iso2, {
+      source: 'worldbank-aquastat',
+      value: entry.value,
+      indicator: 'water stress',
+      year: entry.year,
+    });
   }
-  if (byCountry.size === 0) throw new Error('AQUASTAT CSV returned no usable rows');
+  if (byCountry.size === 0) throw new Error('World Bank water stress returned no usable rows');
   return byCountry;
+}
+
+async function fetchAquastatDataset() {
+  const rows = await fetchWorldBankIndicatorRows(WB_WATER_STRESS_INDICATOR, { mrv: '15' });
+  const latest = selectLatestWorldBankByCountry(rows);
+  return buildAquastatWbMap(latest);
 }
 
 export function finalizeCountryPayloads(datasetMaps, seedYear = nowSeedYear(), seededAt = new Date().toISOString()) {

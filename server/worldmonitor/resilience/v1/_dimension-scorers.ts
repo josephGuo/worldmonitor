@@ -35,7 +35,31 @@ export type ResilienceSeedReader = (key: string) => Promise<unknown | null>;
 interface WeightedMetric {
   score: number | null;
   weight: number;
+  // When a sub-metric is imputed (absence is a typed signal, not a gap), certaintyCoverage
+  // expresses how confident we are in the imputation: 1.0 = real data, 0 = fully absent.
+  // Omit for real data (auto: 1.0 if score != null, 0 if null).
+  certaintyCoverage?: number;
 }
+
+// Absence of a data source is a typed signal, not an unknown gap.
+// Each value is { score, certaintyCoverage } applied when the source is absent.
+const IMPUTATION = {
+  // Country not in IPC/UNHCR/UCDP because it's stable, not because data is missing.
+  // Absence = strong positive signal.
+  crisis_monitoring_absent: { score: 85, certaintyCoverage: 0.7 },
+  // Country not in BIS/WTO curated list. Data exists but country wasn't selected.
+  // Absence = neutral-to-negative (unknown, penalized conservatively).
+  curated_list_absent: { score: 50, certaintyCoverage: 0.3 },
+} as const;
+
+// Per-metric overrides where the generic imputation table values differ.
+const IMPUTE = {
+  ipcFood:      { score: 88, certaintyCoverage: 0.7 },  // crisis_monitoring_absent, food-specific
+  wtoData:      { score: 60, certaintyCoverage: 0.4 },  // curated_list_absent, trade-specific
+  bisEer:       IMPUTATION.curated_list_absent,
+  bisCredit:    IMPUTATION.curated_list_absent,
+  unhcrDisplacement: { score: 85, certaintyCoverage: 0.6 }, // crisis_monitoring_absent, displacement-specific
+} as const;
 
 interface StaticIndicatorValue {
   value?: number;
@@ -53,10 +77,10 @@ interface ResilienceStaticCountryRecord {
   iea?: { energyImportDependency?: { value?: number; year?: number | null; source?: string } | null } | null;
 }
 
-interface BisCreditEntry {
-  countryCode?: string;
-  creditGdpRatio?: number;
-  previousRatio?: number;
+interface ImfMacroEntry {
+  inflationPct?: number | null;
+  currentAccountPct?: number | null;
+  year?: number | null;
 }
 
 interface BisExchangeRate {
@@ -70,15 +94,6 @@ interface NationalDebtEntry {
   iso3?: string;
   debtToGdp?: number;
   annualGrowth?: number;
-}
-
-interface CountrySanctionsPressure {
-  countryCode?: string;
-  countryName?: string;
-  entryCount?: number;
-  newEntryCount?: number;
-  vesselCount?: number;
-  aircraftCount?: number;
 }
 
 interface TradeRestriction {
@@ -136,10 +151,10 @@ interface SocialVelocityPost {
 const RESILIENCE_STATIC_PREFIX = 'resilience:static:';
 const RESILIENCE_SHIPPING_STRESS_KEY = 'supply_chain:shipping_stress:v1';
 const RESILIENCE_TRANSIT_SUMMARIES_KEY = 'supply_chain:transit-summaries:v1';
-const RESILIENCE_BIS_CREDIT_KEY = 'economic:bis:credit:v1';
 const RESILIENCE_BIS_EXCHANGE_KEY = 'economic:bis:eer:v1';
 const RESILIENCE_NATIONAL_DEBT_KEY = 'economic:national-debt:v1';
-const RESILIENCE_SANCTIONS_KEY = 'sanctions:pressure:v1';
+const RESILIENCE_IMF_MACRO_KEY = 'economic:imf:macro:v1';
+const RESILIENCE_SANCTIONS_KEY = 'sanctions:country-counts:v1';
 const RESILIENCE_TRADE_RESTRICTIONS_KEY = 'trade:restrictions:v1:tariff-overview:50';
 const RESILIENCE_TRADE_BARRIERS_KEY = 'trade:barriers:v1:tariff-gap:50';
 const RESILIENCE_CYBER_KEY = 'cyber:threats:v2';
@@ -241,6 +256,15 @@ function normalizeHigherBetter(value: number, worst: number, best: number): numb
   return roundScore(ratio * 100);
 }
 
+// Piecewise scale: 0=100, 1-10=90-75, 11-50=75-50, 51-200=50-25, 201+=25→0
+function normalizeSanctionCount(count: number): number {
+  if (count === 0) return 100;
+  if (count <= 10) return roundScore(90 - (count - 1) * (15 / 9));
+  if (count <= 50) return roundScore(75 - (count - 10) * (25 / 40));
+  if (count <= 200) return roundScore(50 - (count - 50) * (25 / 150));
+  return roundScore(Math.max(0, 25 - (count - 200) * 0.1));
+}
+
 function mean(values: number[]): number | null {
   if (!values.length) return null;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -264,9 +288,17 @@ function weightedBlend(metrics: WeightedMetric[]): ResilienceDimensionScore {
   }
 
   const weightedScore = available.reduce((sum, metric) => sum + (metric.score || 0) * metric.weight, 0) / availableWeight;
+
+  // Coverage: weighted average of certainty per metric.
+  // Real data → 1.0; imputed (certaintyCoverage set) → partial; absent (null, no imputation) → 0.
+  const weightedCertainty = metrics.reduce((sum, metric) => {
+    const certainty = metric.certaintyCoverage ?? (metric.score != null ? 1 : 0);
+    return sum + metric.weight * certainty;
+  }, 0) / totalWeight;
+
   return {
     score: roundScore(weightedScore),
-    coverage: roundCoverage(availableWeight / totalWeight),
+    coverage: roundCoverage(weightedCertainty),
   };
 }
 
@@ -352,15 +384,10 @@ function getStaticWgiValues(record: ResilienceStaticCountryRecord | null): numbe
     .filter((value): value is number => value != null);
 }
 
-function getLatestBisCreditEntry(raw: unknown, countryCode: string): BisCreditEntry | null {
-  const entries: BisCreditEntry[] = Array.isArray((raw as { entries?: unknown[] } | null)?.entries)
-    ? ((raw as { entries?: BisCreditEntry[] }).entries ?? [])
-    : [];
-  const filtered = entries
-    .filter((entry) => matchesCountryIdentifier(entry.countryCode, countryCode))
-    .sort((a, b) => dateToSortableNumber((a as { date?: unknown }).date) - dateToSortableNumber((b as { date?: unknown }).date));
-  if (!filtered.length) return null;
-  return filtered[filtered.length - 1]!;
+function getImfMacroEntry(raw: unknown, countryCode: string): ImfMacroEntry | null {
+  const countries = (raw as { countries?: Record<string, ImfMacroEntry> } | null)?.countries;
+  if (!countries || typeof countries !== 'object') return null;
+  return (countries[countryCode] as ImfMacroEntry | undefined) ?? null;
 }
 
 function getCountryBisExchangeRates(raw: unknown, countryCode: string): BisExchangeRate[] {
@@ -402,14 +429,6 @@ function countTradeBarriers(raw: unknown, countryCode: string): number {
     ? ((raw as { barriers?: TradeBarrier[] }).barriers ?? [])
     : [];
   return barriers.reduce((count, item) => count + (matchesCountryIdentifier(item.notifyingCountry, countryCode) ? 1 : 0), 0);
-}
-
-function getSanctionsCountry(raw: unknown, countryCode: string): CountrySanctionsPressure | null {
-  const countries: CountrySanctionsPressure[] = Array.isArray((raw as { countries?: unknown[] } | null)?.countries)
-    ? ((raw as { countries?: CountrySanctionsPressure[] }).countries ?? [])
-    : [];
-  return countries.find((entry) =>
-    matchesCountryIdentifier(entry.countryCode, countryCode) || matchesCountryIdentifier(entry.countryName, countryCode)) ?? null;
 }
 
 function summarizeOutages(raw: unknown, countryCode: string): { total: number; major: number; partial: number } {
@@ -567,17 +586,22 @@ export async function scoreMacroFiscal(
   countryCode: string,
   reader: ResilienceSeedReader = defaultSeedReader,
 ): Promise<ResilienceDimensionScore> {
-  const [debtRaw, bisCreditRaw] = await Promise.all([
+  const [debtRaw, imfMacroRaw] = await Promise.all([
     reader(RESILIENCE_NATIONAL_DEBT_KEY),
-    reader(RESILIENCE_BIS_CREDIT_KEY),
+    reader(RESILIENCE_IMF_MACRO_KEY),
   ]);
   const debtEntry = getLatestDebtEntry(debtRaw, countryCode);
-  const bisCredit = getLatestBisCreditEntry(bisCreditRaw, countryCode);
+  const imfEntry = getImfMacroEntry(imfMacroRaw, countryCode);
 
   return weightedBlend([
     { score: extractMetric(debtEntry, (entry) => normalizeLowerBetter(safeNum(entry.debtToGdp) ?? 200, 0, 200)), weight: 0.5 },
     { score: extractMetric(debtEntry, (entry) => normalizeLowerBetter(Math.max(0, safeNum(entry.annualGrowth) ?? 0), 0, 20)), weight: 0.2 },
-    { score: extractMetric(bisCredit, (entry) => normalizeLowerBetter(safeNum(entry.creditGdpRatio) ?? 250, 50, 250)), weight: 0.3 },
+    // IMF current account balance: surplus = better external position.
+    // Null source (seed outage) = missing data — do NOT impute.
+    // IMF covers ~185 sovereign states; country absent = micronation/territory → score null.
+    imfMacroRaw == null
+      ? { score: null, weight: 0.3 }
+      : { score: imfEntry?.currentAccountPct == null ? null : normalizeHigherBetter(Math.max(-20, Math.min(imfEntry.currentAccountPct, 20)), -20, 20), weight: 0.3 },
   ]);
 }
 
@@ -585,7 +609,10 @@ export async function scoreCurrencyExternal(
   countryCode: string,
   reader: ResilienceSeedReader = defaultSeedReader,
 ): Promise<ResilienceDimensionScore> {
-  const bisExchangeRaw = await reader(RESILIENCE_BIS_EXCHANGE_KEY);
+  const [bisExchangeRaw, imfMacroRaw] = await Promise.all([
+    reader(RESILIENCE_BIS_EXCHANGE_KEY),
+    reader(RESILIENCE_IMF_MACRO_KEY),
+  ]);
   const countryRates = getCountryBisExchangeRates(bisExchangeRaw, countryCode);
   const latest = countryRates[countryRates.length - 1] ?? null;
   const volSource = countryRates
@@ -597,6 +624,22 @@ export async function scoreCurrencyExternal(
     : volSource.length === 1
       ? Math.abs(volSource[0]!) * Math.sqrt(12)
       : null;
+
+  // Country not in BIS EER (curated ~40 economies), or BIS seed is down entirely.
+  // Try IMF CPI inflation as a currency stability proxy (covers ~185 countries) in both cases.
+  // Only fall back to imputation when both BIS and IMF macro seeds are unavailable.
+  if (countryRates.length === 0) {
+    const imfEntry = getImfMacroEntry(imfMacroRaw, countryCode);
+    if (imfMacroRaw != null && imfEntry?.inflationPct != null) {
+      // Cap at 100% — hyperinflation is extreme instability regardless of magnitude.
+      // coverage=0.45 when BIS is loaded (country absent from curated list);
+      // coverage=0.35 when BIS itself is down (proxy-only, primary source unavailable).
+      const coverage = bisExchangeRaw != null ? 0.45 : 0.35;
+      return { score: normalizeLowerBetter(Math.min(imfEntry.inflationPct, 100), 0, 100), coverage };
+    }
+    if (bisExchangeRaw == null) return { score: 50, coverage: 0 }; // both sources null
+    return { score: IMPUTE.bisEer.score, coverage: IMPUTE.bisEer.certaintyCoverage }; // BIS loaded, country absent, no IMF
+  }
 
   return weightedBlend([
     { score: vol == null ? null : normalizeLowerBetter(vol, 0, 50), weight: 0.7 },
@@ -614,20 +657,24 @@ export async function scoreTradeSanctions(
     reader(RESILIENCE_TRADE_BARRIERS_KEY),
   ]);
 
-  const sanctions = getSanctionsCountry(sanctionsRaw, countryCode);
-  const sanctionsPressure = sanctions
-    ? (safeNum(sanctions.entryCount) ?? 0)
-      + (safeNum(sanctions.newEntryCount) ?? 0) * 5
-      + (safeNum(sanctions.vesselCount) ?? 0) * 2
-      + (safeNum(sanctions.aircraftCount) ?? 0) * 2
-    : null;
+  // sanctions:country-counts:v1 is a plain ISO2→entryCount map covering ALL countries.
+  const sanctionsCounts = sanctionsRaw as Record<string, number> | null;
+  const sanctionCount = sanctionsCounts != null ? (sanctionsCounts[countryCode] ?? 0) : null;
   const restrictionCount = countTradeRestrictions(restrictionsRaw, countryCode);
   const barrierCount = countTradeBarriers(barriersRaw, countryCode);
 
   return weightedBlend([
-    { score: sanctionsPressure == null ? null : normalizeLowerBetter(sanctionsPressure, 0, 500), weight: 0.55 },
-    { score: restrictionsRaw != null ? normalizeLowerBetter(restrictionCount, 0, 30) : null, weight: 0.25 },
-    { score: barriersRaw != null ? normalizeLowerBetter(barrierCount, 0, 40) : null, weight: 0.2 },
+    // Full country-counts key covers all countries; absent means the seeder failed, not crisis-free.
+    sanctionsRaw == null
+      ? { score: null, weight: 0.55 }
+      : { score: normalizeSanctionCount(sanctionCount ?? 0), weight: 0.55 },
+    // WTO null source = seed outage; loaded source with zero restrictions = real data (score 100).
+    restrictionsRaw == null
+      ? { score: null, weight: 0.25 }
+      : { score: normalizeLowerBetter(restrictionCount, 0, 30), weight: 0.25 },
+    barriersRaw == null
+      ? { score: null, weight: 0.2 }
+      : { score: normalizeLowerBetter(barrierCount, 0, 40), weight: 0.2 },
   ]);
 }
 
@@ -792,12 +839,14 @@ export async function scoreBorderSecurity(
 
   return weightedBlend([
     { score: ucdpRaw != null ? normalizeLowerBetter(conflictMetric, 0, 30) : null, weight: 0.65 },
-    {
-      score: displacementMetric == null
-        ? null
-        : normalizeLowerBetter(Math.log10(Math.max(1, displacementMetric)), 0, 7),
-      weight: 0.35,
-    },
+    // Not in UNHCR displacement registry → crisis_monitoring_absent (country is not a
+    // significant refugee source or host). Only impute if source was loaded; null source
+    // means seed outage, not country absence.
+    displacementRaw == null
+      ? { score: null, weight: 0.35 }
+      : displacementMetric == null
+        ? { score: IMPUTE.unhcrDisplacement.score, weight: 0.35, certaintyCoverage: IMPUTE.unhcrDisplacement.certaintyCoverage }
+        : { score: normalizeLowerBetter(Math.log10(Math.max(1, displacementMetric)), 0, 7), weight: 0.35 },
   ]);
 }
 
@@ -842,9 +891,24 @@ export async function scoreFoodWater(
   reader: ResilienceSeedReader = defaultSeedReader,
 ): Promise<ResilienceDimensionScore> {
   const staticRecord = await readStaticCountry(countryCode, reader);
-  const peopleInCrisis = safeNum(staticRecord?.fao?.peopleInCrisis);
-  const phase = safeNum(String(staticRecord?.fao?.phase || '').match(/\d+/)?.[0]);
+  const fao = staticRecord?.fao ?? null;
   const aquastatScore = scoreAquastatValue(staticRecord);
+
+  // IPC/HDX only tracks countries IN active food crisis. Absence means the country is not
+  // a monitored crisis case → crisis_monitoring_absent → positive signal.
+  // But only impute if the static bundle was loaded (seeder wrote fao: null explicitly).
+  // A missing resilience:static:{ISO2} key means the seeder never ran — not crisis-free.
+  if (fao == null) {
+    return weightedBlend([
+      staticRecord == null
+        ? { score: null, weight: 0.6 }
+        : { score: IMPUTE.ipcFood.score, weight: 0.6, certaintyCoverage: IMPUTE.ipcFood.certaintyCoverage },
+      { score: aquastatScore, weight: 0.4 },
+    ]);
+  }
+
+  const peopleInCrisis = safeNum(fao.peopleInCrisis);
+  const phase = safeNum(String(fao.phase || '').match(/\d+/)?.[0]);
 
   return weightedBlend([
     {

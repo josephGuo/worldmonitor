@@ -12,12 +12,40 @@ import {
   countryRedisKey,
   createCountryResolvers,
   finalizeCountryPayloads,
+  gpiUrlForYear,
+  resolveGpiCsv,
+  buildAquastatWbMap,
   parseEurostatEnergyDataset,
+  parseFsinRows,
+  parseGpiRows,
   parseRsfRanking,
   recoverFailedDatasets,
   resolveIso2,
   shouldSkipSeedYear,
 } from '../scripts/seed-resilience-static.mjs';
+
+// Helpers for inline CSV construction
+function csvRows(header, rows) {
+  return [header, ...rows].join('\n');
+}
+
+// Builds a minimal GPI CSV with `count` real ISO3 codes so parseGpiRows clears the 50-country guard.
+// Uses a fixed list of well-known ISO3 codes; the resolver falls back to built-in maps.
+const GPI_ISO3_POOL = [
+  'NOR','USA','YEM','DEU','FRA','GBR','JPN','CHN','IND','BRA',
+  'ZAF','NGA','KEN','EGY','SAU','IRN','IRQ','AFG','SYR','SDN',
+  'ETH','SOM','COD','MMR','VEN','COL','MEX','ARG','CHL','PER',
+  'TUR','UKR','RUS','POL','SWE','DNK','FIN','NLD','BEL','CHE',
+  'AUT','CZE','HUN','ROU','BGR','GRC','PRT','ESP','ITA','CAN',
+  'AUS','NZL','THA','IDN','PHL','VNM','BGD','PAK','LKA','MAR',
+];
+function makeGpiCsv(count = 55) {
+  const header = 'code,rank,index_over,year';
+  const rows = GPI_ISO3_POOL.slice(0, count).map((iso3, i) =>
+    `${iso3},${i + 1},${(1.1 + i * 0.03).toFixed(3)},2025`,
+  );
+  return csvRows(header, rows);
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
@@ -43,6 +71,144 @@ describe('resilience static seed country normalization', () => {
     assert.equal(resolveIso2({ iso3: 'YEM' }, resolvers), 'YE');
     assert.equal(resolveIso2({ name: 'Cape Verde' }, resolvers), 'CV');
     assert.equal(resolveIso2({ name: 'OECS' }, resolvers), null);
+  });
+});
+
+describe('resilience static seed CSV parsers', () => {
+  describe('parseGpiRows', () => {
+    it('parses GPI CSV with standard columns and uses row year field', () => {
+      const csv = makeGpiCsv();
+      const result = parseGpiRows(csv, 2025);
+      assert.ok(result.size >= 50, `expected >=50 entries, got ${result.size}`);
+      const no = result.get('NO');
+      assert.ok(no != null, 'NO should resolve from NOR');
+      assert.equal(no.source, 'gpi-voh');
+      assert.equal(no.year, 2025);
+      assert.ok(no.score > 0);
+      assert.ok(no.rank > 0);
+    });
+
+    it('falls back to resolvedYear when row.year is absent', () => {
+      const header = 'code,rank,index_over';
+      const rows = GPI_ISO3_POOL.slice(0, 55).map((iso3, i) => `${iso3},${i + 1},${(1.1 + i * 0.03).toFixed(3)}`);
+      const csv = csvRows(header, rows);
+      const result = parseGpiRows(csv, 2024);
+      assert.equal(result.get('NO')?.year, 2024, 'should use resolvedYear when row.year is missing');
+    });
+
+    it('throws when fewer than 50 valid countries parse', () => {
+      const csv = csvRows('code,rank,index_over,year', ['NOR,1,1.100,2025', 'USA,2,1.200,2025']);
+      assert.throws(() => parseGpiRows(csv, 2025), /only 2 countries/);
+    });
+
+    it('gpiUrlForYear produces the expected path', () => {
+      const url = gpiUrlForYear(2025);
+      assert.match(url, /visionofhumanity\.org/);
+      assert.match(url, /\/2025\/06\/GPI_2025_2025\.csv/);
+    });
+
+    it('resolveGpiCsv falls back to prior year on 404, without proxying the 404 URL', async () => {
+      const notFound = Object.assign(new Error('HTTP 404'), { status: 404 });
+      const fallbackCsv = makeGpiCsv();
+      const proxiedUrls = [];
+      const directFetch = async (url) => {
+        if (url.includes('2026')) throw notFound;
+        return { text: fallbackCsv };
+      };
+      const retryFetch = async (url) => {
+        proxiedUrls.push(url);
+        return { text: fallbackCsv };
+      };
+      const { resolvedYear, csvText } = await resolveGpiCsv(2026, { directFetch, retryFetch });
+      assert.equal(resolvedYear, 2025, '404 on current year must resolve to prior year');
+      assert.equal(csvText, fallbackCsv);
+      assert.ok(proxiedUrls.every(url => !url.includes('2026')), '2026 URL must never be sent to proxy/retry — only 2025 fallback may use it');
+    });
+
+    it('resolveGpiCsv propagates non-404 errors without falling back', async () => {
+      const serverError = Object.assign(new Error('HTTP 503'), { status: 503 });
+      const directFetch = async () => { throw serverError; };
+      await assert.rejects(
+        () => resolveGpiCsv(2026, { directFetch }),
+        (err) => err.status === 503,
+        'non-404 HTTP errors must propagate as dataset failures, not swallowed as missing year',
+      );
+    });
+  });
+
+  describe('parseFsinRows', () => {
+    it('parses new-schema column names (Phase 3+ #) and outputs peopleInCrisis + phase', () => {
+      const csv = csvRows(
+        'Country (ISO3),Phase 3+ #,Phase 4 #,Phase 5 #,Period',
+        ['YEM,13500000,6200000,161000,2025-03'],
+      );
+      const result = parseFsinRows(csv);
+      const ye = result.get('YE');
+      assert.ok(ye != null, 'YE should be present');
+      // phase3plus (13.5M) maps to peopleInCrisis — this is what scoreFoodWater() reads.
+      assert.equal(ye.peopleInCrisis, 13500000);
+      assert.equal(ye.phase, 'IPC Phase 5', 'Phase 5 present → highest active phase is 5');
+      assert.equal(ye.year, 2025);
+      assert.equal(ye.source, 'hdx-ipc');
+    });
+
+    it('parses legacy-schema column names (Phase 3+ number current)', () => {
+      const csv = csvRows(
+        'Country,Phase 3+ number current,Phase 4 number current,Phase 5 number current,reference_year',
+        ['SOM,7800000,3100000,0,2024'],
+      );
+      const result = parseFsinRows(csv);
+      const so = result.get('SO');
+      assert.ok(so != null, 'SO should be present');
+      assert.equal(so.peopleInCrisis, 7800000);
+      assert.equal(so.phase, 'IPC Phase 4', 'Phase 5=0 → highest active phase is 4');
+      assert.equal(so.year, 2024);
+    });
+
+    it('skips rows with zero or null phase values (IPC only lists active crises)', () => {
+      // HDX IPC data only includes countries with active food crises.
+      // Empty cells (→ safeNum('')=0) and missing columns should both be skipped.
+      const csv = csvRows(
+        'Country (ISO3),Phase 3+ #,Phase 4 #,Phase 5 #,Period',
+        ['NOR,0,0,0,2025-01', 'YEM,13500000,6200000,161000,2025-03'],
+      );
+      const result = parseFsinRows(csv);
+      assert.ok(!result.has('NO'), 'NO should be skipped (all phases are zero)');
+      assert.ok(result.has('YE'));
+    });
+
+    it('throws when no usable rows parsed', () => {
+      const csv = csvRows('Country (ISO3),Phase 3+ #', ['UNKNOWN,100']);
+      assert.throws(() => parseFsinRows(csv), /no usable rows/);
+    });
+  });
+
+  describe('buildAquastatWbMap', () => {
+    it('produces the { source, value, indicator, year } shape scoreAquastatValue() reads', () => {
+      const input = new Map([
+        ['NO', { value: 5.2, year: 2022 }],
+        ['YE', { value: 99.1, year: 2021 }],
+      ]);
+      const result = buildAquastatWbMap(input);
+      const no = result.get('NO');
+      assert.ok(no != null);
+      assert.equal(no.source, 'worldbank-aquastat');
+      assert.equal(no.value, 5.2);
+      assert.equal(no.indicator, 'water stress');
+      assert.equal(no.year, 2022);
+      assert.equal(result.get('YE')?.value, 99.1);
+    });
+
+    it('throws when input map is empty', () => {
+      assert.throws(() => buildAquastatWbMap(new Map()), /no usable rows/);
+    });
+
+    it('output indicator keyword matches scoreAquastatValue stress branch', () => {
+      // scoreAquastatValue() checks indicator.includes('stress') -> normalizeLowerBetter(0,100)
+      // If this keyword changes the scorer breaks silently. Pin it here.
+      const result = buildAquastatWbMap(new Map([['DE', { value: 10, year: 2022 }]]));
+      assert.ok(result.get('DE')?.indicator?.includes('stress'), 'indicator must include "stress" to route correctly in scoreAquastatValue()');
+    });
   });
 });
 
@@ -180,8 +346,12 @@ describe('resilience static seed payload assembly', () => {
 });
 
 describe('recoverFailedDatasets', () => {
-  const existingFao = { source: 'hdx-ipc', year: 2025, phase3plus: 4_500_000, phase4: 1_200_000, phase5: 300_000 };
-  const existingSo = { source: 'hdx-ipc', year: 2025, phase3plus: 3_000_000, phase4: null, phase5: null };
+  // Fixtures use the post-fix schema: peopleInCrisis + phase.
+  // These are the fields scoreFoodWater() reads from staticRecord.fao.
+  const existingFao = { source: 'hdx-ipc', year: 2025, peopleInCrisis: 4_500_000, phase: 'IPC Phase 5' };
+  const existingSo  = { source: 'hdx-ipc', year: 2025, peopleInCrisis: 3_000_000, phase: 'IPC Phase 3' };
+  // Fixture uses the WB shape that scoreAquastatValue() reads: { value, indicator, year }.
+  const existingAquastat = { source: 'worldbank-aquastat', value: 75.3, indicator: 'water stress', year: 2022 };
 
   function makeDatasetMaps(faoOverride = new Map()) {
     return {
@@ -202,10 +372,14 @@ describe('recoverFailedDatasets', () => {
     });
     assert.deepEqual(maps.fao.get('YE'), existingFao, 'YE fao should be recovered');
     assert.deepEqual(maps.fao.get('SO'), existingSo, 'SO fao should be recovered');
+    // Verify recovered shape has the fields scoreFoodWater() reads.
+    // If this fails, a FSIN failover would silently produce null for the crisis sub-metric.
+    assert.ok(typeof maps.fao.get('YE').peopleInCrisis === 'number', 'recovered fao must have peopleInCrisis for scoreFoodWater()');
+    assert.ok(typeof maps.fao.get('YE').phase === 'string', 'recovered fao must have phase string for scoreFoodWater()');
   });
 
   it('does not overwrite a partial fao success with prior data', async () => {
-    const freshFao = { source: 'hdx-ipc', year: 2026, phase3plus: 5_000_000, phase4: null, phase5: null };
+    const freshFao = { source: 'hdx-ipc', year: 2026, peopleInCrisis: 5_000_000, phase: 'IPC Phase 3' };
     const maps = makeDatasetMaps(new Map([['YE', freshFao]]));
     await recoverFailedDatasets(maps, ['fao'], {
       readIndex: async () => ({ countries: ['YE'] }),
@@ -243,6 +417,20 @@ describe('recoverFailedDatasets', () => {
       }),
       /Redis pipeline read also failed.*timeout/,
     );
+  });
+
+  it('recovers aquastat with WB shape { value, indicator, year } that scoreAquastatValue() reads', async () => {
+    const maps = makeDatasetMaps();
+    await recoverFailedDatasets(maps, ['aquastat'], {
+      readIndex: async () => ({ countries: ['DE'] }),
+      readPipeline: async () => [
+        { result: JSON.stringify({ aquastat: existingAquastat }) },
+      ],
+    });
+    const de = maps.aquastat.get('DE');
+    assert.deepEqual(de, existingAquastat, 'DE aquastat should be recovered');
+    assert.ok(typeof de.value === 'number', 'recovered aquastat must have numeric value for scoreAquastatValue()');
+    assert.ok(typeof de.indicator === 'string', 'recovered aquastat must have indicator string for scoreAquastatValue()');
   });
 });
 
