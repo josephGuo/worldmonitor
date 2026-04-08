@@ -31,6 +31,7 @@ export const RESILIENCE_FIXTURES: FixtureMap = {
     fao: { peopleInCrisis: 10, phase: 'IPC Phase 1', year: 2025 },
     aquastat: { indicator: 'Renewable water availability', value: 4000, year: 2024 },
     iea: { energyImportDependency: { value: 15, year: 2024, source: 'IEA' } },
+    tradeToGdp: { source: 'worldbank', tradeToGdpPct: 70, year: 2023 },
   },
   'resilience:static:US': {
     wgi: {
@@ -62,6 +63,7 @@ export const RESILIENCE_FIXTURES: FixtureMap = {
     fao: { peopleInCrisis: 5000, phase: 'IPC Phase 2', year: 2025 },
     aquastat: { indicator: 'Renewable water availability', value: 1500, year: 2024 },
     iea: { energyImportDependency: { value: 25, year: 2024, source: 'IEA' } },
+    tradeToGdp: { source: 'worldbank', tradeToGdpPct: 25, year: 2023 },
   },
   'resilience:static:YE': {
     wgi: {
@@ -93,6 +95,7 @@ export const RESILIENCE_FIXTURES: FixtureMap = {
     fao: { peopleInCrisis: 2_000_000, phase: 'IPC Phase 4', year: 2025 },
     aquastat: { indicator: 'Water stress', value: 85, year: 2024 },
     iea: { energyImportDependency: { value: 95, year: 2024, source: 'IEA' } },
+    tradeToGdp: { source: 'worldbank', tradeToGdpPct: 30, year: 2023 },
   },
   'energy:mix:v1:NO': {
     iso2: 'NO',
@@ -188,6 +191,7 @@ export const RESILIENCE_FIXTURES: FixtureMap = {
       { affectedCountry: 'Yemen', status: 'PLANNED' },
       { affectedCountry: 'Yemen', status: 'PLANNED' },
     ],
+    _reporterCountries: ['US', 'CN', 'DE', 'JP', 'GB', 'IN', 'BR', 'RU', 'KR', 'AU', 'CA', 'MX', 'FR', 'IT', 'NL'],
   },
   'trade:barriers:v1:tariff-gap:50': {
     barriers: [
@@ -201,6 +205,7 @@ export const RESILIENCE_FIXTURES: FixtureMap = {
       { notifyingCountry: 'Yemen' },
       { notifyingCountry: 'Yemen' },
     ],
+    _reporterCountries: ['US', 'CN', 'DE', 'JP', 'GB', 'IN', 'BR', 'RU', 'KR', 'AU', 'CA', 'MX', 'FR', 'IT', 'NL'],
   },
   'cyber:threats:v2': {
     threats: [
@@ -292,9 +297,12 @@ export const RESILIENCE_FIXTURES: FixtureMap = {
     ],
   },
   'news:threat:summary:v1': {
-    NO: { critical: 0, high: 0, medium: 0, low: 1 },
-    US: { critical: 0, high: 2, medium: 4, low: 2 },
-    YE: { critical: 4, high: 6, medium: 5, low: 1 },
+    byCountry: {
+      NO: { critical: 0, high: 0, medium: 0, low: 1 },
+      US: { critical: 0, high: 2, medium: 4, low: 2 },
+      YE: { critical: 4, high: 6, medium: 5, low: 1 },
+    },
+    generatedAt: '2026-04-06T00:00:00.000Z',
   },
   // Lebanon: used to test that null IEA (Eurostat EU-only) + crisis-level electricity
   // consumption produces an energy score < 50, not artificially high (~89 pre-fix).
@@ -328,6 +336,7 @@ export const RESILIENCE_FIXTURES: FixtureMap = {
     fao: { peopleInCrisis: 1_500_000, phase: 'IPC Phase 3', year: 2025 },
     aquastat: { indicator: 'Water stress', value: 72, year: 2024 },
     iea: null, // Eurostat is EU-only — Lebanon absent → energy import dependency unknown
+    tradeToGdp: { source: 'worldbank', tradeToGdpPct: 95, year: 2023 },
   },
   'energy:mix:v1:LB': {
     iso2: 'LB',
@@ -349,7 +358,7 @@ export const RESILIENCE_FIXTURES: FixtureMap = {
     failedDatasets: [],
     seedYear: 2025,
     seededAt: '2026-04-03T00:00:00.000Z',
-    sourceVersion: 'resilience-static-v1',
+    sourceVersion: 'resilience-static-v2',
   },
 };
 

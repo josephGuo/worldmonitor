@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   RESILIENCE_DIMENSION_ORDER,
+  RESILIENCE_DIMENSION_TYPES,
   scoreAllDimensions,
   scoreBorderSecurity,
   scoreCurrencyExternal,
@@ -21,7 +22,7 @@ import {
 import { RESILIENCE_FIXTURES, fixtureReader } from './helpers/resilience-fixtures.mts';
 
 async function scoreTriple(
-  scorer: (countryCode: string, reader?: (key: string) => Promise<unknown | null>) => Promise<{ score: number; coverage: number }>,
+  scorer: (countryCode: string, reader?: (key: string) => Promise<unknown | null>) => Promise<{ score: number; coverage: number; observedWeight: number; imputedWeight: number }>,
 ) {
   const [no, us, ye] = await Promise.all([
     scorer('NO', fixtureReader),
@@ -166,11 +167,52 @@ describe('resilience dimension scorers', () => {
   });
 
   it('scoreTradeSanctions: seed outage (null source) does not impute as country-absent', async () => {
-    // All sources null = seed outage. Must NOT trigger country-absent imputation.
     const reader = async (_key: string): Promise<unknown | null> => null;
     const score = await scoreTradeSanctions('FI', reader);
     assert.equal(score.coverage, 0, `seed outage must give coverage=0, got ${score.coverage}`);
     assert.equal(score.score, 0, `seed outage must give score=0, got ${score.score}`);
+  });
+
+  it('scoreTradeSanctions: reporter-set country with zero restrictions scores 100 (real data)', async () => {
+    const reporterSet = ['US', 'CN', 'DE', 'JP', 'GB', 'IN', 'BR', 'RU', 'KR', 'AU', 'CA', 'MX', 'FR', 'IT', 'NL'];
+    const reader = async (key: string): Promise<unknown | null> => {
+      if (key === 'sanctions:country-counts:v1') return {};
+      if (key === 'trade:restrictions:v1:tariff-overview:50') return { restrictions: [], _reporterCountries: reporterSet };
+      if (key === 'trade:barriers:v1:tariff-gap:50') return { barriers: [], _reporterCountries: reporterSet };
+      return null;
+    };
+    const score = await scoreTradeSanctions('US', reader);
+    assert.equal(score.score, 100, 'reporter with 0 restrictions must score 100 (genuine zero)');
+    assert.equal(score.coverage, 1, 'reporter-set country with loaded data → full coverage');
+  });
+
+  it('scoreTradeSanctions: non-reporter country gets IMPUTE.wtoData (blended score=82, coverage=0.73)', async () => {
+    const reporterSet = ['US', 'CN', 'DE', 'JP', 'GB', 'IN', 'BR', 'RU', 'KR', 'AU', 'CA', 'MX', 'FR', 'IT', 'NL'];
+    const reader = async (key: string): Promise<unknown | null> => {
+      if (key === 'sanctions:country-counts:v1') return {};
+      if (key === 'trade:restrictions:v1:tariff-overview:50') return { restrictions: [], _reporterCountries: reporterSet };
+      if (key === 'trade:barriers:v1:tariff-gap:50') return { barriers: [], _reporterCountries: reporterSet };
+      return null;
+    };
+    const score = await scoreTradeSanctions('BF', reader);
+    // BF (Burkina Faso) not in reporter set: sanctions=100 (0 designations, weight 0.55),
+    // restrictions=60 (imputed, weight 0.25, cc=0.4), barriers=60 (imputed, weight 0.20, cc=0.4).
+    // Blended score: (100*0.55 + 60*0.25 + 60*0.20) / 1.0 = 82
+    assert.equal(score.score, 82, 'non-reporter blended with sanctions=100 and imputed WTO=60');
+    // Coverage: (1.0*0.55 + 0.4*0.25 + 0.4*0.20) / 1.0 = 0.73
+    assert.equal(score.coverage, 0.73, 'non-reporter coverage reflects imputed WTO metrics');
+  });
+
+  it('scoreTradeSanctions: WTO seed outage returns null for both trade metrics', async () => {
+    const reader = async (key: string): Promise<unknown | null> => {
+      if (key === 'sanctions:country-counts:v1') return { US: 10 };
+      return null;
+    };
+    const score = await scoreTradeSanctions('US', reader);
+    // Only sanctions loaded (weight 0.55). WTO restrictions + barriers null = seed outage.
+    assert.ok(score.score > 0, 'sanctions data alone produces non-zero score');
+    assert.ok(score.coverage > 0.5 && score.coverage < 0.6,
+      `coverage should be ~0.55 (only sanctions loaded), got ${score.coverage}`);
   });
 
   it('scoreCurrencyExternal: non-BIS country with no IMF data falls back to curated_list_absent (score 50)', async () => {
@@ -319,6 +361,74 @@ describe('resilience dimension scorers', () => {
       `seed outage must not inflate coverage beyond ucdp weight, got ${score.coverage}`);
   });
 
+  it('scoreCyberDigital: country with zero threats in loaded feed gets null, not 100', async () => {
+    const reader = async (key: string): Promise<unknown | null> => {
+      if (key === 'cyber:threats:v2') return { threats: [{ country: 'United States', severity: 'CRITICALITY_LEVEL_HIGH' }] };
+      if (key === 'infra:outages:v1') return { outages: [] };
+      if (key === 'intelligence:gpsjam:v2') return { hexes: [] };
+      return null;
+    };
+    const score = await scoreCyberDigital('FI', reader);
+    assert.equal(score.score, 0, 'zero events in all three loaded feeds must yield score=0 (not 100)');
+    assert.equal(score.coverage, 0, 'zero events in all three loaded feeds must yield coverage=0');
+  });
+
+  it('scoreCyberDigital: country with real threats scores normally', async () => {
+    const reader = async (key: string): Promise<unknown | null> => {
+      if (key === 'cyber:threats:v2') return { threats: [
+        { country: 'Finland', severity: 'CRITICALITY_LEVEL_HIGH' },
+        { country: 'Finland', severity: 'CRITICALITY_LEVEL_MEDIUM' },
+      ] };
+      if (key === 'infra:outages:v1') return { outages: [{ countryCode: 'FI', severity: 'OUTAGE_SEVERITY_PARTIAL' }] };
+      if (key === 'intelligence:gpsjam:v2') return { hexes: [] };
+      return null;
+    };
+    const score = await scoreCyberDigital('FI', reader);
+    assert.ok(score.score > 0, `country with real threats must have score > 0, got ${score.score}`);
+    assert.ok(score.score < 100, `country with real threats must have score < 100, got ${score.score}`);
+    assert.ok(score.coverage > 0, `coverage should be > 0 with real data, got ${score.coverage}`);
+  });
+
+  it('scoreInformationCognitive: correctly unwraps news:threat:summary:v1 { byCountry } envelope', async () => {
+    const reader = async (key: string): Promise<unknown | null> => {
+      if (key === 'resilience:static:US') return RESILIENCE_FIXTURES['resilience:static:US'];
+      if (key === 'intelligence:social:reddit:v1') return RESILIENCE_FIXTURES['intelligence:social:reddit:v1'];
+      if (key === 'news:threat:summary:v1') return {
+        byCountry: { US: { critical: 1, high: 3, medium: 2, low: 1 } },
+        generatedAt: '2026-04-06T00:00:00.000Z',
+      };
+      return null;
+    };
+    const score = await scoreInformationCognitive('US', reader);
+    assert.ok(score.score > 0, `should produce a score with wrapped payload, got ${score.score}`);
+    assert.ok(score.coverage > 0, `should have coverage with threat data present, got ${score.coverage}`);
+  });
+
+  it('scoreInformationCognitive: zero news threats in loaded feed gets null', async () => {
+    const reader = async (key: string): Promise<unknown | null> => {
+      if (key === 'resilience:static:XX') return { rsf: { score: 80, rank: 20, year: 2025 } };
+      if (key === 'intelligence:social:reddit:v1') return { posts: [] };
+      if (key === 'news:threat:summary:v1') return {
+        byCountry: { US: { critical: 1, high: 2, medium: 3, low: 1 } },
+        generatedAt: '2026-04-06T00:00:00.000Z',
+      };
+      return null;
+    };
+    const score = await scoreInformationCognitive('XX', reader);
+    assert.ok(score.score === 80, `RSF only (no threat, no velocity), got ${score.score}`);
+  });
+
+  it('scoreBorderSecurity: zero UCDP events still scores (UCDP is global registry)', async () => {
+    const reader = async (key: string): Promise<unknown | null> => {
+      if (key === 'conflict:ucdp-events:v1') return { events: [] };
+      if (key.startsWith('displacement:summary:v1:')) return { summary: { countries: [] } };
+      return null;
+    };
+    const score = await scoreBorderSecurity('FI', reader);
+    assert.ok(score.coverage > 0, `UCDP loaded with zero events must still contribute to coverage, got ${score.coverage}`);
+    assert.ok(score.score > 50, `zero UCDP events = peaceful country, should score high, got ${score.score}`);
+  });
+
   it('memoizes repeated seed reads inside scoreAllDimensions', async () => {
     const hits = new Map<string, number>();
     const countingReader = async (key: string) => {
@@ -331,5 +441,167 @@ describe('resilience dimension scorers', () => {
     for (const [key, count] of hits.entries()) {
       assert.equal(count, 1, `expected ${key} to be read once, got ${count}`);
     }
+  });
+
+  it('weightedBlend returns observedWeight and imputedWeight', async () => {
+    const result = await scoreMacroFiscal('US', fixtureReader);
+    assert.ok(typeof result.observedWeight === 'number', 'observedWeight must be a number');
+    assert.ok(typeof result.imputedWeight === 'number', 'imputedWeight must be a number');
+    assert.ok(result.observedWeight >= 0, 'observedWeight must be >= 0');
+    assert.ok(result.imputedWeight >= 0, 'imputedWeight must be >= 0');
+  });
+
+  it('imputationShare = 0 when all data is real (US has full IMF + debt data)', async () => {
+    const dimensions = await scoreAllDimensions('US', fixtureReader);
+    const totalImputed = Object.values(dimensions).reduce((s, d) => s + d.imputedWeight, 0);
+    const totalObserved = Object.values(dimensions).reduce((s, d) => s + d.observedWeight, 0);
+    const imputationShare = (totalImputed + totalObserved) > 0
+      ? totalImputed / (totalImputed + totalObserved)
+      : 0;
+    assert.ok(imputationShare < 0.15, `US imputationShare should be low with rich data, got ${imputationShare.toFixed(4)}`);
+  });
+
+  it('imputationShare > 0 when crisis_monitoring_absent imputation is active', async () => {
+    const reader = async (key: string): Promise<unknown | null> => {
+      if (key === 'resilience:static:XX') return {
+        wgi: { indicators: { VA: { value: 1.5, year: 2025 } } },
+        fao: null,
+        aquastat: null,
+      };
+      return null;
+    };
+    const result = await scoreFoodWater('XX', reader);
+    assert.ok(result.imputedWeight > 0, `crisis_monitoring_absent imputation must produce imputedWeight > 0, got ${result.imputedWeight}`);
+    assert.equal(result.observedWeight, 0, 'no real data available, observedWeight should be 0');
+  });
+
+  it('every dimension has a type tag (baseline/stress/mixed)', () => {
+    for (const dimId of RESILIENCE_DIMENSION_ORDER) {
+      assert.ok(RESILIENCE_DIMENSION_TYPES[dimId], `${dimId} missing type tag`);
+      assert.ok(
+        ['baseline', 'stress', 'mixed'].includes(RESILIENCE_DIMENSION_TYPES[dimId]),
+        `${dimId} has invalid type`,
+      );
+    }
+  });
+
+  it('scoreLogisticsSupply: high trade/GDP country feels more shipping stress than autarky', async () => {
+    const makeReader = (tradeToGdpPct: number) => async (key: string): Promise<unknown | null> => {
+      if (key === 'resilience:static:XX') return {
+        infrastructure: { indicators: { 'IS.ROD.PAVE.ZS': { value: 80, year: 2025 } } },
+        tradeToGdp: { tradeToGdpPct, year: 2023, source: 'worldbank' },
+      };
+      if (key === 'supply_chain:shipping_stress:v1') return { stressScore: 70 };
+      if (key === 'supply_chain:transit-summaries:v1') return { summaries: { suez: { disruptionPct: 10, incidentCount7d: 5 } } };
+      return null;
+    };
+    const openEconomy = await scoreLogisticsSupply('XX', makeReader(100));
+    const autarky = await scoreLogisticsSupply('XX', makeReader(10));
+    assert.ok(openEconomy.score < autarky.score,
+      `Open economy (trade/GDP=100%, score=${openEconomy.score}) should score lower than autarky (trade/GDP=10%, score=${autarky.score}) under shipping stress`);
+  });
+
+  it('scoreLogisticsSupply: missing tradeToGdp defaults to 0.5 exposure factor', async () => {
+    const withTrade25 = async (key: string): Promise<unknown | null> => {
+      if (key === 'resilience:static:XX') return {
+        infrastructure: { indicators: { 'IS.ROD.PAVE.ZS': { value: 80, year: 2025 } } },
+        tradeToGdp: { tradeToGdpPct: 25, year: 2023, source: 'worldbank' },
+      };
+      if (key === 'supply_chain:shipping_stress:v1') return { stressScore: 70 };
+      if (key === 'supply_chain:transit-summaries:v1') return { summaries: { suez: { disruptionPct: 10, incidentCount7d: 5 } } };
+      return null;
+    };
+    const withoutTrade = async (key: string): Promise<unknown | null> => {
+      if (key === 'resilience:static:XX') return {
+        infrastructure: { indicators: { 'IS.ROD.PAVE.ZS': { value: 80, year: 2025 } } },
+      };
+      if (key === 'supply_chain:shipping_stress:v1') return { stressScore: 70 };
+      if (key === 'supply_chain:transit-summaries:v1') return { summaries: { suez: { disruptionPct: 10, incidentCount7d: 5 } } };
+      return null;
+    };
+    const known = await scoreLogisticsSupply('XX', withTrade25);
+    const unknown = await scoreLogisticsSupply('XX', withoutTrade);
+    assert.equal(known.score, unknown.score,
+      `trade/GDP=25% gives exposure=0.5 which equals the default 0.5, so scores should match`);
+  });
+
+  it('scoreEnergy: high import dependency country feels more energy price stress', async () => {
+    const makeReader = (importDep: number) => async (key: string): Promise<unknown | null> => {
+      if (key === 'resilience:static:XX') return {
+        iea: { energyImportDependency: { value: importDep, year: 2024, source: 'IEA' } },
+        infrastructure: { indicators: { 'EG.USE.ELEC.KH.PC': { value: 5000, year: 2025 } } },
+      };
+      if (key === 'economic:energy:v1:all') return { prices: [{ change: 15 }, { change: -12 }, { change: 18 }] };
+      return null;
+    };
+    const highDep = await scoreEnergy('XX', makeReader(90));
+    const lowDep = await scoreEnergy('XX', makeReader(10));
+    assert.ok(highDep.score < lowDep.score,
+      `High import dependency (90%, score=${highDep.score}) should score lower than low dependency (10%, score=${lowDep.score}) under energy price stress`);
+  });
+
+  it('scoreEnergy: missing import dependency defaults to 0.5 exposure factor (between high and low)', async () => {
+    const makeReader = (iea: unknown) => async (key: string): Promise<unknown | null> => {
+      if (key === 'resilience:static:XX') return {
+        iea,
+        infrastructure: { indicators: { 'EG.USE.ELEC.KH.PC': { value: 5000, year: 2025 } } },
+      };
+      if (key === 'economic:energy:v1:all') return { prices: [{ change: 15 }, { change: -12 }, { change: 18 }] };
+      return null;
+    };
+    const highDep = await scoreEnergy('XX', makeReader({ energyImportDependency: { value: 90, year: 2024, source: 'IEA' } }));
+    const missingDep = await scoreEnergy('XX', makeReader(null));
+    const lowDep = await scoreEnergy('XX', makeReader({ energyImportDependency: { value: 5, year: 2024, source: 'IEA' } }));
+    assert.ok(missingDep.score <= lowDep.score,
+      `Missing dependency (score=${missingDep.score}) should score <= low dep (score=${lowDep.score}) since default exposure=0.5 is moderate`);
+    assert.ok(missingDep.score >= highDep.score,
+      `Missing dependency (score=${missingDep.score}) should score >= high dep (score=${highDep.score})`);
+  });
+
+  it('scoreLogisticsSupply: static bundle outage (null) excludes exposure-weighted stress metrics', async () => {
+    const outageReader = async (key: string): Promise<unknown | null> => {
+      if (key === 'resilience:static:XX') return null;
+      if (key === 'supply_chain:shipping_stress:v1') return { stressScore: 80 };
+      if (key === 'supply_chain:transit-summaries:v1') return { summaries: { suez: { disruptionPct: 15, incidentCount7d: 8 } } };
+      return null;
+    };
+    const result = await scoreLogisticsSupply('XX', outageReader);
+    assert.equal(result.score, 0, 'All metrics null when static bundle is missing and no roads data');
+    assert.equal(result.coverage, 0, 'Coverage should be 0 when all sub-metrics are null');
+
+    const withStaticReader = async (key: string): Promise<unknown | null> => {
+      if (key === 'resilience:static:XX') return {
+        infrastructure: { indicators: { 'IS.ROD.PAVE.ZS': { value: 80, year: 2025 } } },
+      };
+      if (key === 'supply_chain:shipping_stress:v1') return { stressScore: 80 };
+      if (key === 'supply_chain:transit-summaries:v1') return { summaries: { suez: { disruptionPct: 15, incidentCount7d: 8 } } };
+      return null;
+    };
+    const withStatic = await scoreLogisticsSupply('XX', withStaticReader);
+    assert.ok(withStatic.score > 0, `Static bundle present should produce non-zero score (got ${withStatic.score})`);
+    assert.ok(withStatic.coverage > result.coverage, 'Coverage should be higher with static bundle present');
+  });
+
+  it('scoreEnergy: static bundle outage (null) excludes exposure-weighted energy price stress', async () => {
+    const outageReader = async (key: string): Promise<unknown | null> => {
+      if (key === 'resilience:static:XX') return null;
+      if (key === 'economic:energy:v1:all') return { prices: [{ change: 20 }, { change: -15 }, { change: 25 }] };
+      return null;
+    };
+    const result = await scoreEnergy('XX', outageReader);
+    assert.equal(result.score, 0, 'All metrics null when static bundle is missing');
+    assert.equal(result.coverage, 0, 'Coverage should be 0 when all sub-metrics are null');
+
+    const withStaticReader = async (key: string): Promise<unknown | null> => {
+      if (key === 'resilience:static:XX') return {
+        iea: { energyImportDependency: { value: 60, year: 2024, source: 'IEA' } },
+        infrastructure: { indicators: { 'EG.USE.ELEC.KH.PC': { value: 5000, year: 2025 } } },
+      };
+      if (key === 'economic:energy:v1:all') return { prices: [{ change: 20 }, { change: -15 }, { change: 25 }] };
+      return null;
+    };
+    const withStatic = await scoreEnergy('XX', withStaticReader);
+    assert.ok(withStatic.score > 0, `Static bundle present should produce non-zero score (got ${withStatic.score})`);
+    assert.ok(withStatic.coverage > result.coverage, 'Coverage should be higher with static bundle present');
   });
 });

@@ -55,6 +55,9 @@ export const GAS_STORAGE_COUNTRIES_KEY = 'energy:gas-storage:v1:_countries';
 export const ELECTRICITY_KEY_PREFIX = 'energy:electricity:v1:';
 export const ELECTRICITY_INDEX_KEY = 'energy:electricity:v1:index';
 export const ENERGY_INTELLIGENCE_KEY = 'energy:intelligence:v1:feed';
+export const CHOKEPOINT_FLOWS_KEY = 'energy:chokepoint-flows:v1';
+export const ENERGY_SPINE_KEY_PREFIX = 'energy:spine:v1:';
+export const ENERGY_SPINE_COUNTRIES_KEY = 'energy:spine:v1:_countries';
 export const SPR_KEY = 'economic:spr:v1';
 export const REFINERY_UTIL_KEY = 'economic:refinery-util:v1';
 
@@ -143,8 +146,12 @@ export const BOOTSTRAP_CACHE_KEYS: Record<string, string> = {
   electricityPrices:   'energy:electricity:v1:index',
   jodiOil:             'energy:jodi-oil:v1:_countries',
   chokepointBaselines: 'energy:chokepoint-baselines:v1',
+  portwatchChokepointsRef: 'portwatch:chokepoints:ref:v1',
+  portwatchPortActivity: 'supply_chain:portwatch-ports:v1:_countries',
 };
 
+export const PORTWATCH_PORT_ACTIVITY_KEY_PREFIX = 'supply_chain:portwatch-ports:v1:';
+export const PORTWATCH_PORT_ACTIVITY_COUNTRIES_KEY = 'supply_chain:portwatch-ports:v1:_countries';
 
 export const BOOTSTRAP_TIERS: Record<string, 'slow' | 'fast'> = {
   bisPolicy: 'slow', bisExchange: 'slow', bisCredit: 'slow', imfMacro: 'slow',
@@ -191,4 +198,8 @@ export const BOOTSTRAP_TIERS: Record<string, 'slow' | 'fast'> = {
   electricityPrices:   'slow',
   jodiOil:             'slow',
   chokepointBaselines: 'slow',
+  portwatchChokepointsRef: 'slow',
+  portwatchPortActivity: 'slow',
 };
+
+export const PORTWATCH_CHOKEPOINTS_REF_KEY = 'portwatch:chokepoints:ref:v1';

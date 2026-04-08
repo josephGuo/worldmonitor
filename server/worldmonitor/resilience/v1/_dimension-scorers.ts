@@ -28,6 +28,8 @@ export type ResilienceDomainId =
 export interface ResilienceDimensionScore {
   score: number;
   coverage: number;
+  observedWeight: number;
+  imputedWeight: number;
 }
 
 export type ResilienceSeedReader = (key: string) => Promise<unknown | null>;
@@ -39,6 +41,10 @@ interface WeightedMetric {
   // expresses how confident we are in the imputation: 1.0 = real data, 0 = fully absent.
   // Omit for real data (auto: 1.0 if score != null, 0 if null).
   certaintyCoverage?: number;
+  // True only for synthetic absence-based scores (IMPUTATION/IMPUTE constants).
+  // Proxy data with certaintyCoverage < 1 (e.g. IMF inflation fallback) is still
+  // observed real data and should NOT set this flag.
+  imputed?: boolean;
 }
 
 // Absence of a data source is a typed signal, not an unknown gap.
@@ -75,6 +81,7 @@ interface ResilienceStaticCountryRecord {
   fao?: { peopleInCrisis?: number; phase?: string | null; year?: number | null } | null;
   aquastat?: { value?: number; indicator?: string | null; year?: number | null } | null;
   iea?: { energyImportDependency?: { value?: number; year?: number | null; source?: string } | null } | null;
+  tradeToGdp?: { tradeToGdpPct?: number; year?: number | null; source?: string } | null;
 }
 
 interface ImfMacroEntry {
@@ -228,6 +235,24 @@ export const RESILIENCE_DOMAIN_ORDER: ResilienceDomainId[] = [
   'health-food',
 ];
 
+export type ResilienceDimensionType = 'baseline' | 'stress' | 'mixed';
+
+export const RESILIENCE_DIMENSION_TYPES: Record<ResilienceDimensionId, ResilienceDimensionType> = {
+  macroFiscal: 'baseline',
+  currencyExternal: 'stress',
+  tradeSanctions: 'stress',
+  cyberDigital: 'stress',
+  logisticsSupply: 'mixed',
+  infrastructure: 'baseline',
+  energy: 'mixed',
+  governanceInstitutional: 'baseline',
+  socialCohesion: 'baseline',
+  borderSecurity: 'stress',
+  informationCognitive: 'stress',
+  healthPublicService: 'baseline',
+  foodWater: 'mixed',
+};
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -285,7 +310,7 @@ function weightedBlend(metrics: WeightedMetric[]): ResilienceDimensionScore {
   const availableWeight = available.reduce((sum, metric) => sum + metric.weight, 0);
 
   if (!availableWeight || !totalWeight) {
-    return { score: 0, coverage: 0 };
+    return { score: 0, coverage: 0, observedWeight: 0, imputedWeight: 0 };
   }
 
   const weightedScore = available.reduce((sum, metric) => sum + (metric.score || 0) * metric.weight, 0) / availableWeight;
@@ -297,9 +322,26 @@ function weightedBlend(metrics: WeightedMetric[]): ResilienceDimensionScore {
     return sum + metric.weight * certainty;
   }, 0) / totalWeight;
 
+  // Track provenance: observed (real data) vs imputed weight.
+  // Metrics with imputed=true → imputed (synthetic absence-based scores).
+  // All other non-null metrics → observed (including proxy data with certaintyCoverage < 1).
+  // Metrics with null score → neither (excluded from both).
+  let observedWeight = 0;
+  let imputedWeight = 0;
+  for (const metric of metrics) {
+    if (metric.score == null) continue;
+    if (metric.imputed === true) {
+      imputedWeight += metric.weight;
+    } else {
+      observedWeight += metric.weight;
+    }
+  }
+
   return {
     score: roundScore(weightedScore),
     coverage: roundCoverage(weightedCertainty),
+    observedWeight: Number(observedWeight.toFixed(4)),
+    imputedWeight: Number(imputedWeight.toFixed(4)),
   };
 }
 
@@ -432,6 +474,12 @@ function countTradeBarriers(raw: unknown, countryCode: string): number {
   return barriers.reduce((count, item) => count + (matchesCountryIdentifier(item.notifyingCountry, countryCode) ? 1 : 0), 0);
 }
 
+function isInWtoReporterSet(raw: unknown, countryCode: string): boolean {
+  const reporters = (raw as { _reporterCountries?: string[] } | null)?._reporterCountries;
+  if (!Array.isArray(reporters) || reporters.length === 0) return true;
+  return reporters.includes(countryCode);
+}
+
 function summarizeOutages(raw: unknown, countryCode: string): { total: number; major: number; partial: number } {
   const outages: InternetOutage[] = Array.isArray((raw as { outages?: unknown[] } | null)?.outages)
     ? ((raw as { outages?: InternetOutage[] }).outages ?? [])
@@ -528,14 +576,14 @@ function summarizeSocialVelocity(raw: unknown, countryCode: string): number {
 
 function getThreatSummaryScore(raw: unknown, countryCode: string): number | null {
   if (!raw || typeof raw !== 'object') return null;
-  const counts = (raw as Record<string, Record<string, number>>)[countryCode.toUpperCase()];
+  const byCountry = (raw as Record<string, unknown>).byCountry ?? raw; // backward-compat: old payload was a flat ISO2 map
+  const counts = (byCountry as Record<string, Record<string, number>>)?.[countryCode.toUpperCase()];
   if (!counts) return null;
-  return (
-    (safeNum(counts.critical) ?? 0) * 4
+  const score = (safeNum(counts.critical) ?? 0) * 4
     + (safeNum(counts.high) ?? 0) * 2
     + (safeNum(counts.medium) ?? 0)
-    + (safeNum(counts.low) ?? 0) * 0.5
-  );
+    + (safeNum(counts.low) ?? 0) * 0.5;
+  return score > 0 ? score : null;
 }
 
 function getTransitDisruptionScore(raw: unknown): number | null {
@@ -643,10 +691,10 @@ export async function scoreCurrencyExternal(
       // coverage=0.45 when BIS is loaded (country absent from curated list);
       // coverage=0.35 when BIS itself is down (proxy-only, primary source unavailable).
       const coverage = bisExchangeRaw != null ? 0.45 : 0.35;
-      return { score: normalizeLowerBetter(Math.min(imfEntry.inflationPct, 50), 0, 50), coverage };
+      return { score: normalizeLowerBetter(Math.min(imfEntry.inflationPct, 50), 0, 50), coverage, observedWeight: 1, imputedWeight: 0 };
     }
-    if (bisExchangeRaw == null) return { score: 50, coverage: 0 }; // both sources null
-    return { score: IMPUTE.bisEer.score, coverage: IMPUTE.bisEer.certaintyCoverage }; // BIS loaded, country absent, no IMF
+    if (bisExchangeRaw == null) return { score: 50, coverage: 0, observedWeight: 0, imputedWeight: 0 }; // both sources null
+    return { score: IMPUTE.bisEer.score, coverage: IMPUTE.bisEer.certaintyCoverage, observedWeight: 0, imputedWeight: 1 }; // BIS loaded, country absent, no IMF
   }
 
   return weightedBlend([
@@ -671,18 +719,23 @@ export async function scoreTradeSanctions(
   const restrictionCount = countTradeRestrictions(restrictionsRaw, countryCode);
   const barrierCount = countTradeBarriers(barriersRaw, countryCode);
 
+  const inRestrictionsReporterSet = isInWtoReporterSet(restrictionsRaw, countryCode);
+  const inBarriersReporterSet = isInWtoReporterSet(barriersRaw, countryCode);
+
   return weightedBlend([
-    // Full country-counts key covers all countries; absent means the seeder failed, not crisis-free.
     sanctionsRaw == null
       ? { score: null, weight: 0.55 }
       : { score: normalizeSanctionCount(sanctionCount ?? 0), weight: 0.55 },
-    // WTO null source = seed outage; loaded source with zero restrictions = real data (score 100).
     restrictionsRaw == null
       ? { score: null, weight: 0.25 }
-      : { score: normalizeLowerBetter(restrictionCount, 0, 30), weight: 0.25 },
+      : !inRestrictionsReporterSet
+        ? { score: IMPUTE.wtoData.score, weight: 0.25, certaintyCoverage: IMPUTE.wtoData.certaintyCoverage, imputed: true }
+        : { score: normalizeLowerBetter(restrictionCount, 0, 30), weight: 0.25 },
     barriersRaw == null
       ? { score: null, weight: 0.2 }
-      : { score: normalizeLowerBetter(barrierCount, 0, 40), weight: 0.2 },
+      : !inBarriersReporterSet
+        ? { score: IMPUTE.wtoData.score, weight: 0.2, certaintyCoverage: IMPUTE.wtoData.certaintyCoverage, imputed: true }
+        : { score: normalizeLowerBetter(barrierCount, 0, 40), weight: 0.2 },
   ]);
 }
 
@@ -702,9 +755,9 @@ export async function scoreCyberDigital(
   const gpsPenalty = gps.high * 3 + gps.medium;
 
   return weightedBlend([
-    { score: cyberRaw != null ? normalizeLowerBetter(cyber.weightedCount, 0, 25) : null, weight: 0.45 },
-    { score: outagesRaw != null ? normalizeLowerBetter(outagePenalty, 0, 20) : null, weight: 0.35 },
-    { score: gpsRaw != null ? normalizeLowerBetter(gpsPenalty, 0, 20) : null, weight: 0.2 },
+    { score: cyberRaw != null && cyber.weightedCount > 0 ? normalizeLowerBetter(cyber.weightedCount, 0, 25) : null, weight: 0.45 },
+    { score: outagesRaw != null && outagePenalty > 0 ? normalizeLowerBetter(outagePenalty, 0, 20) : null, weight: 0.35 },
+    { score: gpsRaw != null && gpsPenalty > 0 ? normalizeLowerBetter(gpsPenalty, 0, 20) : null, weight: 0.2 },
   ]);
 }
 
@@ -722,10 +775,16 @@ export async function scoreLogisticsSupply(
   const shippingStress = getShippingStressScore(shippingStressRaw);
   const transitStress = getTransitDisruptionScore(transitSummariesRaw);
 
+  const tradeToGdp = safeNum(staticRecord?.tradeToGdp?.tradeToGdpPct);
+  const tradeExposure = staticRecord == null ? null : (tradeToGdp != null ? Math.min(tradeToGdp / 50, 1.0) : 0.5);
+
+  const shippingScore = shippingStress == null ? null : normalizeLowerBetter(shippingStress, 0, 100);
+  const transitScore = transitStress == null ? null : normalizeLowerBetter(transitStress, 0, 30);
+
   return weightedBlend([
     { score: roadsPaved == null ? null : normalizeHigherBetter(roadsPaved, 0, 100), weight: 0.5 },
-    { score: shippingStress == null ? null : normalizeLowerBetter(shippingStress, 0, 100), weight: 0.25 },
-    { score: transitStress == null ? null : normalizeLowerBetter(transitStress, 0, 30), weight: 0.25 },
+    { score: shippingScore == null || tradeExposure == null ? null : shippingScore * tradeExposure + 100 * (1 - tradeExposure), weight: 0.25 },
+    { score: transitScore == null || tradeExposure == null ? null : transitScore * tradeExposure + 100 * (1 - tradeExposure), weight: 0.25 },
   ]);
 }
 
@@ -785,13 +844,19 @@ export async function scoreEnergy(
     ? Math.min(1, Math.max(0, (80 - storageFillPct) / 80))
     : null;
 
+  const energyExposure = staticRecord == null ? null : (dependency != null ? Math.min(Math.max(dependency / 60, 0), 1.0) : 0.5);
+  const energyStressScore = energyStress == null ? null : normalizeLowerBetter(energyStress, 0, 25);
+  const exposedEnergyStress = energyStressScore == null || energyExposure == null
+    ? null
+    : energyStressScore * energyExposure + 100 * (1 - energyExposure);
+
   return weightedBlend([
     { score: dependency             == null ? null : normalizeLowerBetter(dependency, 0, 100),              weight: 0.25 },
     { score: gasShare               == null ? null : normalizeLowerBetter(gasShare, 0, 100),                weight: 0.12 },
     { score: coalShare              == null ? null : normalizeLowerBetter(coalShare, 0, 100),               weight: 0.08 },
     { score: renewShare             == null ? null : normalizeHigherBetter(renewShare, 0, 100),             weight: 0.05 },
     { score: storageStress          == null ? null : normalizeLowerBetter(storageStress * 100, 0, 100),     weight: 0.10 },
-    { score: energyStress           == null ? null : normalizeLowerBetter(energyStress, 0, 25),             weight: 0.10 },
+    { score: exposedEnergyStress,                                                                           weight: 0.10 },
     { score: electricityConsumption == null ? null : normalizeHigherBetter(electricityConsumption, 200, 8000), weight: 0.30 },
   ]);
 }
@@ -856,7 +921,7 @@ export async function scoreBorderSecurity(
     displacementRaw == null
       ? { score: null, weight: 0.35 }
       : displacementMetric == null
-        ? { score: IMPUTE.unhcrDisplacement.score, weight: 0.35, certaintyCoverage: IMPUTE.unhcrDisplacement.certaintyCoverage }
+        ? { score: IMPUTE.unhcrDisplacement.score, weight: 0.35, certaintyCoverage: IMPUTE.unhcrDisplacement.certaintyCoverage, imputed: true }
         : { score: normalizeLowerBetter(Math.log10(Math.max(1, displacementMetric)), 0, 7), weight: 0.35 },
   ]);
 }
@@ -913,7 +978,7 @@ export async function scoreFoodWater(
     return weightedBlend([
       staticRecord == null
         ? { score: null, weight: 0.6 }
-        : { score: IMPUTE.ipcFood.score, weight: 0.6, certaintyCoverage: IMPUTE.ipcFood.certaintyCoverage },
+        : { score: IMPUTE.ipcFood.score, weight: 0.6, certaintyCoverage: IMPUTE.ipcFood.certaintyCoverage, imputed: true },
       { score: aquastatScore, weight: 0.4 },
     ]);
   }

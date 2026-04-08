@@ -91,6 +91,8 @@ const BOOTSTRAP_CACHE_KEYS = {
   electricityPrices:    'energy:electricity:v1:index',
   jodiOil:              'energy:jodi-oil:v1:_countries',
   chokepointBaselines:  'energy:chokepoint-baselines:v1',
+  portwatchChokepointsRef: 'portwatch:chokepoints:ref:v1',
+  portwatchPortActivity: 'supply_chain:portwatch-ports:v1:_countries',
 };
 
 const SLOW_KEYS = new Set([
@@ -125,6 +127,8 @@ const SLOW_KEYS = new Set([
   'electricityPrices',
   'jodiOil',
   'chokepointBaselines',
+  'portwatchChokepointsRef',
+  'portwatchPortActivity',
 ]);
 const FAST_KEYS = new Set([
   'earthquakes', 'outages', 'serviceStatuses', 'ddosAttacks', 'trafficAnomalies', 'macroSignals', 'chokepoints', 'chokepointTransits',
