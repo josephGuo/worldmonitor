@@ -82,6 +82,8 @@ interface ResilienceStaticCountryRecord {
   aquastat?: { value?: number; indicator?: string | null; year?: number | null } | null;
   iea?: { energyImportDependency?: { value?: number; year?: number | null; source?: string } | null } | null;
   tradeToGdp?: { tradeToGdpPct?: number; year?: number | null; source?: string } | null;
+  fxReservesMonths?: { months?: number; year?: number | null; source?: string } | null;
+  appliedTariffRate?: { value?: number; year?: number | null; source?: string } | null;
 }
 
 interface ImfMacroEntry {
@@ -659,13 +661,22 @@ export async function scoreMacroFiscal(
   ]);
 }
 
+function getFxReservesMonths(staticRecord: ResilienceStaticCountryRecord | null): number | null {
+  return safeNum(staticRecord?.fxReservesMonths?.months);
+}
+
+function scoreFxReserves(months: number): number {
+  return normalizeHigherBetter(Math.min(months, 12), 1, 12);
+}
+
 export async function scoreCurrencyExternal(
   countryCode: string,
   reader: ResilienceSeedReader = defaultSeedReader,
 ): Promise<ResilienceDimensionScore> {
-  const [bisExchangeRaw, imfMacroRaw] = await Promise.all([
+  const [bisExchangeRaw, imfMacroRaw, staticRecord] = await Promise.all([
     reader(RESILIENCE_BIS_EXCHANGE_KEY),
     reader(RESILIENCE_IMF_MACRO_KEY),
+    readStaticCountry(countryCode, reader),
   ]);
   const countryRates = getCountryBisExchangeRates(bisExchangeRaw, countryCode);
   const latest = countryRates[countryRates.length - 1] ?? null;
@@ -679,27 +690,40 @@ export async function scoreCurrencyExternal(
       ? Math.abs(volSource[0]!) * Math.sqrt(12)
       : null;
 
+  const reservesMonths = getFxReservesMonths(staticRecord);
+  const reservesScore = reservesMonths != null ? scoreFxReserves(reservesMonths) : null;
+
   // Country not in BIS EER (curated ~40 economies), or BIS seed is down entirely.
-  // Try IMF CPI inflation as a currency stability proxy (covers ~185 countries) in both cases.
-  // Only fall back to imputation when both BIS and IMF macro seeds are unavailable.
+  // Use IMF CPI inflation + WB FX reserves as currency stability proxies.
+  // Inflation covers ~185 countries, reserves ~160 countries via World Bank FI.RES.TOTL.MO.
   if (countryRates.length === 0) {
     const imfEntry = getImfMacroEntry(imfMacroRaw, countryCode);
-    if (imfMacroRaw != null && imfEntry?.inflationPct != null) {
-      // Cap at 50% — anything above 50% annual inflation is already catastrophic instability;
-      // a tighter cap better differentiates fragile states (Haiti ~39% → score 22) from
-      // moderately elevated inflation. Anchor: 0%→100, 50%+→0.
-      // coverage=0.45 when BIS is loaded (country absent from curated list);
-      // coverage=0.35 when BIS itself is down (proxy-only, primary source unavailable).
-      const coverage = bisExchangeRaw != null ? 0.45 : 0.35;
-      return { score: normalizeLowerBetter(Math.min(imfEntry.inflationPct, 50), 0, 50), coverage, observedWeight: 1, imputedWeight: 0 };
+    const hasInflation = imfMacroRaw != null && imfEntry?.inflationPct != null;
+    const hasReserves = reservesScore != null;
+
+    if (hasInflation && hasReserves) {
+      const inflScore = normalizeLowerBetter(Math.min(imfEntry!.inflationPct!, 50), 0, 50);
+      const blended = inflScore * 0.6 + reservesScore * 0.4;
+      const coverage = bisExchangeRaw != null ? 0.55 : 0.45;
+      return { score: roundScore(blended), coverage, observedWeight: 1, imputedWeight: 0 };
     }
-    if (bisExchangeRaw == null) return { score: 50, coverage: 0, observedWeight: 0, imputedWeight: 0 }; // both sources null
-    return { score: IMPUTE.bisEer.score, coverage: IMPUTE.bisEer.certaintyCoverage, observedWeight: 0, imputedWeight: 1 }; // BIS loaded, country absent, no IMF
+    if (hasInflation) {
+      const coverage = bisExchangeRaw != null ? 0.45 : 0.35;
+      return { score: normalizeLowerBetter(Math.min(imfEntry!.inflationPct!, 50), 0, 50), coverage, observedWeight: 1, imputedWeight: 0 };
+    }
+    if (hasReserves) {
+      const coverage = bisExchangeRaw != null ? 0.4 : 0.3;
+      return { score: reservesScore, coverage, observedWeight: 1, imputedWeight: 0 };
+    }
+    if (bisExchangeRaw == null) return { score: 50, coverage: 0, observedWeight: 0, imputedWeight: 0 };
+    return { score: IMPUTE.bisEer.score, coverage: IMPUTE.bisEer.certaintyCoverage, observedWeight: 0, imputedWeight: 1 };
   }
 
+  // BIS EER data present: volatility + deviation are primary, reserves supplementary.
   return weightedBlend([
-    { score: vol == null ? null : normalizeLowerBetter(vol, 0, 50), weight: 0.7 },
-    { score: latest == null ? null : normalizeLowerBetter(Math.abs((safeNum(latest.realEer) ?? 100) - 100), 0, 35), weight: 0.3 },
+    { score: vol == null ? null : normalizeLowerBetter(vol, 0, 50), weight: 0.6 },
+    { score: latest == null ? null : normalizeLowerBetter(Math.abs((safeNum(latest.realEer) ?? 100) - 100), 0, 35), weight: 0.25 },
+    { score: reservesScore, weight: 0.15 },
   ]);
 }
 
@@ -707,10 +731,11 @@ export async function scoreTradeSanctions(
   countryCode: string,
   reader: ResilienceSeedReader = defaultSeedReader,
 ): Promise<ResilienceDimensionScore> {
-  const [sanctionsRaw, restrictionsRaw, barriersRaw] = await Promise.all([
+  const [sanctionsRaw, restrictionsRaw, barriersRaw, staticRecord] = await Promise.all([
     reader(RESILIENCE_SANCTIONS_KEY),
     reader(RESILIENCE_TRADE_RESTRICTIONS_KEY),
     reader(RESILIENCE_TRADE_BARRIERS_KEY),
+    readStaticCountry(countryCode, reader),
   ]);
 
   // sanctions:country-counts:v1 is a plain ISO2→entryCount map covering ALL countries.
@@ -722,20 +747,25 @@ export async function scoreTradeSanctions(
   const inRestrictionsReporterSet = isInWtoReporterSet(restrictionsRaw, countryCode);
   const inBarriersReporterSet = isInWtoReporterSet(barriersRaw, countryCode);
 
+  // WB TM.TAX.MRCH.WM.AR.ZS: Tariff rate, applied, weighted mean, all products (%).
+  // 0% = perfect free trade (score 100), 20%+ = heavily restricted (score 0).
+  const tariffRate = safeNum(staticRecord?.appliedTariffRate?.value);
+
   return weightedBlend([
     sanctionsRaw == null
-      ? { score: null, weight: 0.55 }
-      : { score: normalizeSanctionCount(sanctionCount ?? 0), weight: 0.55 },
+      ? { score: null, weight: 0.45 }
+      : { score: normalizeSanctionCount(sanctionCount ?? 0), weight: 0.45 },
     restrictionsRaw == null
-      ? { score: null, weight: 0.25 }
+      ? { score: null, weight: 0.15 }
       : !inRestrictionsReporterSet
-        ? { score: IMPUTE.wtoData.score, weight: 0.25, certaintyCoverage: IMPUTE.wtoData.certaintyCoverage, imputed: true }
-        : { score: normalizeLowerBetter(restrictionCount, 0, 30), weight: 0.25 },
+        ? { score: IMPUTE.wtoData.score, weight: 0.15, certaintyCoverage: IMPUTE.wtoData.certaintyCoverage, imputed: true }
+        : { score: normalizeLowerBetter(restrictionCount, 0, 30), weight: 0.15 },
     barriersRaw == null
-      ? { score: null, weight: 0.2 }
+      ? { score: null, weight: 0.15 }
       : !inBarriersReporterSet
-        ? { score: IMPUTE.wtoData.score, weight: 0.2, certaintyCoverage: IMPUTE.wtoData.certaintyCoverage, imputed: true }
-        : { score: normalizeLowerBetter(barrierCount, 0, 40), weight: 0.2 },
+        ? { score: IMPUTE.wtoData.score, weight: 0.15, certaintyCoverage: IMPUTE.wtoData.certaintyCoverage, imputed: true }
+        : { score: normalizeLowerBetter(barrierCount, 0, 40), weight: 0.15 },
+    { score: tariffRate == null ? null : normalizeLowerBetter(tariffRate, 0, 20), weight: 0.25 },
   ]);
 }
 
@@ -798,13 +828,15 @@ export async function scoreInfrastructure(
   ]);
   const electricityAccess = getStaticIndicatorValue(staticRecord, 'infrastructure', 'EG.ELC.ACCS.ZS');
   const roadsPaved = getStaticIndicatorValue(staticRecord, 'infrastructure', 'IS.ROD.PAVE.ZS');
+  const broadband = getStaticIndicatorValue(staticRecord, 'infrastructure', 'IT.NET.BBND.P2');
   const outages = summarizeOutages(outagesRaw, countryCode);
   const outagePenalty = outages.total * 4 + outages.major * 2 + outages.partial;
 
   return weightedBlend([
-    { score: electricityAccess == null ? null : normalizeHigherBetter(electricityAccess, 40, 100), weight: 0.4 },
-    { score: roadsPaved == null ? null : normalizeHigherBetter(roadsPaved, 0, 100), weight: 0.35 },
-    { score: outagePenalty > 0 ? normalizeLowerBetter(outagePenalty, 0, 20) : null, weight: 0.25 },
+    { score: electricityAccess == null ? null : normalizeHigherBetter(electricityAccess, 40, 100), weight: 0.3 },
+    { score: roadsPaved == null ? null : normalizeHigherBetter(roadsPaved, 0, 100), weight: 0.3 },
+    { score: outagesRaw != null && outagePenalty > 0 ? normalizeLowerBetter(outagePenalty, 0, 20) : null, weight: 0.25 },
+    { score: broadband == null ? null : normalizeHigherBetter(broadband, 0, 40), weight: 0.15 },
   ]);
 }
 
@@ -954,11 +986,15 @@ export async function scoreHealthPublicService(
   const hospitalBeds = getStaticIndicatorValue(staticRecord, 'who', 'hospitalBeds');
   const uhcIndex = getStaticIndicatorValue(staticRecord, 'who', 'uhcIndex');
   const measlesCoverage = getStaticIndicatorValue(staticRecord, 'who', 'measlesCoverage');
+  const physiciansPer1k = getStaticIndicatorValue(staticRecord, 'who', 'physiciansPer1k');
+  const healthExpPerCapitaUsd = getStaticIndicatorValue(staticRecord, 'who', 'healthExpPerCapitaUsd');
 
   return weightedBlend([
-    { score: uhcIndex == null ? null : normalizeHigherBetter(uhcIndex, 40, 90), weight: 0.45 },
-    { score: measlesCoverage == null ? null : normalizeHigherBetter(measlesCoverage, 50, 99), weight: 0.35 },
-    { score: hospitalBeds == null ? null : normalizeHigherBetter(hospitalBeds, 0, 8), weight: 0.2 },
+    { score: uhcIndex == null ? null : normalizeHigherBetter(uhcIndex, 40, 90), weight: 0.35 },
+    { score: measlesCoverage == null ? null : normalizeHigherBetter(measlesCoverage, 50, 99), weight: 0.25 },
+    { score: hospitalBeds == null ? null : normalizeHigherBetter(hospitalBeds, 0, 8), weight: 0.10 },
+    { score: physiciansPer1k == null ? null : normalizeHigherBetter(physiciansPer1k, 0, 5), weight: 0.15 },
+    { score: healthExpPerCapitaUsd == null ? null : normalizeHigherBetter(healthExpPerCapitaUsd, 20, 3000), weight: 0.15 },
   ]);
 }
 

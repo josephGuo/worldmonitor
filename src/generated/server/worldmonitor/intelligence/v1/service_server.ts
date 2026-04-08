@@ -536,6 +536,7 @@ export interface ComputeEnergyShockScenarioRequest {
   countryCode: string;
   chokepointId: string;
   disruptionPct: number;
+  fuelMode: string;
 }
 
 export interface ComputeEnergyShockScenarioResponse {
@@ -548,6 +549,16 @@ export interface ComputeEnergyShockScenarioResponse {
   effectiveCoverDays: number;
   assessment: string;
   dataAvailable: boolean;
+  jodiOilCoverage: boolean;
+  comtradeCoverage: boolean;
+  ieaStocksCoverage: boolean;
+  portwatchCoverage: boolean;
+  coverageLevel: string;
+  limitations: string[];
+  degraded: boolean;
+  chokepointConfidence: string;
+  liveFlowRatio?: number;
+  gasImpact?: GasImpact;
 }
 
 export interface ProductImpact {
@@ -555,6 +566,27 @@ export interface ProductImpact {
   outputLossKbd: number;
   demandKbd: number;
   deficitPct: number;
+}
+
+export interface GasImpact {
+  lngShareOfImports: number;
+  lngImportsTj: number;
+  lngDisruptionTj: number;
+  totalDemandTj: number;
+  deficitPct: number;
+  dataAvailable: boolean;
+  assessment: string;
+  storage?: GasStorageBuffer;
+  dataSource: string;
+}
+
+export interface GasStorageBuffer {
+  fillPct: number;
+  gasTwh: number;
+  bufferDays: number;
+  trend: string;
+  date: string;
+  scope: string;
 }
 
 export interface GetCountryPortActivityRequest {
@@ -1597,6 +1629,7 @@ export function createIntelligenceServiceRoutes(
             countryCode: params.get("country_code") ?? "",
             chokepointId: params.get("chokepoint_id") ?? "",
             disruptionPct: Number(params.get("disruption_pct") ?? "0"),
+            fuelMode: params.get("fuel_mode") ?? "",
           };
           if (options?.validateRequest) {
             const bodyViolations = options.validateRequest("computeEnergyShockScenario", body);

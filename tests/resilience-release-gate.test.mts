@@ -85,7 +85,8 @@ describe('resilience release gate', () => {
       ),
     );
     for (const response of highAnchors) {
-      assert.ok(response.overallScore >= 75, `${response.countryCode} should remain in the high-resilience band`);
+      assert.ok(response.overallScore >= 60, `${response.countryCode} should remain in the high-resilience band (baseline*stress formula)`);
+      assert.ok(response.baselineScore > response.stressScore * 0.8, `${response.countryCode} baseline should be >= 80% of stress for resilient countries`);
     }
 
     const lowAnchors = await Promise.all(
@@ -94,7 +95,8 @@ describe('resilience release gate', () => {
       ),
     );
     for (const response of lowAnchors) {
-      assert.ok(response.overallScore <= 30, `${response.countryCode} should remain in the low-resilience band`);
+      assert.ok(response.overallScore <= 20, `${response.countryCode} should remain in the low-resilience band (baseline*stress formula)`);
+      assert.ok(response.stressScore < 40, `${response.countryCode} (fragile) should have stressScore < 40`);
     }
   });
 
@@ -124,14 +126,14 @@ describe('resilience release gate', () => {
     );
   });
 
-  it('US is not low-confidence with full 8/8 dataset coverage', async () => {
+  it('US is not low-confidence with full 9/9 dataset coverage', async () => {
     installRedisFixtures();
 
     const us = await getResilienceScore(
       { request: new Request('https://example.com?countryCode=US') } as never,
       { countryCode: 'US' },
     );
-    assert.equal(us.lowConfidence, false, `US has full 8/8 dataset coverage in fixtures and should not be flagged low-confidence`);
+    assert.equal(us.lowConfidence, false, `US has full 9/9 dataset coverage in fixtures and should not be flagged low-confidence`);
   });
 
   it('produces complete ranking and choropleth entries for the full G20 + EU27 release set', async () => {
