@@ -113,6 +113,7 @@ export const COMMANDS: Command[] = [
   { id: 'panel:sanctions-pressure', keywords: ['sanctions pressure', 'ofac', 'designation', 'sanctions'], label: 'Panel: Sanctions Pressure', icon: '\u{1F6AB}', category: 'panels' },
   { id: 'panel:supply-chain', keywords: ['supply chain', 'shipping', 'chokepoint', 'minerals', 'freight', 'logistics'], label: 'Panel: Supply Chain', icon: '\u{1F6A2}', category: 'panels' },
   { id: 'maritime-activity', keywords: ['maritime activity', 'port activity', 'tanker traffic', 'trade volumes', 'port calls'], label: 'Maritime Activity', icon: '\u26F3', category: 'panels' },
+  { id: 'panel:energy-profile', keywords: ['energy profile', 'country energy', 'oil imports', 'energy exposure', 'jodi', 'iea energy', 'energy shock'], label: 'Energy Profile', icon: '⚡', category: 'panels' },
   { id: 'panel:finance', keywords: ['financial', 'finance news'], label: 'Panel: Financial', icon: '\u{1F4B5}', category: 'panels' },
   { id: 'panel:tech', keywords: ['technology', 'tech news'], label: 'Panel: Technology', icon: '\u{1F4BB}', category: 'panels' },
   { id: 'panel:crypto', keywords: ['crypto', 'bitcoin', 'ethereum'], label: 'Panel: Crypto', icon: '\u20BF', category: 'panels' },
@@ -240,6 +241,7 @@ export const COMMANDS: Command[] = [
   { id: 'view:fullscreen', keywords: ['fullscreen', 'full screen'], label: 'Toggle fullscreen', icon: '\u26F6', category: 'view' },
   { id: 'view:settings', keywords: ['settings', 'config', 'api keys'], label: 'Open settings', icon: '\u2699\uFE0F', category: 'view' },
   { id: 'view:refresh', keywords: ['refresh', 'reload', 'refresh all'], label: 'Refresh all data', icon: '\u{1F504}', category: 'view' },
+  { id: 'view:resilience', keywords: ['resilience', 'resilience score', 'baseline', 'stress', 'country resilience'], label: 'Toggle resilience score', icon: '\u{1F6E1}\uFE0F', category: 'view' },
 
   // Time range
   { id: 'time:1h', keywords: ['1h', 'last hour', '1 hour'], label: 'Show events from last hour', icon: '\u{1F550}', category: 'actions' },
