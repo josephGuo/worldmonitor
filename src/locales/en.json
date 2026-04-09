@@ -931,6 +931,7 @@
       "disruption": "Disruption",
       "vessels": "vessels",
       "incidents7d": "incidents (7d)",
+      "flowUnavailable": "Flow data unavailable",
       "containerRates": "Container Rates",
       "bulkShipping": "Bulk Shipping",
       "economicIndicators": "Economic Indicators",
@@ -1647,7 +1648,9 @@
         "minutesAgo": "{{count}}m ago",
         "hoursAgo": "{{count}}h ago"
       },
-      "infoTooltip": "NASA FIRMS VIIRS satellite thermal detections across monitored conflict regions. High-intensity = brightness >360K & confidence >80%."
+      "infoTooltip": "NASA FIRMS VIIRS satellite thermal detections across monitored conflict regions. High-intensity = brightness >360K & confidence >80%.",
+      "possibleExplosions": "{{count}} possible explosion(s) detected",
+      "explosionTooltip": "Thermal signature consistent with explosion (FRP >80 MW, brightness >380 K)"
     },
     "ucdpEvents": {
       "stateBased": "State-Based",
@@ -2063,7 +2066,8 @@
     },
     "map": {
       "showMap": "Show Map",
-      "hideMap": "Hide Map"
+      "hideMap": "Hide Map",
+      "clearTrails": "Clear trails"
     },
     "climateNews": {
       "infoTooltip": "<strong>Climate News</strong> Latest environment and climate intelligence from Carbon Brief, UNEP, NASA, The Guardian, and other authoritative sources. Updated every 30 minutes.",

@@ -62,6 +62,7 @@ import {
   fetchNatGasStorageRpc,
   getEuGasStorageData,
   getOilStocksAnalysisData,
+  fetchLngVulnerability,
   getEcbFxRatesData,
   fetchBisData,
   fetchBlsData,
@@ -2626,6 +2627,13 @@ export class DataLoaderManager implements AppModule {
       if (oilStocksResp.status === 'fulfilled' && !oilStocksResp.value.unavailable) {
         energyPanel?.setOilStocksAnalysis(oilStocksResp.value);
       }
+      // Fire-and-forget: LNG vulnerability is hydration-only today (no network fallback).
+      // Decoupled so a future fetch path does not delay core energy panel rendering.
+      fetchLngVulnerability().then(lngData => {
+        energyPanel?.updateLngVulnerability(lngData);
+      }).catch(() => {
+        energyPanel?.updateLngVulnerability(null);
+      });
     } catch (e) {
       console.error('[App] Oil analytics failed:', e);
       this.callPanel('energy-complex', 'showError', undefined, () => void this.loadOilAnalytics());

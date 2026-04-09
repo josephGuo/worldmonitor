@@ -35,6 +35,7 @@ const LOCKED_PREVIEW: ResilienceScoreResponse = {
   change30d: 2.4,
   lowConfidence: false,
   imputationShare: 0,
+  dataVersion: '',
 };
 
 function normalizeCountryCode(countryCode: string | null | undefined): string | null {
@@ -266,12 +267,12 @@ export class ResilienceWidget {
           ),
         ),
       ),
-      ...(data.baselineScore != null && data.stressScore != null && data.stressFactor != null
+      ...(data.baselineScore != null && data.stressScore != null
         ? [h(
             'div',
             { className: 'resilience-widget__baseline-stress' },
             h('span', { className: 'resilience-widget__baseline-stress-text' },
-              formatBaselineStress(data.baselineScore, data.stressScore, data.stressFactor)),
+              formatBaselineStress(data.baselineScore, data.stressScore)),
           )]
         : []),
       h(
