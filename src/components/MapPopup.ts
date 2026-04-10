@@ -1,4 +1,5 @@
 import type { ConflictZone, Hotspot, NewsItem, MilitaryBase, StrategicWaterway, APTGroup, NuclearFacility, EconomicCenter, GammaIrradiator, Pipeline, UnderseaCable, CableAdvisory, RepairShip, InternetOutage, AIDataCenter, AisDisruptionEvent, SocialUnrestEvent, MilitaryFlight, MilitaryVessel, MilitaryFlightCluster, MilitaryVesselCluster, NaturalEvent, Port, Spaceport, CriticalMineralProject, CyberThreat } from '@/types';
+import type { TradeRouteSegment } from '@/config/trade-routes';
 import type { AirportDelayAlert, PositionSample } from '@/services/aviation';
 import type { Earthquake } from '@/services/earthquakes';
 import type { WeatherAlert } from '@/services/weather';
@@ -10,6 +11,7 @@ import type { GeoHubActivity } from '@/services/geo-activity';
 import { escapeHtml, sanitizeUrl } from '@/utils/sanitize';
 import { isMobileDevice, getCSSColor } from '@/utils';
 import { TransitChart } from '@/utils/transit-chart';
+import { HS2RingChart } from '@/utils/hs2-ring-chart';
 import type { GetChokepointStatusResponse } from '@/services/supply-chain';
 import { t } from '@/services/i18n';
 import { fetchHotspotContext, formatArticleDate, extractDomain, type GdeltArticle } from '@/services/gdelt-intel';
@@ -278,6 +280,17 @@ export class MapPopup {
       if (cp?.transitSummary?.history?.length && !hasPremiumAccess(getAuthState())) {
         trackGateHit('chokepoint-transit-chart');
       }
+
+      // Mount HS2 sector ring chart for PRO users
+      const sectors = CHOKEPOINT_HS2_SECTORS[waterway.chokepointId];
+      if (sectors?.length) {
+        const ringEl = this.popup.querySelector<HTMLElement>(`[data-hs2-ring="${waterway.chokepointId}"]`);
+        if (ringEl) {
+          new HS2RingChart().mount(ringEl, sectors);
+        } else if (!hasPremiumAccess(getAuthState())) {
+          trackGateHit('chokepoint-sector-ring');
+        }
+      }
     }
 
     // Close button handler via event delegation on the popup element.
@@ -323,6 +336,87 @@ export class MapPopup {
       document.addEventListener('keydown', this.handleEscapeKey);
       this.outsideListenerTimeoutId = null;
     }, 0);
+  }
+
+  public showRouteBreakdown(
+    segment: TradeRouteSegment,
+    chokepointIds: string[],
+    x: number,
+    y: number,
+  ): void {
+    this.hide();
+
+    // Pick the waypoint with the highest disruption score — this is the driver of the arc
+    // color computed in refreshTradeRouteStatus() and must match what the user sees on the arc.
+    const allCps = this.chokepointData?.chokepoints ?? [];
+    const primaryCpId =
+      chokepointIds
+        .map(id => ({ id, score: allCps.find(c => c.id === id)?.disruptionScore ?? 0 }))
+        .sort((a, b) => b.score - a.score)[0]?.id ?? chokepointIds[0] ?? '';
+    const cp = allCps.find(c => c.id === primaryCpId);
+    const sectors = primaryCpId ? (CHOKEPOINT_HS2_SECTORS[primaryCpId] ?? []) : [];
+
+    const tierLabel: Record<string, string> = {
+      WAR_RISK_TIER_WAR_ZONE: 'War Zone', WAR_RISK_TIER_CRITICAL: 'Critical',
+      WAR_RISK_TIER_HIGH: 'High', WAR_RISK_TIER_ELEVATED: 'Elevated',
+      WAR_RISK_TIER_NORMAL: 'Normal',
+    };
+    const tierColor: Record<string, string> = {
+      WAR_RISK_TIER_WAR_ZONE: '#ef4444', WAR_RISK_TIER_CRITICAL: '#ef4444',
+      WAR_RISK_TIER_HIGH: '#f59e0b', WAR_RISK_TIER_ELEVATED: '#f59e0b',
+      WAR_RISK_TIER_NORMAL: 'var(--text-dim,#888)',
+    };
+
+    const tier = cp?.warRiskTier ?? 'WAR_RISK_TIER_NORMAL';
+    const disruptionScore = cp?.disruptionScore ?? 0;
+    const scoreColor = disruptionScore > 70 ? '#ef4444' : disruptionScore > 30 ? '#f59e0b' : 'var(--text-dim,#888)';
+
+    const topSectors = sectors.slice(0, 2);
+    const sectorHtml = topSectors.length
+      ? topSectors.map(s =>
+          `<span style="display:inline-flex;align-items:center;gap:3px;margin-right:6px">` +
+          `<span style="width:8px;height:8px;border-radius:50%;background:${s.color};display:inline-block"></span>` +
+          `<span style="font-size:10px">${escapeHtml(s.label)} ${s.share}%</span></span>`
+        ).join('')
+      : `<span style="font-size:10px;opacity:.5">No sector data</span>`;
+
+    const html = `
+      <div class="popup-header">
+        <span class="popup-title" style="font-size:12px">${escapeHtml(segment.routeName)}</span>
+        <button class="popup-close" aria-label="Close">×</button>
+      </div>
+      <div class="popup-body" style="padding:8px 12px;min-width:200px">
+        ${cp ? `<div style="font-size:11px;font-weight:600;margin-bottom:6px">${escapeHtml(cp.name)}</div>` : ''}
+        <div style="display:flex;gap:10px;margin-bottom:6px">
+          <span style="font-size:10px;opacity:.6">Disruption</span>
+          <span style="font-size:10px;font-weight:600;color:${scoreColor}">${disruptionScore}/100</span>
+        </div>
+        <div style="display:flex;gap:10px;margin-bottom:6px">
+          <span style="font-size:10px;opacity:.6">War Risk</span>
+          <span style="font-size:10px;font-weight:600;color:${tierColor[tier] ?? 'inherit'}">${tierLabel[tier] ?? 'Normal'}</span>
+        </div>
+        <div style="margin-top:4px">${sectorHtml}</div>
+      </div>`;
+
+    this.isMobileSheet = false;
+    this.popup = document.createElement('div');
+    this.popup.className = 'map-popup map-popup-route-breakdown';
+    this.popup.innerHTML = html;
+
+    const containerRect = this.container.getBoundingClientRect();
+    this.positionDesktopPopup({ x, y, type: 'waterway', data: {} as never }, containerRect);
+    document.body.appendChild(this.popup);
+
+    this.popup.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('.popup-close')) this.hide();
+    });
+
+    if (this.outsideListenerTimeoutId !== null) clearTimeout(this.outsideListenerTimeoutId);
+    this.outsideListenerTimeoutId = window.setTimeout(() => {
+      this.outsideListenerTimeoutId = null;
+      document.addEventListener('click', this.handleOutsideClick);
+      document.addEventListener('keydown', this.handleEscapeKey);
+    }, 200);
   }
 
   private positionDesktopPopup(data: PopupData, containerRect: DOMRect): void {
@@ -1226,6 +1320,25 @@ export class MapPopup {
       }
     }
 
+    // Sector exposure ring is PRO-gated (canvas donut with legend)
+    let ringSection = '';
+    if (sectors) {
+      if (isPro) {
+        ringSection = `
+          <div class="popup-section-title" style="margin-top:10px;font-size:10px;text-transform:uppercase;opacity:.6;letter-spacing:.06em">Sector Exposure</div>
+          <div data-hs2-ring="${escapeHtml(waterway.chokepointId)}" class="popup-hs2-ring-container"></div>`;
+      } else {
+        ringSection = `
+          <div class="sector-pro-gate" data-gate="chokepoint-sector-ring" style="position:relative;overflow:hidden;border-radius:6px;margin-top:10px;min-height:80px;background:var(--surface-elevated, #111)">
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px">
+              <span style="font-size:16px">🔒</span>
+              <span style="font-size:10px;font-weight:600;opacity:.8">PRO</span>
+              <span style="font-size:9px;opacity:.5">Sector Breakdown</span>
+            </div>
+          </div>`;
+      }
+    }
+
     return `
       <div class="popup-header waterway">
         <span class="popup-title">${escapeHtml(waterway.name)}</span>
@@ -1241,6 +1354,7 @@ export class MapPopup {
           </div>
         </div>
         ${sectorSection}
+        ${ringSection}
         ${chartSection}
       </div>
     `;

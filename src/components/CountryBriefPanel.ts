@@ -2,6 +2,7 @@ import type { CountryBriefSignals } from '@/types';
 import type { CountryScore } from '@/services/country-instability';
 import type { PredictionMarket } from '@/services/prediction';
 import type { NewsItem } from '@/types';
+import type { GetCountryChokepointIndexResponse } from '@/services/supply-chain';
 
 export interface CountryIntelData {
   brief: string;
@@ -182,8 +183,15 @@ export interface CountryBriefPanel {
   updateCountryFacts?(data: CountryFactsData): void;
   updateEnergyProfile?(data: CountryEnergyProfileData): void;
   updateMaritimeActivity?(data: CountryPortActivityData): void;
+  updateTradeExposure?(data: GetCountryChokepointIndexResponse | null): void;
   maximize?(): void;
   minimize?(): void;
   getIsMaximized?(): boolean;
   onStateChange?(cb: (state: { visible: boolean; maximized: boolean }) => void): void;
+  updateNationalDebt?(entry: { debtToGdp: number; debtUsd: number; annualGrowth: number; source: string } | null): void;
+  updateSanctionsPressure?(data: { entryCount: number; sanctionsActive?: boolean } | null): void;
+  updateComtradeFlows?(flows: Array<{ partnerName: string; cmdDesc: string; tradeValueUsd: number; yoyChange: number }> | null): void;
+  updateTariffTrends?(data: { currentRate: number; trend: string; datapoints: Array<{ year: number; tariffRate: number }> } | null): void;
+  updateChokepointExposure?(data: { vulnerabilityIndex: number; exposures: Array<{ chokepointName: string; exposureScore: number }> } | null): void;
+  updateCostShock?(data: { supplyDeficitPct: number; coverageDays: number; warRiskTier: string } | null): void;
 }
