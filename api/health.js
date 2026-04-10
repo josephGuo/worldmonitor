@@ -136,7 +136,7 @@ const STANDALONE_KEYS = {
   climateNews:              'climate:news-intelligence:v1',
   pizzint:                  'intelligence:pizzint:seed:v1',
   resilienceStaticIndex:    'resilience:static:index:v1',
-  resilienceRanking:        'resilience:ranking:v7',
+  resilienceRanking:        'resilience:ranking:v8',
   productCatalog:           'product-catalog:v2',
   energySpineCountries:     'energy:spine:v1:_countries',
   energyExposure:           'energy:exposure:v1:index',
@@ -152,6 +152,8 @@ const STANDALONE_KEYS = {
   portwatchChokepointsRef:  'portwatch:chokepoints:ref:v1',
   chokepointFlows:          'energy:chokepoint-flows:v1',
   emberElectricity:         'energy:ember:v1:_all',
+  resilienceIntervals:      'resilience:intervals:v1:US',
+  sprPolicies:              'energy:spr-policies:v1',
 };
 
 const SEED_META = {
@@ -270,6 +272,7 @@ const SEED_META = {
   vpdTrackerHistorical: { key: 'seed-meta:health:vpd-tracker',         maxStaleMin: 2880 }, // shares seed-meta key with vpdTrackerRealtime (same run)
   resilienceStaticIndex: { key: 'seed-meta:resilience:static',         maxStaleMin: 576000 }, // annual October snapshot; 400d threshold matches TTL and preserves prior-year data on source outages
   resilienceRanking:   { key: 'seed-meta:resilience:ranking',          maxStaleMin: 720 }, // on-demand RPC cache (6h TTL); 12h threshold catches stale rankings without paging on cold start
+  resilienceIntervals: { key: 'seed-meta:resilience:intervals',        maxStaleMin: 20160 }, // weekly cron; 20160min = 14d = 2x interval
   energyExposure:       { key: 'seed-meta:economic:owid-energy-mix',   maxStaleMin: 50400 }, // monthly cron on 1st; 50400min = 35d = TTL matches cron cadence + 5d buffer
   energyMixAll:         { key: 'seed-meta:economic:owid-energy-mix',   maxStaleMin: 50400 }, // same seed run as energyExposure; shares seed-meta key
   regulatoryActions:    { key: 'seed-meta:regulatory:actions',          maxStaleMin: 360 }, // 2h cron; 360min = 3x interval
@@ -283,6 +286,7 @@ const SEED_META = {
   jodiGas:              { key: 'seed-meta:energy:jodi-gas',               maxStaleMin: 60 * 24 * 40 }, // monthly cron on 25th; 40d threshold matches 35d TTL + 5d buffer
   lngVulnerability:     { key: 'seed-meta:energy:jodi-gas',               maxStaleMin: 60 * 24 * 40 }, // written by jodi-gas seeder afterPublish; shares seed-meta key
   chokepointBaselines:  { key: 'seed-meta:energy:chokepoint-baselines', maxStaleMin: 60 * 24 * 400 }, // 400 days
+  sprPolicies:          { key: 'seed-meta:energy:spr-policies',         maxStaleMin: 60 * 24 * 400 }, // 400 days; static registry, same cadence as chokepoint baselines
   portwatchChokepointsRef: { key: 'seed-meta:portwatch:chokepoints-ref', maxStaleMin: 60 * 24 * 2 }, // daily cron; 2d = 2× interval
   chokepointFlows:      { key: 'seed-meta:energy:chokepoint-flows',     maxStaleMin: 720 }, // 6h cron; 720min = 2x interval
   emberElectricity:     { key: 'seed-meta:energy:ember',                maxStaleMin: 2880 }, // daily cron (08:00 UTC); 2880min = 48h = 2x interval

@@ -3,7 +3,10 @@ import type {
   ResilienceDimension,
   ResilienceDomain,
   ResilienceRankingItem,
+  ScoreInterval,
 } from '../../../../src/generated/server/worldmonitor/resilience/v1/service_server';
+
+export type { ScoreInterval };
 
 import { cachedFetchJson, getCachedJson, runRedisPipeline } from '../../../_shared/redis';
 import { detectTrend, round } from '../../../_shared/resilience-stats';
@@ -24,9 +27,11 @@ export const RESILIENCE_SCORE_CACHE_TTL_SECONDS = 6 * 60 * 60;
 export const RESILIENCE_RANKING_CACHE_TTL_SECONDS = 6 * 60 * 60;
 export const RESILIENCE_SCORE_CACHE_PREFIX = 'resilience:score:v7:';
 export const RESILIENCE_HISTORY_KEY_PREFIX = 'resilience:history:v4:';
-export const RESILIENCE_RANKING_CACHE_KEY = 'resilience:ranking:v7';
+export const RESILIENCE_RANKING_CACHE_KEY = 'resilience:ranking:v8';
 export const RESILIENCE_STATIC_INDEX_KEY = 'resilience:static:index:v1';
+export const RESILIENCE_INTERVAL_KEY_PREFIX = 'resilience:intervals:v1:';
 const RESILIENCE_STATIC_META_KEY = 'seed-meta:resilience:static';
+const RANK_STABLE_MAX_INTERVAL_WIDTH = 8;
 
 const LOW_CONFIDENCE_COVERAGE_THRESHOLD = 0.55;
 const LOW_CONFIDENCE_IMPUTATION_SHARE_THRESHOLD = 0.40;
@@ -52,6 +57,16 @@ function normalizeCountryCode(countryCode: string): string {
 
 function scoreCacheKey(countryCode: string): string {
   return `${RESILIENCE_SCORE_CACHE_PREFIX}${countryCode}`;
+}
+
+function intervalCacheKey(countryCode: string): string {
+  return `${RESILIENCE_INTERVAL_KEY_PREFIX}${countryCode}`;
+}
+
+async function readScoreInterval(countryCode: string): Promise<ScoreInterval | undefined> {
+  const raw = await getCachedJson(intervalCacheKey(countryCode), true) as { p05?: number; p95?: number } | null;
+  if (!raw || typeof raw.p05 !== 'number' || typeof raw.p95 !== 'number') return undefined;
+  return { p05: raw.p05, p95: raw.p95 };
 }
 
 function historyKey(countryCode: string): string {
@@ -166,7 +181,7 @@ export async function ensureResilienceScoreCached(countryCode: string, reader?: 
     };
   }
 
-  return await cachedFetchJson<GetResilienceScoreResponse>(
+  const cached = await cachedFetchJson<GetResilienceScoreResponse>(
     scoreCacheKey(normalizedCountryCode),
     RESILIENCE_SCORE_CACHE_TTL_SECONDS,
     async () => {
@@ -234,6 +249,12 @@ export async function ensureResilienceScoreCached(countryCode: string, reader?: 
     imputationShare: 0,
     dataVersion: '',
   };
+
+  const scoreInterval = await readScoreInterval(normalizedCountryCode);
+  if (scoreInterval) {
+    return { ...cached, scoreInterval };
+  }
+  return cached;
 }
 
 export async function listScorableCountries(): Promise<string[]> {
@@ -274,9 +295,16 @@ function computeOverallCoverage(response: GetResilienceScoreResponse): number {
   return coverages.reduce((sum, coverage) => sum + coverage, 0) / coverages.length;
 }
 
+function isRankStable(interval: ScoreInterval | null | undefined): boolean {
+  if (!interval) return false;
+  const width = interval.p95 - interval.p05;
+  return Number.isFinite(width) && width >= 0 && width <= RANK_STABLE_MAX_INTERVAL_WIDTH;
+}
+
 export function buildRankingItem(
   countryCode: string,
   response?: GetResilienceScoreResponse | null,
+  interval?: ScoreInterval | null,
 ): ResilienceRankingItem {
   if (!response) {
     return {
@@ -285,6 +313,7 @@ export function buildRankingItem(
       level: 'unknown',
       lowConfidence: true,
       overallCoverage: 0,
+      rankStable: false,
     };
   }
 
@@ -294,6 +323,7 @@ export function buildRankingItem(
     level: response.level,
     lowConfidence: response.lowConfidence,
     overallCoverage: computeOverallCoverage(response),
+    rankStable: isRankStable(interval),
   };
 }
 
