@@ -6,13 +6,18 @@ import { t } from '@/services/i18n';
 import { getCountryInfrastructure } from '@/services/related-assets';
 import type { PredictionMarket } from '@/services/prediction';
 import type { AssetType, NewsItem, RelatedAsset } from '@/types';
-import { sanitizeUrl } from '@/utils/sanitize';
+import { sanitizeUrl, escapeHtml } from '@/utils/sanitize';
+import { computeAlternativeSuppliers, type ChokepointScoreMap, type EnrichedExporter } from '@/utils/supplier-route-risk';
 import { formatIntelBrief } from '@/utils/format-intel-brief';
 import { getCSSColor } from '@/utils';
 import { toFlagEmoji } from '@/utils/country-flag';
 import { PORTS } from '@/config/ports';
+import { getChokepointRoutes } from '@/config/trade-routes';
+import { STRATEGIC_WATERWAYS } from '@/config/geo';
 import { hasPremiumAccess } from '@/services/panel-gating';
 import { getAuthState } from '@/services/auth-state';
+import { trackGateHit } from '@/services/analytics';
+import { fetchBypassOptions, fetchChokepointStatus } from '@/services/supply-chain';
 import { haversineDistanceKm } from '@/services/related-assets';
 import type {
   CountryBriefPanel,
@@ -26,7 +31,15 @@ import type {
   CountryEnergyProfileData,
   CountryPortActivityData,
 } from './CountryBriefPanel';
-import type { GetCountryChokepointIndexResponse, SectorExposureSummary } from '@/services/supply-chain';
+import type {
+  GetCountryChokepointIndexResponse,
+  SectorExposureSummary,
+  CountryProductsResponse,
+  CountryProduct,
+  MultiSectorShockResponse,
+  MultiSectorShock,
+} from '@/services/supply-chain';
+import { fetchMultiSectorCostShock } from '@/services/supply-chain';
 import type { MapContainer } from './MapContainer';
 import { ResilienceWidget } from './ResilienceWidget';
 
@@ -94,12 +107,26 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
   private energyBody: HTMLElement | null = null;
   private maritimeBody: HTMLElement | null = null;
   private tradeExposureBody: HTMLElement | null = null;
+  private selectedSectorHs2: string | null = null;
+  private sectorBypassAbort: AbortController | null = null;
+  private cachedTradeExposureData: GetCountryChokepointIndexResponse | null = null;
+  private cachedSectors: SectorExposureSummary[] = [];
+  private productImportsBody: HTMLElement | null = null;
   private debtBody: HTMLElement | null = null;
   private sanctionsBody: HTMLElement | null = null;
   private comtradeBody: HTMLElement | null = null;
   private tariffBody: HTMLElement | null = null;
   private chokepointBody: HTMLElement | null = null;
   private costShockBody: HTMLElement | null = null;
+  // ── Phase 5: Multi-sector Cost Shock Calculator ─────────────────────────
+  private costShockCalcBody: HTMLElement | null = null;
+  private costShockCalcTable: HTMLElement | null = null;
+  private costShockCalcDurationLabel: HTMLElement | null = null;
+  private costShockCalcTotalLabel: HTMLElement | null = null;
+  private costShockCalcPrimaryChokepoint: string | null = null;
+  private costShockCalcClosureDays = 30;
+  private costShockCalcAbort: AbortController | null = null;
+  private costShockCalcDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   private readonly handleGlobalKeydown = (event: KeyboardEvent): void => {
     if (!this.panel.classList.contains('active')) return;
@@ -607,6 +634,145 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
         : 'color-mix(in srgb, var(--semantic-normal) 20%, transparent)';
       row.append(scoreEl);
       this.chokepointBody.append(row);
+    }
+  }
+
+  /**
+   * Mount the Cost Shock Calculator with its initial data and slider.
+   * Called once per country load with the first (default 30-day) response.
+   */
+  public updateMultiSectorCostShock(data: MultiSectorShockResponse | null): void {
+    if (!this.costShockCalcBody) return;
+    this.costShockCalcBody.replaceChildren();
+
+    if (!data || (!data.sectors.length && !data.unavailableReason)) {
+      this.costShockCalcBody.append(this.makeEmpty('No multi-sector cost shock data'));
+      return;
+    }
+
+    this.costShockCalcPrimaryChokepoint = data.chokepointId;
+    this.costShockCalcClosureDays = Number.isFinite(data.closureDays) && data.closureDays > 0 ? data.closureDays : 30;
+
+    // ── Header line: chokepoint + war risk tier badge ────────────────────
+    const header = this.el('div', 'cdp-cost-shock-calc-header');
+    const cpName = STRATEGIC_WATERWAYS.find(w => w.id === data.chokepointId)?.name
+      ?? data.chokepointId.replace(/_/g, ' ');
+    header.append(this.el('span', 'cdp-cost-shock-calc-cp', `Primary: ${cpName}`));
+    const tierShort = data.warRiskTier.replace('WAR_RISK_TIER_', '').replace(/_/g, ' ');
+    header.append(this.el('span', 'cdp-cost-shock-calc-tier', `War risk: ${tierShort || 'NORMAL'}`));
+    this.costShockCalcBody.append(header);
+
+    // ── Slider ──────────────────────────────────────────────────────────
+    const sliderWrap = this.el('div', 'cdp-cost-shock-calc-slider-wrap');
+    const sliderLabel = this.el('label', 'cdp-cost-shock-calc-slider-label');
+    sliderLabel.append(document.createTextNode('Closure duration: '));
+    this.costShockCalcDurationLabel = this.el('strong', 'cdp-cost-shock-calc-duration-value', `${this.costShockCalcClosureDays} days`);
+    sliderLabel.append(this.costShockCalcDurationLabel);
+    sliderWrap.append(sliderLabel);
+
+    const slider = this.el('input', 'cdp-cost-shock-calc-slider');
+    slider.type = 'range';
+    slider.min = '1';
+    slider.max = '90';
+    slider.step = '1';
+    slider.value = String(this.costShockCalcClosureDays);
+    slider.setAttribute('aria-label', 'Chokepoint closure duration in days');
+    slider.addEventListener('input', this.handleCostShockSliderInput);
+    sliderWrap.append(slider);
+
+    const ticks = this.el('div', 'cdp-cost-shock-calc-ticks');
+    for (const label of ['1d', '30d', '60d', '90d']) {
+      ticks.append(this.el('span', 'cdp-cost-shock-calc-tick', label));
+    }
+    sliderWrap.append(ticks);
+    this.costShockCalcBody.append(sliderWrap);
+
+    // ── Table ───────────────────────────────────────────────────────────
+    const table = this.el('table', 'cdp-cost-shock-calc-table');
+    const thead = this.el('thead');
+    const headerRow = this.el('tr');
+    headerRow.append(this.el('th', '', 'Sector'));
+    headerRow.append(this.el('th', 'cdp-cost-shock-calc-cost-col', 'Added Cost'));
+    thead.append(headerRow);
+    table.append(thead);
+    const tbody = this.el('tbody');
+    table.append(tbody);
+    this.costShockCalcTable = tbody;
+    this.costShockCalcBody.append(table);
+
+    // ── Total row ───────────────────────────────────────────────────────
+    const totalRow = this.el('div', 'cdp-cost-shock-calc-total-row');
+    totalRow.append(this.el('span', 'cdp-cost-shock-calc-total-label', 'Total'));
+    this.costShockCalcTotalLabel = this.el('span', 'cdp-cost-shock-calc-total-value', '$0');
+    totalRow.append(this.costShockCalcTotalLabel);
+    this.costShockCalcBody.append(totalRow);
+
+    if (data.unavailableReason) {
+      this.costShockCalcBody.append(this.el('div', 'cdp-card-footer', data.unavailableReason));
+    } else {
+      this.costShockCalcBody.append(
+        this.el('div', 'cdp-card-footer', 'Added cost = annual imports × (bypass freight uplift + war risk bps) × closure days / 365'),
+      );
+    }
+
+    this.renderMultiSectorShockRows(data.sectors);
+  }
+
+  /** Render (or re-render) just the cost-shock table rows + total. */
+  private renderMultiSectorShockRows(sectors: MultiSectorShock[]): void {
+    if (!this.costShockCalcTable || !this.costShockCalcTotalLabel) return;
+    const tbody = this.costShockCalcTable;
+    tbody.replaceChildren();
+
+    const sorted = [...sectors].sort((a, b) => b.totalCostShock - a.totalCostShock);
+    let total = 0;
+    for (const s of sorted) {
+      const tr = this.el('tr', 'cdp-cost-shock-calc-row');
+      const labelCell = this.el('td', 'cdp-cost-shock-calc-sector', s.hs2Label || `HS${s.hs2}`);
+      const costCell = this.el('td', 'cdp-cost-shock-calc-cost', this.formatMoney(s.totalCostShock));
+      if (s.totalCostShock === 0) costCell.classList.add('cdp-cost-shock-calc-cost--zero');
+      tr.append(labelCell, costCell);
+      tbody.append(tr);
+      total += s.totalCostShock;
+    }
+    this.costShockCalcTotalLabel.textContent = this.formatMoney(total);
+  }
+
+  private readonly handleCostShockSliderInput = (ev: Event): void => {
+    const target = ev.target as HTMLInputElement | null;
+    if (!target) return;
+    const days = Math.max(1, Math.min(90, Number(target.value) || 30));
+    this.costShockCalcClosureDays = days;
+    if (this.costShockCalcDurationLabel) {
+      this.costShockCalcDurationLabel.textContent = `${days} day${days === 1 ? '' : 's'}`;
+    }
+    this.scheduleCostShockRefetch(days);
+  };
+
+  /** Debounce re-fetch by 300ms so rapid slider drags don't spam the API. */
+  private scheduleCostShockRefetch(days: number): void {
+    if (this.costShockCalcDebounceTimer) clearTimeout(this.costShockCalcDebounceTimer);
+    this.costShockCalcDebounceTimer = setTimeout(() => {
+      this.costShockCalcDebounceTimer = null;
+      void this.refetchMultiSectorShock(days);
+    }, 300);
+  }
+
+  private async refetchMultiSectorShock(days: number): Promise<void> {
+    const iso2 = this.currentCode;
+    const cp = this.costShockCalcPrimaryChokepoint;
+    if (!iso2 || !cp) return;
+
+    // Abort any in-flight fetch before starting a new one.
+    this.costShockCalcAbort?.abort();
+    this.costShockCalcAbort = new AbortController();
+    try {
+      const resp = await fetchMultiSectorCostShock(iso2, cp, days, { signal: this.costShockCalcAbort.signal });
+      if (this.currentCode !== iso2) return;
+      if (this.costShockCalcClosureDays !== days) return; // a newer slider move superseded this
+      this.renderMultiSectorShockRows(resp.sectors);
+    } catch {
+      // Ignore — either aborted or transient network; leave prior values visible.
     }
   }
 
@@ -1306,13 +1472,22 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
       return;
     }
 
+    this.cachedTradeExposureData = data;
+    this.cachedSectors = sectors ?? [];
+
+    this.renderTradeExposureContent();
+  }
+
+  private renderTradeExposureContent(): void {
+    if (!this.tradeExposureBody || !this.cachedTradeExposureData) return;
+    const data = this.cachedTradeExposureData;
+    const sectors = this.cachedSectors;
+
     this.tradeExposureBody.replaceChildren();
 
-    // Vulnerability index header
     const vulnDiv = this.el('div', 'cdp-vuln-index', `Vulnerability: ${Math.round(data.vulnerabilityIndex)}/100`);
     this.tradeExposureBody.append(vulnDiv);
 
-    // Sector-by-chokepoint matrix (if multi-sector data available)
     if (sectors && sectors.length > 0) {
       const sectorLabel = this.el('div', 'cdp-section-sublabel', 'Sector exposure by primary chokepoint');
       this.tradeExposureBody.append(sectorLabel);
@@ -1328,7 +1503,10 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
 
       const tbody = this.el('tbody');
       for (const s of sectors.slice(0, 10)) {
+        const isSelected = this.selectedSectorHs2 === s.hs2;
         const tr = this.el('tr');
+        tr.className = `cdp-sector-row${isSelected ? ' cdp-sector-row--selected' : ''}`;
+        tr.dataset.hs2 = s.hs2;
         const sectorCell = this.el('td', 'cdp-sector-label');
         sectorCell.textContent = s.label;
         const flag = DEPENDENCY_FLAG_LABELS[s.dependencyFlag];
@@ -1344,11 +1522,27 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
         scoreCell.style.color = scoreColor;
         tr.append(sectorCell, cpCell, scoreCell);
         tbody.append(tr);
+
+        if (isSelected) {
+          const detailRow = this.el('tr');
+          detailRow.className = 'cdp-sector-detail-row';
+          const detailCell = this.el('td');
+          detailCell.setAttribute('colspan', '3');
+          detailCell.append(this.buildRouteDetail(s));
+          detailRow.append(detailCell);
+          tbody.append(detailRow);
+        }
       }
       table.append(tbody);
+
+      tbody.addEventListener('click', (e) => {
+        const row = (e.target as HTMLElement).closest<HTMLElement>('tr.cdp-sector-row');
+        if (!row?.dataset.hs2) return;
+        this.handleSectorRowClick(row.dataset.hs2);
+      });
+
       this.tradeExposureBody.append(table);
     } else {
-      // Fallback: original chokepoint-only bars
       const sorted = [...data.exposures].sort((a, b) => b.exposureScore - a.exposureScore).slice(0, 3);
       const table = this.el('table', 'cdp-trade-exposure-table');
       const tbody = this.el('tbody');
@@ -1370,6 +1564,350 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
 
     const footer = this.el('div', 'cdp-card-footer', 'Source: Comtrade \u00B7 HS2 sectors \u00B7 Scores indicate route overlap, not share');
     this.tradeExposureBody.append(footer);
+  }
+
+  private handleSectorRowClick(hs2: string): void {
+    this.sectorBypassAbort?.abort();
+    this.sectorBypassAbort = null;
+    this.map?.clearHighlightedRoute();
+
+    if (this.selectedSectorHs2 === hs2) {
+      this.selectedSectorHs2 = null;
+      this.renderTradeExposureContent();
+      return;
+    }
+
+    if (this.isMaximizedState) this.minimize();
+
+    this.selectedSectorHs2 = hs2;
+    this.renderTradeExposureContent();
+
+    const sector = this.cachedSectors.find(s => s.hs2 === hs2);
+    if (!sector) return;
+
+    const matchingRoutes = getChokepointRoutes(sector.primaryChokepointId);
+    const matchingRouteIds = matchingRoutes.map(r => r.id);
+
+    if (matchingRouteIds.length > 0) {
+      this.map?.highlightRoute(matchingRouteIds);
+      this.map?.zoomToRoutes(matchingRouteIds);
+    }
+  }
+
+  private buildRouteDetail(sector: SectorExposureSummary): HTMLElement {
+    const wrap = this.el('div', 'cdp-route-detail');
+
+    const matchingRoutes = getChokepointRoutes(sector.primaryChokepointId);
+
+    if (matchingRoutes.length === 0) {
+      wrap.append(this.el('div', 'cdp-route-path', 'No maritime route data'));
+      return wrap;
+    }
+
+    const portMap = new Map(PORTS.map(p => [p.id, p.name]));
+    const waterwayMap = new Map(STRATEGIC_WATERWAYS.map(w => [w.id, w.name]));
+
+    const cpName = waterwayMap.get(sector.primaryChokepointId) ?? sector.primaryChokepointName;
+    const routesLabel = this.el('div', 'cdp-bypass-heading', `Routes via ${cpName}:`);
+    wrap.append(routesLabel);
+
+    for (const route of matchingRoutes) {
+      const pathParts: string[] = [];
+      pathParts.push(portMap.get(route.from) ?? route.from);
+      for (const wp of route.waypoints) {
+        pathParts.push(waterwayMap.get(wp) ?? wp);
+      }
+      pathParts.push(portMap.get(route.to) ?? route.to);
+      const pathStr = pathParts.map(p => escapeHtml(p)).join(' \u2192 ');
+
+      const pathEl = this.el('div', 'cdp-route-path');
+      pathEl.innerHTML = `${escapeHtml(route.name)}: ${pathStr}`;
+      wrap.append(pathEl);
+    }
+
+    const statsEl = this.el('div', 'cdp-route-stats');
+    const distEl = this.el('div');
+    distEl.innerHTML = `Distance: <span>\u2014</span>`;
+    const transitEl = this.el('div');
+    transitEl.innerHTML = `Transit: <span>\u2014</span>`;
+    const riskEl = this.el('div');
+    const riskScore = sector.exposureScore;
+    const riskColor = riskScore >= 70 ? '#ef4444' : riskScore > 30 ? '#f59e0b' : '#94a3b8';
+    riskEl.innerHTML = `Chokepoint Risk: <span style="color:${riskColor}">${riskScore.toFixed(0)}/100</span>`;
+    const routeCountEl = this.el('div');
+    routeCountEl.innerHTML = `Routes via chokepoint: <span>${matchingRoutes.length}</span>`;
+    statsEl.append(distEl, transitEl, riskEl, routeCountEl);
+    wrap.append(statsEl);
+
+    const bypassSection = this.el('div', 'cdp-bypass-section');
+    const bypassHeading = this.el('div', 'cdp-bypass-heading', 'Bypass Options');
+    bypassSection.append(bypassHeading);
+    const bypassContent = this.el('div');
+
+    const isPro = hasPremiumAccess(getAuthState());
+    if (!isPro) {
+      const gateEl = this.makeProLocked('Bypass corridors available with PRO');
+      gateEl.addEventListener('click', () => trackGateHit('sector-bypass-corridors'), { once: true });
+      bypassContent.append(gateEl);
+    } else {
+      bypassContent.append(this.makeLoading('Loading bypass options\u2026'));
+      this.sectorBypassAbort = new AbortController();
+      const signal = this.sectorBypassAbort.signal;
+      void fetchBypassOptions(sector.primaryChokepointId, 'container', 100).then(resp => {
+        if (signal.aborted) return;
+        bypassContent.replaceChildren();
+        const top3 = resp.options.slice(0, 3);
+        if (top3.length === 0) {
+          bypassContent.append(this.el('div', 'cdp-route-path', 'No bypass options available'));
+          return;
+        }
+        const tbl = this.el('table', 'cdp-trade-exposure-table');
+        const tHead = this.el('thead');
+        const hRow = this.el('tr');
+        hRow.append(this.el('th', '', 'Corridor'), this.el('th', '', '+Days'), this.el('th', '', '+Cost'), this.el('th', '', 'Risk'));
+        tHead.append(hRow);
+        tbl.append(tHead);
+        const tBody = this.el('tbody');
+        const riskTierMap: Record<string, string> = {
+          WAR_RISK_TIER_UNSPECIFIED: 'Normal',
+          WAR_RISK_TIER_WAR_ZONE: 'War Zone',
+          WAR_RISK_TIER_CRITICAL: 'Critical',
+          WAR_RISK_TIER_HIGH: 'High',
+          WAR_RISK_TIER_ELEVATED: 'Elevated',
+          WAR_RISK_TIER_NORMAL: 'Normal',
+        };
+        for (const opt of top3) {
+          const r = this.el('tr');
+          r.append(
+            this.el('td', '', opt.name),
+            this.el('td', '', opt.addedTransitDays > 0 ? `+${opt.addedTransitDays}d` : '\u2014'),
+            this.el('td', '', opt.addedCostMultiplier > 1 ? `+${((opt.addedCostMultiplier - 1) * 100).toFixed(0)}%` : '\u2014'),
+            this.el('td', '', riskTierMap[opt.bypassWarRiskTier] ?? opt.bypassWarRiskTier),
+          );
+          tBody.append(r);
+        }
+        tbl.append(tBody);
+        bypassContent.append(tbl);
+      }).catch(() => {
+        if (signal.aborted) return;
+        bypassContent.replaceChildren();
+        bypassContent.append(this.el('div', 'cdp-route-path', 'Bypass data unavailable'));
+      });
+    }
+
+    bypassSection.append(bypassContent);
+    wrap.append(bypassSection);
+    return wrap;
+  }
+
+  public updateProductImports(data: CountryProductsResponse | null): void {
+    if (!this.productImportsBody) return;
+    this.productImportsBody.replaceChildren();
+    if (!data || data.products.length === 0) {
+      this.productImportsBody.append(this.makeEmpty('No product import data available'));
+      return;
+    }
+    this.renderProductSelector(data.products);
+  }
+
+  private renderProductSelector(products: CountryProduct[]): void {
+    if (!this.productImportsBody) return;
+    const wrap = this.el('div', 'cdp-product-selector');
+    const input = this.el('input', 'cdp-product-search');
+    input.type = 'text';
+    input.placeholder = 'Search products...';
+    input.setAttribute('autocomplete', 'off');
+
+    const list = this.el('div', 'cdp-product-list');
+    const detailMount = this.el('div', 'cdp-product-detail');
+
+    const renderList = (filter: string) => {
+      list.replaceChildren();
+      const lower = filter.toLowerCase();
+      const filtered = lower
+        ? products.filter(p => p.description.toLowerCase().includes(lower) || p.hs4.includes(lower))
+        : products;
+      for (const p of filtered.slice(0, 12)) {
+        const item = this.el('button', 'cdp-product-item');
+        item.type = 'button';
+        item.textContent = `${p.description} (HS ${p.hs4})`;
+        item.addEventListener('click', () => {
+          input.value = p.description;
+          list.replaceChildren();
+          this.renderProductDetail(detailMount, p);
+        });
+        list.append(item);
+      }
+    };
+
+    input.addEventListener('input', () => renderList(input.value));
+    input.addEventListener('focus', () => {
+      if (list.children.length === 0) renderList(input.value);
+    });
+
+    this.productImportsBody.addEventListener('click', (e) => {
+      if (!(e.target instanceof HTMLElement) || e.target.closest('.cdp-product-selector')) return;
+      list.replaceChildren();
+    });
+
+    wrap.append(input, list);
+    this.productImportsBody.append(wrap, detailMount);
+
+    const first = products[0];
+    if (first) {
+      input.value = first.description;
+      this.renderProductDetail(detailMount, first);
+    }
+  }
+
+  private renderProductDetail(mount: HTMLElement, product: CountryProduct): void {
+    mount.replaceChildren();
+
+    const header = this.el('div', 'cdp-product-header');
+    header.append(
+      this.el('span', 'cdp-product-name', `${product.description} (HS ${product.hs4})`),
+      this.el('span', 'cdp-product-value', this.formatMoney(product.totalValue)),
+    );
+    mount.append(header);
+
+    if (product.topExporters.length === 0) {
+      mount.append(this.makeEmpty('No exporter data'));
+      return;
+    }
+
+    const table = this.el('table', 'cdp-product-suppliers-table');
+    const thead = this.el('thead');
+    const hr = this.el('tr');
+    hr.append(this.el('th', '', 'Supplier'));
+    hr.append(this.el('th', '', 'Share'));
+    hr.append(this.el('th', '', 'Value'));
+    hr.append(this.el('th', '', 'Route Risk'));
+    thead.append(hr);
+    table.append(thead);
+
+    const tbody = this.el('tbody');
+    const recsMount = this.el('div', 'cdp-recommendations');
+
+    type ExporterRow = { partnerIso2: string; share: number; value: number; risk: EnrichedExporter['risk'] | null };
+
+    const renderRows = (enriched: EnrichedExporter[] | null) => {
+      tbody.replaceChildren();
+      recsMount.replaceChildren();
+
+      const rows: ExporterRow[] = enriched ?? product.topExporters.map(exp => ({
+        partnerIso2: exp.partnerIso2,
+        share: exp.share,
+        value: exp.value,
+        risk: null,
+      }));
+
+      for (const exp of rows) {
+        const tr = this.el('tr');
+        const supplierTd = this.el('td', 'cdp-product-supplier');
+        const flag = exp.partnerIso2 ? CountryDeepDivePanel.toFlagEmoji(exp.partnerIso2) : '';
+        supplierTd.textContent = `${flag} ${exp.partnerIso2 || 'N/A'}`;
+        tr.append(supplierTd);
+
+        const shareTd = this.el('td', 'cdp-product-share');
+        const pct = Math.round(exp.share * 100);
+        shareTd.textContent = `${pct}%`;
+        const barWrap = this.el('div', 'cdp-product-share-bar-wrap');
+        const bar = this.el('div', 'cdp-product-share-bar');
+        bar.style.width = `${Math.min(pct, 100)}%`;
+        if (pct >= 50) bar.classList.add('cdp-product-share-high');
+        barWrap.append(bar);
+        shareTd.append(barWrap);
+        tr.append(shareTd);
+
+        tr.append(this.el('td', 'cdp-product-val', this.formatMoney(exp.value)));
+
+        const riskTd = this.el('td', 'cdp-product-risk');
+        if (exp.risk) {
+          const badgeCls = `cdp-risk-badge cdp-risk-${exp.risk.riskLevel.replace('_', '-')}`;
+          const badgeLabels: Record<string, string> = { safe: 'Safe', at_risk: 'At Risk', critical: 'Critical', unknown: 'Unknown' };
+          const badge = this.el('span', badgeCls, badgeLabels[exp.risk.riskLevel] ?? exp.risk.riskLevel);
+          riskTd.append(badge);
+
+          if (exp.risk.transitChokepoints.length > 0) {
+            const cpNames = exp.risk.transitChokepoints
+              .map(cp => cp.chokepointName)
+              .join(', ');
+            const cpInfo = this.el('div', 'cdp-risk-chokepoints');
+            cpInfo.textContent = cpNames;
+            riskTd.append(cpInfo);
+          }
+        } else {
+          riskTd.textContent = '\u2014';
+        }
+        tr.append(riskTd);
+        tbody.append(tr);
+      }
+
+      if (enriched) {
+        const hasCritical = enriched.some(e => e.risk.riskLevel === 'critical');
+        const hasAtRisk = enriched.some(e => e.risk.riskLevel === 'at_risk');
+        const hasUnknown = enriched.some(e => e.risk.riskLevel === 'unknown');
+        const hasSafe = enriched.some(e => e.risk.riskLevel === 'safe');
+        if (hasCritical || hasAtRisk) {
+          for (const exp of enriched) {
+            if (exp.risk.riskLevel === 'safe' || exp.risk.riskLevel === 'unknown') continue;
+            const recCls = exp.risk.riskLevel === 'critical' ? 'cdp-recommendation-critical' : 'cdp-recommendation-warn';
+            const item = this.el('div', `cdp-recommendation-item ${recCls}`);
+            const expPct = Math.round(exp.share * 100);
+            let text = `\u26A0 ${product.description} imports from ${exp.partnerIso2} (${expPct}%) transit`;
+            if (exp.risk.transitChokepoints.length === 0) continue;
+            const worstCp = exp.risk.transitChokepoints.reduce((a, b) => a.disruptionScore > b.disruptionScore ? a : b);
+            text += ` ${worstCp.chokepointName} (disruption ${worstCp.disruptionScore}/100).`;
+            if (exp.safeAlternative) {
+              const alt = enriched.find(e => e.partnerIso2 === exp.safeAlternative);
+              const altPct = alt ? Math.round(alt.share * 100) : 0;
+              const altFlag = CountryDeepDivePanel.toFlagEmoji(exp.safeAlternative);
+              text += ` ${altFlag} ${exp.safeAlternative} supplies ${altPct}% via routes avoiding this chokepoint.`;
+            }
+            item.textContent = text;
+            recsMount.append(item);
+          }
+        } else if (hasUnknown && !hasSafe) {
+          const item = this.el('div', 'cdp-recommendation-item');
+          item.textContent = '\u2139 No modeled maritime route data available for these suppliers. Risk cannot be assessed.';
+          recsMount.append(item);
+        } else if (hasUnknown && hasSafe) {
+          const safeCount = enriched.filter(e => e.risk.riskLevel === 'safe').length;
+          const unknownCount = enriched.filter(e => e.risk.riskLevel === 'unknown').length;
+          const item = this.el('div', 'cdp-recommendation-item');
+          item.textContent = `\u2139 ${safeCount} supplier(s) verified safe. ${unknownCount} supplier(s) have no modeled route data.`;
+          recsMount.append(item);
+        } else {
+          const safeItem = this.el('div', 'cdp-recommendation-item cdp-recommendation-safe');
+          safeItem.textContent = '\u2713 All current suppliers use routes that avoid disrupted chokepoints.';
+          recsMount.append(safeItem);
+        }
+      }
+    };
+
+    renderRows(null);
+    table.append(tbody);
+    mount.append(table, recsMount);
+
+    const importerIso2 = this.currentCode;
+    const capturedCode = this.getCode();
+    if (importerIso2) {
+      fetchChokepointStatus().then(resp => {
+        if (this.getCode() !== capturedCode) return;
+        if (!resp.chokepoints.length) return;
+        const scores: ChokepointScoreMap = new Map();
+        for (const cp of resp.chokepoints) {
+          scores.set(cp.id, cp.disruptionScore);
+        }
+        const enriched = computeAlternativeSuppliers(product.topExporters, importerIso2, scores);
+        renderRows(enriched);
+      }).catch(() => {
+        console.warn('[deep-dive] Chokepoint status unavailable for route risk enrichment');
+      });
+    }
+
+    const source = this.el('div', 'cdp-card-footer', `Source: UN Comtrade HS4 bilateral \u00B7 ${product.year}`);
+    mount.append(source);
   }
 
   private factItem(label: string, value: string): HTMLElement {
@@ -1620,6 +2158,19 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
 
     const isPro = hasPremiumAccess(getAuthState());
 
+    const [costShockCalcCard, costShockCalcBody] = this.sectionCard(
+      'Cost Shock Calculator',
+      'Model the per-sector added cost of a prolonged chokepoint closure. Drag the slider to change closure duration (1-90 days). Uses war risk premium + best bypass freight uplift × annual import value.',
+    );
+    this.costShockCalcBody = costShockCalcBody;
+    costShockCalcBody.append(
+      isPro ? this.makeLoading('Loading cost shock calculator\u2026') : this.makeProLocked('Upgrade to PRO for multi-sector cost shock modelling'),
+    );
+
+    const [productImportsCard, productImportsCardBody] = this.sectionCard('Product Imports', 'Top imported products by HS4 code with supplier breakdown and concentration risk.');
+    this.productImportsBody = productImportsCardBody;
+    productImportsCardBody.append(isPro ? this.makeLoading('Loading product data\u2026') : this.makeProLocked('Upgrade to PRO for product import data'));
+
     const [debtCard, debtBody] = this.sectionCard('National Debt', 'Government debt-to-GDP ratio, total debt, and year-over-year growth.');
     this.debtBody = debtBody;
     debtBody.append(isPro ? this.makeLoading('Loading debt data\u2026') : this.makeProLocked('Upgrade to PRO for national debt data'));
@@ -1662,7 +2213,7 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
     marketsBody.append(this.makeLoading(t('countryBrief.loadingMarkets')));
     briefBody.append(this.makeLoading(t('countryBrief.generatingBrief')));
 
-    bodyGrid.append(briefCard, factsExpanded, energyCard, maritimeCard, tradeCard, debtCard, sanctionsCard, comtradeCard, tariffCard, chokepointCard, costShockCard, signalsCard, timelineCard, newsCard, militaryCard, infraCard, economicCard, marketsCard);
+    bodyGrid.append(briefCard, factsExpanded, energyCard, maritimeCard, tradeCard, costShockCalcCard, productImportsCard, debtCard, sanctionsCard, comtradeCard, tariffCard, chokepointCard, costShockCard, signalsCard, timelineCard, newsCard, militaryCard, infraCard, economicCard, marketsCard);
     shell.append(header, summaryGrid, bodyGrid);
     this.content.append(shell);
   }
@@ -1674,16 +2225,35 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
 
   private resetPanelContent(): void {
     this.destroyResilienceWidget();
+    this.selectedSectorHs2 = null;
+    this.sectorBypassAbort?.abort();
+    this.sectorBypassAbort = null;
+    this.cachedTradeExposureData = null;
+    this.cachedSectors = [];
+    this.map?.clearHighlightedRoute();
     this.scoreCard = null;
     this.energyBody = null;
     this.maritimeBody = null;
     this.tradeExposureBody = null;
+    this.productImportsBody = null;
     this.debtBody = null;
     this.sanctionsBody = null;
     this.comtradeBody = null;
     this.tariffBody = null;
     this.chokepointBody = null;
     this.costShockBody = null;
+    this.costShockCalcAbort?.abort();
+    this.costShockCalcAbort = null;
+    if (this.costShockCalcDebounceTimer) {
+      clearTimeout(this.costShockCalcDebounceTimer);
+      this.costShockCalcDebounceTimer = null;
+    }
+    this.costShockCalcBody = null;
+    this.costShockCalcTable = null;
+    this.costShockCalcDurationLabel = null;
+    this.costShockCalcTotalLabel = null;
+    this.costShockCalcPrimaryChokepoint = null;
+    this.costShockCalcClosureDays = 30;
     this.content.replaceChildren();
   }
 

@@ -14,6 +14,15 @@
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import dns from 'node:dns/promises';
+import {
+  escapeHtml,
+  escapeTelegramHtml,
+  escapeSlackMrkdwn,
+  markdownToEmailHtml,
+  markdownToTelegramHtml,
+  markdownToSlackMrkdwn,
+  markdownToDiscord,
+} from './_digest-markdown.mjs';
 
 const require = createRequire(import.meta.url);
 const { decrypt } = require('./lib/crypto.cjs');
@@ -319,14 +328,6 @@ function formatDigest(stories, nowMs) {
   return lines.join('\n');
 }
 
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
 function formatDigestHtml(stories, nowMs) {
   if (!stories || stories.length === 0) return null;
   const dateStr = new Intl.DateTimeFormat('en-US', {
@@ -382,55 +383,63 @@ function formatDigestHtml(stories, nowMs) {
     .map((sev) => sectionHtml(sev, buckets[sev]))
     .join('');
 
-  return `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; background: #0a0a0a; color: #e0e0e0;">
-  <div style="background: #4ade80; height: 4px;"></div>
-  <div style="padding: 40px 32px 0;">
-    <table cellpadding="0" cellspacing="0" border="0" style="margin: 0 auto 32px;">
-      <tr>
-        <td style="width: 40px; height: 40px; vertical-align: middle;">
-          <img src="https://www.worldmonitor.app/favico/android-chrome-192x192.png" width="40" height="40" alt="WorldMonitor" style="border-radius: 50%; display: block;" />
-        </td>
-        <td style="padding-left: 12px;">
-          <div style="font-size: 16px; font-weight: 800; color: #fff; letter-spacing: -0.5px;">WORLD MONITOR</div>
-          <div style="font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 2px;">Daily Intelligence Digest</div>
-        </td>
-      </tr>
-    </table>
-    <div style="background: #111; border: 1px solid #1a1a1a; border-left: 3px solid #4ade80; padding: 20px 24px; margin-bottom: 28px;">
-      <p style="font-size: 18px; font-weight: 600; color: #fff; margin: 0 0 8px;">Your Digest &mdash; ${dateStr}</p>
-      <p style="font-size: 14px; color: #999; margin: 0; line-height: 1.5;">${totalCount} event${totalCount !== 1 ? 's' : ''} tracked across monitored regions.</p>
+  return `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #111; color: #e0e0e0;">
+  <div style="max-width: 680px; margin: 0 auto;">
+    <div style="background: #4ade80; height: 3px;"></div>
+    <div style="background: #0d0d0d; padding: 32px 36px 0;">
+      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 28px;">
+        <tr>
+          <td style="vertical-align: middle;">
+            <table cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="width: 36px; height: 36px; vertical-align: middle;">
+                  <img src="https://www.worldmonitor.app/favico/android-chrome-192x192.png" width="36" height="36" alt="WorldMonitor" style="border-radius: 50%; display: block;" />
+                </td>
+                <td style="padding-left: 10px;">
+                  <div style="font-size: 15px; font-weight: 800; color: #fff; letter-spacing: -0.3px;">WORLD MONITOR</div>
+                </td>
+              </tr>
+            </table>
+          </td>
+          <td style="text-align: right; vertical-align: middle;">
+            <span style="font-size: 11px; color: #555; text-transform: uppercase; letter-spacing: 1px;">${dateStr}</span>
+          </td>
+        </tr>
+      </table>
+      <div data-ai-summary-slot></div>
+      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 24px;">
+        <tr>
+          <td style="text-align: center; padding: 14px 8px; width: 33%; background: #161616; border: 1px solid #222;">
+            <div style="font-size: 24px; font-weight: 800; color: #4ade80;">${totalCount}</div>
+            <div style="font-size: 9px; color: #666; text-transform: uppercase; letter-spacing: 1.5px; margin-top: 2px;">Events</div>
+          </td>
+          <td style="width: 1px;"></td>
+          <td style="text-align: center; padding: 14px 8px; width: 33%; background: #161616; border: 1px solid #222;">
+            <div style="font-size: 24px; font-weight: 800; color: #ef4444;">${criticalCount}</div>
+            <div style="font-size: 9px; color: #666; text-transform: uppercase; letter-spacing: 1.5px; margin-top: 2px;">Critical</div>
+          </td>
+          <td style="width: 1px;"></td>
+          <td style="text-align: center; padding: 14px 8px; width: 33%; background: #161616; border: 1px solid #222;">
+            <div style="font-size: 24px; font-weight: 800; color: #f97316;">${highCount}</div>
+            <div style="font-size: 9px; color: #666; text-transform: uppercase; letter-spacing: 1.5px; margin-top: 2px;">High</div>
+          </td>
+        </tr>
+      </table>
+      ${sectionsHtml}
+      <div style="text-align: center; padding: 12px 0 36px;">
+        <a href="https://worldmonitor.app" style="display: inline-block; background: #4ade80; color: #0a0a0a; padding: 12px 32px; text-decoration: none; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; border-radius: 3px;">Open Dashboard</a>
+      </div>
     </div>
-    <table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 28px; background: #111; border: 1px solid #1a1a1a;">
-      <tr>
-        <td style="text-align: center; padding: 16px 8px; width: 33%;">
-          <div style="font-size: 22px; font-weight: 800; color: #4ade80;">${totalCount}</div>
-          <div style="font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 1px;">Total</div>
-        </td>
-        <td style="text-align: center; padding: 16px 8px; width: 33%; border-left: 1px solid #1a1a1a; border-right: 1px solid #1a1a1a;">
-          <div style="font-size: 22px; font-weight: 800; color: #ef4444;">${criticalCount}</div>
-          <div style="font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 1px;">Critical</div>
-        </td>
-        <td style="text-align: center; padding: 16px 8px; width: 33%;">
-          <div style="font-size: 22px; font-weight: 800; color: #f97316;">${highCount}</div>
-          <div style="font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 1px;">High</div>
-        </td>
-      </tr>
-    </table>
-    ${sectionsHtml}
-    <div style="text-align: center; margin-bottom: 36px;">
-      <a href="https://worldmonitor.app" style="display: inline-block; background: #4ade80; color: #0a0a0a; padding: 14px 36px; text-decoration: none; font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px; border-radius: 2px;">View Full Dashboard</a>
+    <div style="background: #0a0a0a; border-top: 1px solid #1a1a1a; padding: 20px 36px; text-align: center;">
+      <div style="margin-bottom: 12px;">
+        <a href="https://x.com/worldmonitorapp" style="color: #555; text-decoration: none; font-size: 11px; margin: 0 10px;">X / Twitter</a>
+        <a href="https://github.com/koala73/worldmonitor" style="color: #555; text-decoration: none; font-size: 11px; margin: 0 10px;">GitHub</a>
+        <a href="https://discord.gg/re63kWKxaz" style="color: #555; text-decoration: none; font-size: 11px; margin: 0 10px;">Discord</a>
+      </div>
+      <p style="font-size: 10px; color: #444; margin: 0; line-height: 1.5;">
+        <a href="https://worldmonitor.app" style="color: #4ade80; text-decoration: none;">worldmonitor.app</a>
+      </p>
     </div>
-  </div>
-  <div style="border-top: 1px solid #1a1a1a; padding: 24px 32px; text-align: center;">
-    <div style="margin-bottom: 16px;">
-      <a href="https://x.com/eliehabib" style="color: #666; text-decoration: none; font-size: 12px; margin: 0 12px;">X / Twitter</a>
-      <a href="https://github.com/koala73/worldmonitor" style="color: #666; text-decoration: none; font-size: 12px; margin: 0 12px;">GitHub</a>
-      <a href="https://worldmonitor.app" style="color: #666; text-decoration: none; font-size: 12px; margin: 0 12px;">worldmonitor.app</a>
-    </div>
-    <p style="font-size: 11px; color: #444; margin: 0; line-height: 1.6;">
-      World Monitor &mdash; Real-time intelligence for a connected world.<br />
-      <a href="https://worldmonitor.app" style="color: #4ade80; text-decoration: none;">worldmonitor.app</a>
-    </p>
   </div>
 </div>`;
 }
@@ -543,7 +552,12 @@ async function sendTelegram(userId, chatId, text) {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'User-Agent': 'worldmonitor-digest/1.0' },
-        body: JSON.stringify({ chat_id: chatId, text }),
+        body: JSON.stringify({
+          chat_id: chatId,
+          text,
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+        }),
         signal: AbortSignal.timeout(10000),
       },
     );
@@ -724,6 +738,47 @@ async function isUserPro(userId) {
   }
 }
 
+// ── Per-channel body composition ─────────────────────────────────────────────
+
+const DIVIDER = '─'.repeat(40);
+
+/**
+ * Compose the per-channel message bodies for a single digest rule.
+ * Keeps the per-channel formatting logic out of main() so its cognitive
+ * complexity stays within the lint budget.
+ */
+function buildChannelBodies(storyListPlain, aiSummary) {
+  if (!aiSummary) {
+    return {
+      text: storyListPlain,
+      telegramText: escapeTelegramHtml(storyListPlain),
+      slackText: escapeSlackMrkdwn(storyListPlain),
+      discordText: storyListPlain,
+    };
+  }
+  return {
+    text: `EXECUTIVE SUMMARY\n\n${aiSummary}\n\n${DIVIDER}\n\n${storyListPlain}`,
+    telegramText: `<b>EXECUTIVE SUMMARY</b>\n\n${markdownToTelegramHtml(aiSummary)}\n\n${DIVIDER}\n\n${escapeTelegramHtml(storyListPlain)}`,
+    slackText: `*EXECUTIVE SUMMARY*\n\n${markdownToSlackMrkdwn(aiSummary)}\n\n${DIVIDER}\n\n${escapeSlackMrkdwn(storyListPlain)}`,
+    discordText: `**EXECUTIVE SUMMARY**\n\n${markdownToDiscord(aiSummary)}\n\n${DIVIDER}\n\n${storyListPlain}`,
+  };
+}
+
+/**
+ * Inject the formatted AI summary into the HTML email template's slot,
+ * or strip the slot placeholder when there is no summary.
+ */
+function injectEmailSummary(html, aiSummary) {
+  if (!html) return html;
+  if (!aiSummary) return html.replace('<div data-ai-summary-slot></div>', '');
+  const formattedSummary = markdownToEmailHtml(aiSummary);
+  const summaryHtml = `<div style="background:#161616;border:1px solid #222;border-left:3px solid #4ade80;padding:18px 22px;margin:0 0 24px 0;">
+<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#4ade80;margin-bottom:10px;">Executive Summary</div>
+<div style="font-size:13px;line-height:1.7;color:#ccc;">${formattedSummary}</div>
+</div>`;
+  return html.replace('<div data-ai-summary-slot></div>', summaryHtml);
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -814,23 +869,12 @@ async function main() {
       aiSummary = await generateAISummary(stories, rule);
     }
 
-    let text = formatDigest(stories, nowMs);
-    if (!text) continue;
-    let html = formatDigestHtml(stories, nowMs);
+    const storyListPlain = formatDigest(stories, nowMs);
+    if (!storyListPlain) continue;
+    const htmlRaw = formatDigestHtml(stories, nowMs);
 
-    if (aiSummary) {
-      text = `EXECUTIVE SUMMARY\n\n${aiSummary}\n\n${'─'.repeat(40)}\n\n${text}`;
-      if (html) {
-        const summaryHtml = `<div style="background:#111;border-left:3px solid #4ade80;padding:16px 20px;margin:0 0 24px 0;border-radius:4px;">
-<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#4ade80;margin-bottom:12px;">Executive Summary</div>
-<div style="font-size:14px;line-height:1.7;color:#d4d4d4;white-space:pre-wrap;">${escapeHtml(aiSummary)}</div>
-</div>`;
-        html = html.replace(
-          /(<div style="padding: 40px 32px 0;">)/,
-          (_, p1) => `${p1}\n${summaryHtml}`,
-        );
-      }
-    }
+    const { text, telegramText, slackText, discordText } = buildChannelBodies(storyListPlain, aiSummary);
+    const html = injectEmailSummary(htmlRaw, aiSummary);
 
     const shortDate = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(nowMs));
     const subject = aiSummary ? `WorldMonitor Intelligence Brief — ${shortDate}` : `WorldMonitor Digest — ${shortDate}`;
@@ -840,11 +884,11 @@ async function main() {
     for (const ch of deliverableChannels) {
       let ok = false;
       if (ch.channelType === 'telegram' && ch.chatId) {
-        ok = await sendTelegram(rule.userId, ch.chatId, text);
+        ok = await sendTelegram(rule.userId, ch.chatId, telegramText);
       } else if (ch.channelType === 'slack' && ch.webhookEnvelope) {
-        ok = await sendSlack(rule.userId, ch.webhookEnvelope, text);
+        ok = await sendSlack(rule.userId, ch.webhookEnvelope, slackText);
       } else if (ch.channelType === 'discord' && ch.webhookEnvelope) {
-        ok = await sendDiscord(rule.userId, ch.webhookEnvelope, text);
+        ok = await sendDiscord(rule.userId, ch.webhookEnvelope, discordText);
       } else if (ch.channelType === 'email' && ch.email) {
         ok = await sendEmail(ch.email, subject, text, html);
       } else if (ch.channelType === 'webhook' && ch.webhookEnvelope) {

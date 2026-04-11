@@ -121,7 +121,7 @@ export const COMMANDS: Command[] = [
   { id: 'panel:stock-backtest', keywords: ['backtest', 'stock backtest', 'backtesting', 'strategy'], label: 'Panel: Stock Backtesting', icon: '\u{1F4C9}', category: 'panels' },
   { id: 'panel:daily-market-brief', keywords: ['daily brief', 'market brief', 'morning brief'], label: 'Panel: Daily Market Brief', icon: '\u{1F4CB}', category: 'panels' },
   { id: 'panel:market-implications', keywords: ['market implications', 'trade signals', 'ai signals', 'long short hedge', 'trade thesis'], label: 'Panel: AI Market Implications', icon: '\u{1F4CA}', category: 'panels' },
-  { id: 'panel:heatmap', keywords: ['heatmap', 'sector heatmap'], label: 'Panel: Sector Heatmap', icon: '\u{1F5FA}\uFE0F', category: 'panels' },
+  { id: 'panel:heatmap', keywords: ['heatmap', 'sector heatmap', 'sector pe', 'pe ratio', 'valuations', 'forward pe', 'trailing pe', 'sector beta'], label: 'Panel: Sector Heatmap', icon: '\u{1F5FA}\uFE0F', category: 'panels' },
   { id: 'panel:ai', keywords: ['ai', 'ml', 'artificial intelligence'], label: 'Panel: AI/ML', icon: '\u{1F916}', category: 'panels' },
   { id: 'panel:macro-signals', keywords: ['macro', 'macro signals', 'liquidity'], label: 'Panel: Market Radar', icon: '\u{1F4C9}', category: 'panels' },
   { id: 'panel:fear-greed', keywords: ['fear', 'greed', 'fear and greed', 'sentiment', 'fear greed index'], label: 'Panel: Fear & Greed', icon: '\u{1F4CA}', category: 'panels' },
@@ -177,6 +177,7 @@ export const COMMANDS: Command[] = [
   { id: 'panel:climate-news', keywords: ['climate news', 'climate headlines', 'environment news', 'climate intelligence', 'carbon brief', 'copernicus'], label: 'Panel: Climate News', icon: '\u{1F30D}', category: 'panels' },
   { id: 'panel:disease-outbreaks', keywords: ['disease outbreaks', 'outbreaks', 'who alerts', 'epidemic', 'health alerts', 'promed'], label: 'Panel: Disease Outbreaks', icon: '\u{1F9A0}', category: 'panels' },
   { id: 'panel:social-velocity', keywords: ['social velocity', 'reddit trending', 'social signals', 'viral', 'trending posts'], label: 'Panel: Social Velocity', icon: '\u{1F4F1}', category: 'panels' },
+  { id: 'panel:wsb-ticker-scanner', keywords: ['wsb', 'wallstreetbets', 'reddit stocks', 'ticker scanner', 'social sentiment', 'meme stocks'], label: 'Panel: WSB Ticker Scanner', icon: '\u{1F680}', category: 'panels' },
 
   // Crypto panels
   { id: 'panel:crypto-heatmap', keywords: ['crypto sectors', 'crypto heatmap', 'altcoin sectors'], label: 'Panel: Crypto Sectors', icon: '\u{1F7E9}', category: 'panels' },

@@ -220,6 +220,15 @@ export interface AnalyzeStockResponse {
   stopLoss: number;
   takeProfit: number;
   engineVersion: string;
+  analystConsensus?: AnalystConsensus;
+  priceTarget?: PriceTarget;
+  recentUpgrades: UpgradeDowngrade[];
+  dividendYield: number;
+  trailingAnnualDividendRate: number;
+  exDividendDate: number;
+  payoutRatio?: number;
+  dividendFrequency: string;
+  dividendCagr: number;
 }
 
 export interface StockAnalysisHeadline {
@@ -227,6 +236,33 @@ export interface StockAnalysisHeadline {
   source: string;
   link: string;
   publishedAt: number;
+}
+
+export interface AnalystConsensus {
+  strongBuy: number;
+  buy: number;
+  hold: number;
+  sell: number;
+  strongSell: number;
+  total: number;
+  period: string;
+}
+
+export interface PriceTarget {
+  high?: number;
+  low?: number;
+  mean?: number;
+  median?: number;
+  current?: number;
+  numberOfAnalysts: number;
+}
+
+export interface UpgradeDowngrade {
+  firm: string;
+  toGrade: string;
+  fromGrade: string;
+  action: string;
+  epochGradeDate: number;
 }
 
 export interface GetStockAnalysisHistoryRequest {
@@ -424,6 +460,28 @@ export interface CotInstrument {
   dealerLong: string;
   dealerShort: string;
   netPct: number;
+}
+
+export interface GetInsiderTransactionsRequest {
+  symbol: string;
+}
+
+export interface GetInsiderTransactionsResponse {
+  unavailable: boolean;
+  symbol: string;
+  totalBuys: number;
+  totalSells: number;
+  netValue: number;
+  transactions: InsiderTransaction[];
+  fetchedAt: string;
+}
+
+export interface InsiderTransaction {
+  name: string;
+  shares: number;
+  value: number;
+  transactionCode: string;
+  transactionDate: string;
 }
 
 export interface FieldViolation {
@@ -939,6 +997,31 @@ export class MarketServiceClient {
     }
 
     return await resp.json() as GetCotPositioningResponse;
+  }
+
+  async getInsiderTransactions(req: GetInsiderTransactionsRequest, options?: MarketServiceCallOptions): Promise<GetInsiderTransactionsResponse> {
+    let path = "/api/market/v1/get-insider-transactions";
+    const params = new URLSearchParams();
+    if (req.symbol != null && req.symbol !== "") params.set("symbol", String(req.symbol));
+    const url = this.baseURL + path + (params.toString() ? "?" + params.toString() : "");
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...this.defaultHeaders,
+      ...options?.headers,
+    };
+
+    const resp = await this.fetchFn(url, {
+      method: "GET",
+      headers,
+      signal: options?.signal,
+    });
+
+    if (!resp.ok) {
+      return this.handleError(resp);
+    }
+
+    return await resp.json() as GetInsiderTransactionsResponse;
   }
 
   private async handleError(resp: Response): Promise<never> {
