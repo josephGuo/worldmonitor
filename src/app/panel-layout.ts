@@ -41,6 +41,7 @@ import {
   InternetDisruptionsPanel,
   RuntimeConfigPanel,
   InsightsPanel,
+  ThreatTimelinePanel,
   MacroSignalsPanel,
   FearGreedPanel,
   MarketBreadthPanel,
@@ -568,6 +569,7 @@ export class PanelLayoutManager implements AppModule {
               <option value="oceania">${t('components.deckgl.views.oceania')}</option>
             </select>
           </div>
+          <span id="missionPresetMount" class="mission-preset-mount"></span>
           <button class="mobile-search-btn" id="mobileSearchBtn" aria-label="${t('header.search')}">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </button>
@@ -611,6 +613,11 @@ export class PanelLayoutManager implements AppModule {
         <button class="mobile-menu-item" id="mobileMenuRegion">
           <span class="mobile-menu-item-icon">🌐</span>
           <span class="mobile-menu-item-label">${t('components.deckgl.views.global')}</span>
+          <span class="mobile-menu-chevron">▸</span>
+        </button>
+        <button class="mobile-menu-item" id="mobileMenuMission">
+          <span class="mobile-menu-item-icon">◎</span>
+          <span class="mobile-menu-item-label">Mission</span>
           <span class="mobile-menu-chevron">▸</span>
         </button>
         <div class="mobile-menu-divider"></div>
@@ -1388,6 +1395,9 @@ export class PanelLayoutManager implements AppModule {
     }
 
     this.createPanel('insights', () => new InsightsPanel());
+    if (isPanelInVariantDefaults('threat-timeline')) {
+      this.createPanel('threat-timeline', () => new ThreatTimelinePanel());
+    }
 
     // Global Giving panel (all variants)
     this.lazyPanel('giving', () =>
@@ -1852,13 +1862,13 @@ export class PanelLayoutManager implements AppModule {
     }
   }
 
-  public applySavedPanelOrder(): void {
+  public applySavedPanelOrder(panelOrder?: string[]): void {
     const grid = document.getElementById('panelsGrid');
     const bottomGrid = document.getElementById('mapBottomGrid');
     if (!grid || !bottomGrid) return;
 
     const activePanelKeys = Object.keys(this.ctx.panelSettings).filter(k => k !== 'map');
-    const savedOrder = this.getSavedPanelOrder().filter(k => activePanelKeys.includes(k));
+    const savedOrder = (panelOrder ?? this.getSavedPanelOrder()).filter(k => activePanelKeys.includes(k));
     if (savedOrder.length === 0) return;
 
     const seen = new Set<string>();
@@ -1872,7 +1882,7 @@ export class PanelLayoutManager implements AppModule {
     this.resolvedPanelOrder.forEach(appendUnique);
     activePanelKeys.forEach(appendUnique);
 
-    this.bottomSetMemory = this.getSavedBottomSet();
+    this.bottomSetMemory = panelOrder ? new Set<string>() : this.getSavedBottomSet();
     this.resolvedPanelOrder = allOrder;
 
     const effectiveUltraWide = this.getEffectiveUltraWide();
