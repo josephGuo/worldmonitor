@@ -15,7 +15,7 @@ import type { WeatherAlert } from '@/services/weather';
 import type { RadiationObservation } from '@/services/radiation';
 import { getSeverityColor } from '@/services/weather';
 import { startSmartPollLoop, type SmartPollLoopHandle } from '@/services/smart-poll-loop';
-import { scheduleAfterFirstPaint } from '@/utils/after-paint';
+import { scheduleAfterFirstPaint, yieldToMain } from '@/utils/after-paint';
 import {
   INTEL_HOTSPOTS,
   CONFLICT_ZONES,
@@ -36,7 +36,7 @@ import {
 // off the eager @/config barrel and load only with this lazy renderer (#4404).
 import { STARTUP_HUBS, ACCELERATORS, TECH_HQS, CLOUD_REGIONS } from '@/config/tech-geo';
 import { AI_DATA_CENTERS } from '@/config/ai-datacenters';
-import { MAP_URLS, UNDERSEA_CABLES, NUCLEAR_FACILITIES, SANCTIONED_COUNTRIES, ECONOMIC_CENTERS, SPACEPORTS, CRITICAL_MINERALS } from '@/config/geo-map';
+import { worldTopologyUrl, UNDERSEA_CABLES, NUCLEAR_FACILITIES, SANCTIONED_COUNTRIES, ECONOMIC_CENTERS, SPACEPORTS, CRITICAL_MINERALS } from '@/config/geo-map';
 import { pinWebcam, isPinned } from '@/services/webcams/pinned-store';
 import type { WebcamEntry, WebcamCluster } from '@/generated/client/worldmonitor/webcam/v1/service_client';
 import { tokenizeForMatch, matchKeyword, findMatchingKeywords } from '@/utils/keyword-match';
@@ -88,6 +88,7 @@ export interface MapState {
 
 export interface MapComponentOptions {
   chrome?: boolean;
+  isMobile?: boolean;
 }
 
 interface HotspotWithBreaking extends Hotspot {
@@ -111,12 +112,6 @@ interface WorldTopology extends Topology {
   objects: {
     countries: GeometryCollection;
   };
-}
-
-// Yield to the main thread (ends the current task) so a long render can be split into
-// sub-50ms tasks — lowers TBT, which deferral alone does not (#4442).
-function yieldToMain(): Promise<void> {
-  return new Promise((resolve) => { setTimeout(resolve, 0); });
 }
 
 export class MapComponent {
@@ -208,12 +203,15 @@ export class MapComponent {
   // Set in destroy(); guards render() (incl. the deferred first-paint callback and the
   // resize/visibility rAF callbacks) from running on a torn-down instance.
   private destroyed = false;
+  // Mobile loads the lighter 110m country topology (U6); passed in from MapContainer.
+  private readonly isMobile: boolean;
 
   constructor(container: HTMLElement, initialState: MapState, options: MapComponentOptions = {}) {
     this.container = container;
     this.state = initialState;
     this.hotspots = [...INTEL_HOTSPOTS];
     const chrome = options.chrome ?? true;
+    this.isMobile = options.isMobile ?? false;
 
     this.wrapper = document.createElement('div');
     this.wrapper.className = 'map-wrapper';
@@ -1038,7 +1036,7 @@ export class MapComponent {
 
   private async loadMapData(): Promise<void> {
     try {
-      const worldResponse = await fetch(MAP_URLS.world);
+      const worldResponse = await fetch(worldTopologyUrl(this.isMobile));
       this.worldData = await worldResponse.json();
       if (this.worldData) {
         const countries = topojson.feature(
