@@ -129,6 +129,21 @@ describe('Bootstrap endpoint (api/bootstrap.js)', () => {
   const bootstrapPath = join(root, 'api', 'bootstrap.js');
   const src = readFileSync(bootstrapPath, 'utf-8');
 
+  function collectBootstrapApiHelperImports(entryRelPath, seen = new Set()) {
+    const absolutePath = join(root, entryRelPath);
+    const normalized = entryRelPath.replace(/\\/g, '/');
+    if (seen.has(normalized)) return seen;
+    seen.add(normalized);
+
+    const source = readFileSync(absolutePath, 'utf-8');
+    const importRe = /from\s+['"](\.\/_[^'"]+\.js)['"]/g;
+    let match;
+    while ((match = importRe.exec(source)) !== null) {
+      collectBootstrapApiHelperImports(`api/${match[1].slice(2)}`, seen);
+    }
+    return seen;
+  }
+
   it('exports edge runtime config', () => {
     assert.ok(src.includes("runtime: 'edge'"), 'Missing edge runtime config');
   });
@@ -140,6 +155,17 @@ describe('Bootstrap endpoint (api/bootstrap.js)', () => {
   it('defines getCachedJsonBatch inline (self-contained, no server imports)', () => {
     assert.ok(src.includes('getCachedJsonBatch'), 'Missing getCachedJsonBatch function');
     assert.ok(!src.includes("from '../server/"), 'Should not import from server/ — Edge Functions cannot resolve cross-directory TS imports');
+  });
+
+  it('keeps bootstrap and transitive api helpers inside the Edge-safe API boundary', () => {
+    const checked = [...collectBootstrapApiHelperImports('api/bootstrap.js')];
+    const forbiddenImport = /from\s+['"](?:\.\.\/(?:server|src)\/|node:)/;
+    const forbiddenDynamicImport = /import\s*\(\s*['"](?:\.\.\/(?:server|src)\/|node:)/;
+    for (const relPath of checked) {
+      const source = readFileSync(join(root, relPath), 'utf-8');
+      assert.doesNotMatch(source, forbiddenImport, `${relPath} must not import server/src modules or Node built-ins`);
+      assert.doesNotMatch(source, forbiddenDynamicImport, `${relPath} must not dynamically import server/src modules or Node built-ins`);
+    }
   });
 
   it('supports optional ?keys= query param for subset filtering', () => {
@@ -206,7 +232,7 @@ describe('Frontend hydration (src/services/bootstrap.ts)', () => {
       .map((m) => parseInt(m[1].replace(/_/g, ''), 10))
       .filter((n) => n === 1200 || n === 3000);
     assert.deepEqual(
-      timeouts,
+      timeouts.toSorted((a, b) => a - b),
       [1200, 3000],
       `Expected web bootstrap timeouts (fast=1200, slow=3000) — slow tier was bumped from 1.8s to 3.0s to avoid hydration-cascade aborts`,
     );
@@ -224,10 +250,48 @@ describe('Frontend hydration (src/services/bootstrap.ts)', () => {
     assert.ok(src.includes('catch'), 'Missing error handling — panels should fall through to individual calls');
   });
 
-  it('fetches both tiers in parallel', () => {
-    assert.ok(src.includes('Promise.all'), 'Missing Promise.all for parallel tier fetches');
+  it('awaits only the fast tier; backgrounds the slow tier (#4488 — slow off the boot critical path)', () => {
     assert.ok(src.includes("'slow'"), 'Missing slow tier fetch');
     assert.ok(src.includes("'fast'"), 'Missing fast tier fetch');
+    // The ~410KB slow tier must NOT block first paint: the boot must not await both tiers
+    // together. A regression to `await Promise.all([fetchTier('slow'), fetchTier('fast')])`
+    // re-introduces the LCP-blocking boot this deferral removed.
+    assert.ok(
+      !/await\s+Promise\.all\(\s*\[\s*fetchTier\('slow'/.test(src),
+      'slow tier must not be awaited via Promise.all — background it so it stays off the first-paint critical path',
+    );
+    // Slow tier is scheduled only after the fast state is committed.
+    assert.ok(src.includes('scheduleSlowTierFetch'), 'slow tier should be scheduled through the deferred slow-tier helper');
+    assert.ok(src.includes('slowTierSettled = scheduleSlowTierFetch'), 'fetchBootstrapData should expose the background slow-tier checkpoint');
+    assert.ok(/await\s+fetchTier\('fast'/.test(src), "boot should await the fast tier: await fetchTier('fast', …)");
+  });
+
+  it('guards stale slow-tier generations before committing cache or hydration state', () => {
+    assert.ok(src.includes('bootstrapGeneration'), 'Missing bootstrap generation guard');
+    assert.ok(src.includes('isCurrentGeneration'), 'Missing current-generation predicate');
+    assert.ok(src.includes('fetchTier(') && src.includes('shouldCommit'), 'fetchTier should receive a commit guard');
+  });
+});
+
+describe('App bootstrap slow-tier lifecycle', () => {
+  const appSrc = readFileSync(join(root, 'src', 'App.ts'), 'utf-8');
+
+  it('does not update connectivity UI from a slow callback after destroy', () => {
+    assert.match(
+      appSrc,
+      /fetchBootstrapData\(\(\) => \{\s*if \(this\.state\.isDestroyed\) return;\s*this\.bootstrapHydrationState = getBootstrapHydrationState\(\);\s*this\.updateConnectivityUi\(\);/s,
+      'slow-tier callback should bail out after App.destroy()',
+    );
+    assert.ok(appSrc.includes('cancelBootstrapSlowTier();'), 'App.destroy() should cancel pending slow bootstrap work');
+  });
+
+  it('waits for the slow-tier checkpoint before visible data fan-out', () => {
+    const preloadIndex = appSrc.indexOf('await preloadCountryGeometry();');
+    const waitIndex = appSrc.indexOf('await waitForBootstrapSlowTier');
+    const fanoutIndex = appSrc.indexOf('this.dataLoader.loadAllData()', waitIndex);
+    assert.ok(preloadIndex >= 0, 'Missing preloadCountryGeometry checkpoint');
+    assert.ok(waitIndex > preloadIndex, 'slow-tier wait should run after non-render-blocking geometry preload');
+    assert.ok(fanoutIndex > waitIndex, 'visible data fan-out should wait for slow bootstrap settle/timeout');
   });
 });
 
@@ -248,6 +312,12 @@ describe('Panel hydration consumers', () => {
   }
 });
 
+// The slow tier is fetched in the BACKGROUND (off the boot critical path, #4488), so any
+// slow-tier consumer that read its hydration WITHOUT an on-demand fetch fallback would break
+// (empty panel). This guard enforces the greppable half — every bootstrap key (incl. all
+// SLOW_KEYS) has a getHydratedData consumer or is allow-listed below. The fetch-on-absence
+// half is a manual audit (a getHydratedData call alone can't prove the adjacent RPC is the
+// fallback); the #4488 audit confirmed every slow-key consumer is hydrated-else-fetch.
 describe('Bootstrap key hydration coverage', () => {
   it('every bootstrap key has a getHydratedData consumer in src/', () => {
     const bootstrapSrc = readFileSync(join(root, 'api', 'bootstrap.js'), 'utf-8');
