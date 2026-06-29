@@ -3,7 +3,10 @@ import { normalizeExclusiveChoropleths } from '@/components/resilience-choroplet
 import { replayPendingCalls, clearAllPendingCalls } from '@/app/pending-panel-data';
 import {
   createDeferredPanelShell,
+  getDeferredPanelShellFootprint as resolveDeferredPanelShellFootprint,
+  reconcileDeferredPanelShellColSpan,
   shouldDeferInitialPanelMount,
+  type DeferredPanelShellFootprint,
 } from '@/app/panel-mount-deferral';
 import {
   addResponsiveZoneListener,
@@ -63,9 +66,11 @@ import type { McpPanelSpec } from '@/services/mcp-store';
 import { getAuthState, subscribeAuthState } from '@/services/auth-state';
 import type { AuthSession } from '@/services/auth-state';
 import { PanelGateReason, getPanelGateReason, hasPremiumAccess } from '@/services/panel-gating';
+import { markLcpDebug } from '@/utils/lcp-debug';
 import type { Panel } from '@/components/Panel';
 import type { SupplyChainPanel } from '@/components/SupplyChainPanel';
 import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
+import { loadPanelCollapsed, loadPanelColSpans, loadPanelSpans } from '@/utils/panel-storage';
 
 
 /**
@@ -117,6 +122,85 @@ const WEB_CLERK_PRO_ONLY_PANELS = new Set([
 
 const COLLIDING_NEWS_PANEL_KEYS = new Set(['markets', 'crypto', 'economic']);
 
+// TEMPORARY MIRROR of each panel constructor's footprint (`defaultRowSpan` /
+// `className: 'panel-wide'`, declared in src/components/*Panel.ts). A deferred
+// shell never instantiates its component, so it cannot read that footprint
+// directly and must reproduce it here to reserve the right grid space.
+//
+// This duplicates the authoritative per-component declaration. Two guards keep
+// it honest: `tests/panel-config-guardrails.test.mjs` fails CI on drift, and
+// `warnOnDeferredFootprintDrift` (below) logs in dev if a hydrated panel ends
+// up wider/taller than its reserved shell. The intended long-term fix is to
+// lift these defaults into one shared table imported by both the `Panel`
+// constructor and this map, removing the duplication entirely (see #4490).
+export const DEFERRED_PANEL_NATURAL_FOOTPRINTS: Readonly<Record<string, DeferredPanelShellFootprint>> = {
+  cii: { rowSpan: 2 },
+  'chat-analyst': { rowSpan: 2 },
+  'consumer-prices': { rowSpan: 2 },
+  displacement: { rowSpan: 2 },
+  economic: { rowSpan: 2 },
+  'energy-complex': { rowSpan: 2 },
+  'energy-crisis': { rowSpan: 2 },
+  'energy-disruptions': { rowSpan: 2 },
+  'fuel-shortages': { rowSpan: 2 },
+  'gdelt-intel': { rowSpan: 2 },
+  'internet-disruptions': { rowSpan: 2 },
+  'live-news': { className: 'panel-wide' },
+  'live-webcams': { className: 'panel-wide' },
+  'oil-inventories': { rowSpan: 2 },
+  'pipeline-status': { rowSpan: 2 },
+  'sanctions-pressure': { rowSpan: 2 },
+  'security-advisories': { rowSpan: 2 },
+  'storage-facility-map': { rowSpan: 2 },
+  'strategic-posture': { rowSpan: 2 },
+  'supply-chain': { rowSpan: 2 },
+  'telegram-intel': { rowSpan: 2 },
+  'threat-timeline': { rowSpan: 2 },
+  'trade-policy': { rowSpan: 2 },
+  'ucdp-events': { rowSpan: 2 },
+  'windy-webcams': { className: 'panel-wide' },
+};
+
+const DEFERRED_DYNAMIC_PANEL_FOOTPRINTS: Readonly<Record<string, DeferredPanelShellFootprint>> = {
+  'cw-': { rowSpan: 2 },
+  'mcp-': { rowSpan: 2 },
+};
+
+const DEFERRED_PANEL_RETRY_DELAY_MS = 1_000;
+const DEFERRED_PANEL_MAX_RETRY_ATTEMPTS = 3;
+
+function readRowSpanClass(element: HTMLElement): number {
+  if (element.classList.contains('span-4')) return 4;
+  if (element.classList.contains('span-3')) return 3;
+  if (element.classList.contains('span-2')) return 2;
+  return 1;
+}
+
+function readColSpanFootprint(element: HTMLElement): number {
+  if (element.classList.contains('col-span-3')) return 3;
+  if (element.classList.contains('col-span-2')) return 2;
+  if (element.classList.contains('col-span-1')) return 1;
+  return element.classList.contains('panel-wide') ? 2 : 1;
+}
+
+// Dev-only guard: if a hydrated panel ends up taller/wider than the shell we
+// reserved for it, the registry above drifted from the panel constructor and
+// the deferred shell just caused the layout shift it exists to prevent. Surface
+// it in the app (CI also catches drift via panel-config-guardrails).
+function warnOnDeferredFootprintDrift(key: string, placeholder: HTMLElement, real: HTMLElement): void {
+  const reservedRows = readRowSpanClass(placeholder);
+  const reservedCols = readColSpanFootprint(placeholder);
+  const realRows = readRowSpanClass(real);
+  const realCols = readColSpanFootprint(real);
+  if (realRows > reservedRows || realCols > reservedCols) {
+    console.warn(
+      `[PanelLayoutManager] Deferred shell footprint drift for "${key}": reserved ` +
+        `${reservedCols}x${reservedRows} (col x row) but panel hydrated to ${realCols}x${realRows}. ` +
+        'Update DEFERRED_PANEL_NATURAL_FOOTPRINTS to match the panel constructor.',
+    );
+  }
+}
+
 export interface PanelLayoutManagerCallbacks {
   openCountryStory: (code: string, name: string) => void;
   openCountryBrief: (code: string) => void;
@@ -132,6 +216,9 @@ interface DeferredPanelMount {
   observer: IntersectionObserver | null;
   mounted: boolean;
   loading: Promise<void> | null;
+  retryTimer: ReturnType<typeof setTimeout> | null;
+  retryAttempts: number;
+  failed: boolean;
 }
 
 interface LazyPanelRegistration {
@@ -340,6 +427,9 @@ export class PanelLayoutManager implements AppModule {
     this.panelDragCleanupHandlers = [];
     for (const deferred of this.deferredPanelMounts.values()) {
       deferred.observer?.disconnect();
+      if (deferred.retryTimer !== null) {
+        clearTimeout(deferred.retryTimer);
+      }
     }
     this.deferredPanelMounts.clear();
     this.lazyPanelRegistrations.clear();
@@ -452,6 +542,7 @@ export class PanelLayoutManager implements AppModule {
   async renderLayout(): Promise<void> {
     const isGlobeMode = getStoredMapModePreference() === 'globe';
 
+    markLcpDebug('wm:layout:render-start');
     document.documentElement.classList.add('wm-layout-hydrated');
     setTrustedHtml(this.ctx.container, trustedHtml(`
       ${this.ctx.isDesktopApp ? '<div class="tauri-titlebar" data-tauri-drag-region></div>' : ''}
@@ -696,6 +787,11 @@ export class PanelLayoutManager implements AppModule {
         <span class="site-footer-copy">&copy; ${new Date().getFullYear()} World Monitor</span>
       </footer>
     `, "legacy direct innerHTML migration"));
+    // Mark AFTER the innerHTML swap so the timestamp reflects when the new shell
+    // DOM is actually live — placing it before setTrustedHtml recorded a time
+    // earlier than any LCP candidate in the new shell, making it useless for
+    // ordering the LCP element against the shell swap (PR #4512 review).
+    markLcpDebug('wm:layout:shell-replaced');
 
     // Skip link: explicitly move focus to <main> on activation. Native
     // fragment focus on a tabindex="-1" target is inconsistent across
@@ -1196,6 +1292,7 @@ export class PanelLayoutManager implements AppModule {
     if (el.parentElement) return false;
     this.makeDraggable(el, key);
     if (placeholder?.parentNode) {
+      if (import.meta.env.DEV) warnOnDeferredFootprintDrift(key, placeholder, el);
       placeholder.parentNode.replaceChild(el, placeholder);
     } else {
       this.insertByOrder(grid, el, key);
@@ -1205,16 +1302,31 @@ export class PanelLayoutManager implements AppModule {
     return true;
   }
 
+  private getDeferredPanelShellFootprint(key: string): DeferredPanelShellFootprint {
+    return resolveDeferredPanelShellFootprint({
+      panelId: key,
+      naturalFootprints: DEFERRED_PANEL_NATURAL_FOOTPRINTS,
+      dynamicFootprints: DEFERRED_DYNAMIC_PANEL_FOOTPRINTS,
+      savedRowSpans: loadPanelSpans(),
+      savedColSpans: loadPanelColSpans(),
+      savedCollapsed: loadPanelCollapsed(),
+    });
+  }
+
   private deferPanelMount(key: string, panel: Panel | null, grid: HTMLElement | null, withShell: boolean): void {
     const placeholder = withShell && grid
-      ? createDeferredPanelShell(key, this.ctx.panelSettings[key]?.name ?? key)
+      ? createDeferredPanelShell(key, this.ctx.panelSettings[key]?.name ?? key, this.getDeferredPanelShellFootprint(key))
       : null;
     if (placeholder && grid) {
       this.insertByOrder(grid, placeholder, key);
+      reconcileDeferredPanelShellColSpan(placeholder);
       this.mobilePanelNav?.applyToNewPanel(placeholder);
     }
     const existing = this.deferredPanelMounts.get(key);
     existing?.observer?.disconnect();
+    if (existing?.retryTimer !== null && existing?.retryTimer !== undefined) {
+      clearTimeout(existing.retryTimer);
+    }
     if (existing?.placeholder && existing.placeholder !== placeholder) {
       existing.placeholder.remove();
     }
@@ -1224,6 +1336,9 @@ export class PanelLayoutManager implements AppModule {
       observer: null,
       mounted: false,
       loading: null,
+      retryTimer: null,
+      retryAttempts: 0,
+      failed: false,
     };
     this.deferredPanelMounts.set(key, deferred);
     if (placeholder) {
@@ -1234,6 +1349,10 @@ export class PanelLayoutManager implements AppModule {
   private observeDeferredPanelShell(key: string, deferred: DeferredPanelMount): void {
     const { placeholder } = deferred;
     if (!placeholder) return;
+    if (deferred.retryTimer !== null) {
+      clearTimeout(deferred.retryTimer);
+      deferred.retryTimer = null;
+    }
     if (typeof window === 'undefined' || typeof IntersectionObserver === 'undefined') {
       const ric = typeof window !== 'undefined'
         ? (window as unknown as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback
@@ -1260,26 +1379,52 @@ export class PanelLayoutManager implements AppModule {
     return document.getElementById('panelsGrid');
   }
 
+  private scheduleDeferredPanelRetry(key: string, deferred: DeferredPanelMount): void {
+    if (this.ctx.isDestroyed || deferred.mounted || deferred.failed || deferred.retryTimer !== null) return;
+    if (!deferred.placeholder?.parentNode) return;
+    if (!deferred.panel && !this.lazyPanelRegistrations.has(key)) return;
+    if (deferred.retryAttempts >= DEFERRED_PANEL_MAX_RETRY_ATTEMPTS) {
+      // Give up after a bounded number of attempts so a permanently failing
+      // dynamic import (offline, stale chunk) cannot spin a 1s retry loop forever.
+      // The shell stays in place as a quiet fallback, matching the prior fail-safe.
+      deferred.failed = true;
+      return;
+    }
+    deferred.retryAttempts += 1;
+    deferred.retryTimer = setTimeout(() => {
+      deferred.retryTimer = null;
+      if (this.deferredPanelMounts.get(key) !== deferred || deferred.mounted || this.ctx.isDestroyed) return;
+      this.observeDeferredPanelShell(key, deferred);
+    }, DEFERRED_PANEL_RETRY_DELAY_MS);
+  }
+
   private mountDeferredPanel(key: string): boolean {
     const deferred = this.deferredPanelMounts.get(key);
-    if (!deferred || deferred.mounted || deferred.loading) return false;
+    if (!deferred || deferred.mounted || deferred.loading || deferred.failed) return false;
     const grid = this.getPanelMountGrid(key);
     if (!grid && !deferred.placeholder?.parentNode) return false;
 
     deferred.observer?.disconnect();
     deferred.observer = null;
+    if (deferred.retryTimer !== null) {
+      clearTimeout(deferred.retryTimer);
+      deferred.retryTimer = null;
+    }
     const targetGrid = grid ?? (deferred.placeholder!.parentNode as HTMLElement);
     const finish = (panel: Panel | null): void => {
-      if (!panel || this.ctx.isDestroyed) return;
       const current = this.deferredPanelMounts.get(key);
       if (current !== deferred || deferred.mounted) return;
+      deferred.loading = null;
+      if (!panel || this.ctx.isDestroyed) {
+        this.scheduleDeferredPanelRetry(key, deferred);
+        return;
+      }
       const placeholder = deferred.placeholder;
       if (this.mountPanelElement(targetGrid, key, panel, placeholder)) {
         this.afterPanelMounted(key, panel);
       }
       deferred.mounted = true;
       deferred.placeholder = null;
-      deferred.loading = null;
       this.deferredPanelMounts.delete(key);
     };
 
@@ -1287,7 +1432,7 @@ export class PanelLayoutManager implements AppModule {
       finish(deferred.panel);
       return true;
     }
-    deferred.loading = this.loadRegisteredPanel(key).then(finish);
+    deferred.loading = this.loadRegisteredPanel(key).then(finish, () => finish(null));
     return true;
   }
 
@@ -2101,6 +2246,7 @@ export class PanelLayoutManager implements AppModule {
     // the isDestroyed guard below also stops a destroyed manager from building a map.
     const { MapContainer } = await mapModulePromise;
     if (this.ctx.isDestroyed) return;
+    markLcpDebug('wm:map:container-construct');
     this.ctx.map = new MapContainer(mapContainer, {
       zoom: this.ctx.isMobile ? 2.5 : 1.0,
       pan: { x: 0, y: 0 },
@@ -2121,6 +2267,7 @@ export class PanelLayoutManager implements AppModule {
 
     this.ctx.map.initEscalationGetters();
     this.ctx.currentTimeRange = this.ctx.map.getTimeRange();
+    markLcpDebug('wm:map:container-ready');
 
     this.ctx.map.onTimeRangeChanged((range) => {
       this.ctx.currentTimeRange = range;
@@ -2978,7 +3125,7 @@ export class PanelLayoutManager implements AppModule {
               }
             }
 
-            document.removeEventListener('keydown', onKeyDown!);
+            document.removeEventListener('keydown', onKeyDown!, true);
             onKeyDown = null;
             isDragging = false;
             dragStarted = false;
@@ -2986,7 +3133,7 @@ export class PanelLayoutManager implements AppModule {
             if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
           }
         };
-        document.addEventListener('keydown', onKeyDown);
+        document.addEventListener('keydown', onKeyDown, true);
       }
 
       lastX = e.clientX;
@@ -3046,7 +3193,7 @@ export class PanelLayoutManager implements AppModule {
       document.body.classList.remove('panel-drag-active');
       originalRect = null;
       if (onKeyDown) {
-        document.removeEventListener('keydown', onKeyDown);
+        document.removeEventListener('keydown', onKeyDown, true);
         onKeyDown = null;
       }
     };
@@ -3060,7 +3207,7 @@ export class PanelLayoutManager implements AppModule {
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
       if (onKeyDown) {
-        document.removeEventListener('keydown', onKeyDown);
+        document.removeEventListener('keydown', onKeyDown, true);
         onKeyDown = null;
       }
       if (rafId) {
