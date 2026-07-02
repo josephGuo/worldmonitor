@@ -8,13 +8,17 @@ paths:
             tags:
                 - DisplacementService
             summary: GetDisplacementSummary
-            description: GetDisplacementSummary retrieves global refugee and IDP statistics from UNHCR.
+            description: |-
+                GetDisplacementSummary retrieves global refugee and IDP statistics from UNHCR.
+                 Empty/absent summary with fetched_at=0 or data_available=false means the
+                 snapshot is unavailable/degraded, not that global displacement is zero.
             operationId: GetDisplacementSummary
             parameters:
                 - name: year
                   in: query
                   description: Data year to retrieve (e.g., 2023). Uses latest available if zero.
                   required: false
+                  example: 1
                   schema:
                     type: integer
                     format: int32
@@ -22,6 +26,7 @@ paths:
                   in: query
                   description: Maximum number of country entries to return.
                   required: false
+                  example: 25
                   schema:
                     type: integer
                     format: int32
@@ -29,6 +34,7 @@ paths:
                   in: query
                   description: Maximum number of displacement flows to return.
                   required: false
+                  example: 25
                   schema:
                     type: integer
                     format: int32
@@ -37,6 +43,36 @@ paths:
                     description: Successful response
                     content:
                         application/json:
+                            example:
+                                "dataAvailable": true
+                                "fetchedAt": 1717200000000
+                                "summary":
+                                    "countries":
+                                        - "asylumSeekers": 1
+                                          "code": "US"
+                                          "hostAsylumSeekers": 1
+                                          "hostRefugees": 1
+                                          "hostTotal": 1
+                                          "idps": 1
+                                    "globalTotals":
+                                        "asylumSeekers": 1
+                                        "idps": 1
+                                        "refugees": 1
+                                        "stateless": 1
+                                        "total": 1
+                                    "topFlows":
+                                        - "asylumCode": "US"
+                                          "asylumLocation":
+                                              "latitude": 40.7128
+                                              "longitude": -74.006
+                                          "asylumName": "WorldMonitor Analyst"
+                                          "originCode": "US"
+                                          "originLocation":
+                                              "latitude": 40.7128
+                                              "longitude": -74.006
+                                          "originName": "WorldMonitor Analyst"
+                                          "refugees": 1
+                                    "year": 1
                             schema:
                                 $ref: '#/components/schemas/GetDisplacementSummaryResponse'
                 "400":
@@ -63,12 +99,14 @@ paths:
                   in: query
                   description: 'Mode: "countries" (default) or "exposure".'
                   required: false
+                  example: "example"
                   schema:
                     type: string
                 - name: lat
                   in: query
                   description: Latitude (required for exposure mode).
                   required: false
+                  example: 40.7128
                   schema:
                     type: number
                     format: double
@@ -76,6 +114,7 @@ paths:
                   in: query
                   description: Longitude (required for exposure mode).
                   required: false
+                  example: -74.006
                   schema:
                     type: number
                     format: double
@@ -83,6 +122,7 @@ paths:
                   in: query
                   description: Radius in km (required for exposure mode, defaults to 50).
                   required: false
+                  example: 1.5
                   schema:
                     type: number
                     format: double
@@ -91,6 +131,18 @@ paths:
                     description: Successful response
                     content:
                         application/json:
+                            example:
+                                "countries":
+                                    - "code": "US"
+                                      "densityPerKm2": 1
+                                      "name": "WorldMonitor Analyst"
+                                      "population": 1
+                                "exposure":
+                                    "densityPerKm2": 1
+                                    "exposedPopulation": 1
+                                    "exposureRadiusKm": 1.5
+                                    "nearestCountry": "US"
+                                "success": true
                             schema:
                                 $ref: '#/components/schemas/GetPopulationExposureResponse'
                 "400":
@@ -162,6 +214,19 @@ components:
             properties:
                 summary:
                     $ref: '#/components/schemas/DisplacementSummary'
+                fetchedAt:
+                    type: integer
+                    format: int64
+                    description: |-
+                        Time the seed or live fallback snapshot was fetched, as Unix epoch
+                         milliseconds. A value of 0 means the snapshot is unavailable/degraded, not
+                         that global displacement is zero.. Warning: Values > 2^53 may lose precision in JavaScript
+                dataAvailable:
+                    type: boolean
+                    description: |-
+                        True when summary came from a seed snapshot or live fallback. False means
+                         an absent/empty summary is graceful degradation because the snapshot is
+                         unavailable.
             description: GetDisplacementSummaryResponse contains the global displacement summary.
         DisplacementSummary:
             type: object
