@@ -2,6 +2,11 @@ openapi: 3.1.0
 info:
     title: WebcamService API
     version: 1.0.0
+security:
+    - WorldMonitorKey: []
+    - ApiKeyHeader: []
+servers:
+    - url: https://api.worldmonitor.app
 paths:
     /api/webcam/v1/list-webcams:
         get:
@@ -77,6 +82,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -104,7 +121,7 @@ paths:
                         application/json:
                             example:
                                 "error": "example"
-                                "lastUpdated": "1717200000000"
+                                "lastUpdated": "2026-01-15T12:00:00.000Z"
                                 "playerUrl": "https://example.com/worldmonitor"
                                 "thumbnailUrl": "https://example.com/worldmonitor"
                                 "title": "example"
@@ -116,6 +133,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -123,7 +152,27 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/Error'
 components:
+    securitySchemes:
+        WorldMonitorKey:
+            type: apiKey
+            in: header
+            name: X-WorldMonitor-Key
+            description: User-issued WorldMonitor API key.
+        ApiKeyHeader:
+            type: apiKey
+            in: header
+            name: X-Api-Key
+            description: Alias header for the WorldMonitor API key (X-WorldMonitor-Key).
     schemas:
+        UnauthorizedError:
+            type: object
+            properties:
+                error:
+                    type: string
+                    description: Human-readable error message.
+            required:
+                - error
+            description: Returned when the API key is missing, malformed, or lacks current API access.
         Error:
             type: object
             properties:
@@ -131,6 +180,26 @@ components:
                     type: string
                     description: Error message (e.g., 'user not found', 'database connection failed')
             description: Error is returned when a handler encounters an error. It contains a simple error message that the developer can customize.
+        ForbiddenError:
+            type: object
+            properties:
+                error:
+                    type: string
+                    description: Human-readable entitlement failure reason.
+                requiredTier:
+                    type: integer
+                    format: int32
+                    description: Minimum entitlement tier required for this endpoint.
+                currentTier:
+                    type: integer
+                    format: int32
+                    description: Caller entitlement tier when known.
+                planKey:
+                    type: string
+                    description: Caller plan key when known.
+            required:
+                - error
+            description: Returned when a PRO-gated endpoint denies access because the caller has no resolved authenticated user, entitlements cannot be verified, or the caller lacks the required entitlement tier.
         FieldViolation:
             type: object
             properties:
@@ -244,6 +313,10 @@ components:
                     type: string
                 lastUpdated:
                     type: string
-                    format: int64
+                    description: |-
+                        ISO-8601 datetime string of the webcam's most recent update
+                         (e.g. "2026-07-03T12:00:00.000Z"); empty string when unknown or unavailable.
+                         String (not int64): the handler emits new Date(...).toISOString(), so the
+                         field carries a datetime string, never epoch milliseconds.
                 error:
                     type: string

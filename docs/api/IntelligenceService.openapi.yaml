@@ -2,6 +2,11 @@ openapi: 3.1.0
 info:
     title: IntelligenceService API
     version: 1.0.0
+security:
+    - WorldMonitorKey: []
+    - ApiKeyHeader: []
+servers:
+    - url: https://api.worldmonitor.app
 paths:
     /api/intelligence/v1/get-risk-scores:
         get:
@@ -51,6 +56,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -99,6 +116,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -162,6 +191,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -212,6 +253,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -260,6 +313,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -283,7 +348,10 @@ paths:
                     type: string
                 - name: max_records
                   in: query
-                  description: Maximum number of articles to return (1-250).
+                  description: |-
+                    Maximum number of articles to return. Defaults to 10 when omitted or <= 0. The
+                     handler caps returned results at 20, so values above 20 (though accepted, up to the
+                     validation limit of 250) still return at most 20 articles.
                   required: false
                   example: 1
                   schema:
@@ -339,6 +407,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -350,8 +430,12 @@ paths:
             tags:
                 - IntelligenceService
             summary: DeductSituation
-            description: DeductSituation performs broad situational analysis using LLMs.
+            description: DeductSituation performs broad situational analysis using LLMs. PRO-gated. Requires an active Pro subscription.
             operationId: DeductSituation
+            security:
+                - WorldMonitorKey: []
+                - ApiKeyHeader: []
+                - BearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -379,6 +463,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: Pro subscription required.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -421,6 +517,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -469,6 +577,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -525,6 +645,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -585,6 +717,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -596,7 +740,11 @@ paths:
             tags:
                 - IntelligenceService
             summary: GetCompanyEnrichment
-            description: GetCompanyEnrichment aggregates company data from multiple public sources (GitHub, SEC, HN).
+            description: |-
+                GetCompanyEnrichment is DISABLED and returns an empty stub. The route is preserved
+                 for contract stability, but the handler no longer aggregates any external data
+                 (the prior domain-slug attribution heuristic was unsound). Deprecated pending a
+                 verified attribution model.
             operationId: GetCompanyEnrichment
             parameters:
                 - name: domain
@@ -650,6 +798,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -661,7 +821,11 @@ paths:
             tags:
                 - IntelligenceService
             summary: ListCompanySignals
-            description: ListCompanySignals discovers activity signals for a company from public sources.
+            description: |-
+                ListCompanySignals is DISABLED and returns an empty stub. The route is preserved
+                 for contract stability, but the handler no longer discovers any signals (the prior
+                 guessed-identity/keyword heuristic was unsound). Deprecated pending a verified
+                 attribution model.
             operationId: ListCompanySignals
             parameters:
                 - name: company
@@ -722,6 +886,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -764,6 +940,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -799,6 +987,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -843,6 +1043,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -879,6 +1091,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -890,8 +1114,12 @@ paths:
             tags:
                 - IntelligenceService
             summary: ListMarketImplications
-            description: ListMarketImplications returns AI-generated trade-implication cards from live world state.
+            description: ListMarketImplications returns AI-generated trade-implication cards from live world state. PRO-gated. Requires an active Pro subscription.
             operationId: ListMarketImplications
+            security:
+                - WorldMonitorKey: []
+                - ApiKeyHeader: []
+                - BearerAuth: []
             parameters:
                 - name: frameworkId
                   in: query
@@ -923,6 +1151,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: Pro subscription required.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -957,6 +1197,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -997,6 +1249,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -1057,7 +1321,7 @@ paths:
                             example:
                                 "assessment": "example"
                                 "chokepointConfidence": "example"
-                                "chokepointId": "suez-canal"
+                                "chokepointId": "suez"
                                 "comtradeCoverage": true
                                 "countryCode": "US"
                             schema:
@@ -1068,6 +1332,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -1111,6 +1387,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -1126,7 +1414,12 @@ paths:
                 GetRegionalSnapshot returns the latest persisted RegionalSnapshot for a
                  region. The snapshot is written every 6h by scripts/seed-regional-snapshots.mjs;
                  this handler only reads canonical state. Premium-gated.
+                PRO-gated. Requires an active Pro subscription.
             operationId: GetRegionalSnapshot
+            security:
+                - WorldMonitorKey: []
+                - ApiKeyHeader: []
+                - BearerAuth: []
             parameters:
                 - name: region_id
                   in: query
@@ -1188,6 +1481,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: Pro subscription required.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -1203,7 +1508,12 @@ paths:
                 GetRegimeHistory returns the region's regime transition log newest-first.
                  Entries are append-only from the seed writer, recorded only when
                  diffRegionalSnapshot reports regime_changed. Premium-gated.
+                PRO-gated. Requires an active Pro subscription.
             operationId: GetRegimeHistory
+            security:
+                - WorldMonitorKey: []
+                - ApiKeyHeader: []
+                - BearerAuth: []
             parameters:
                 - name: region_id
                   in: query
@@ -1247,6 +1557,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: Pro subscription required.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -1261,7 +1583,12 @@ paths:
             description: |-
                 GetRegionalBrief returns the latest weekly intelligence brief for a region.
                  Written by scripts/seed-regional-briefs.mjs on a weekly cron. Premium-gated.
+                PRO-gated. Requires an active Pro subscription.
             operationId: GetRegionalBrief
+            security:
+                - WorldMonitorKey: []
+                - ApiKeyHeader: []
+                - BearerAuth: []
             parameters:
                 - name: region_id
                   in: query
@@ -1292,6 +1619,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: Pro subscription required.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -1299,7 +1638,31 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/Error'
 components:
+    securitySchemes:
+        WorldMonitorKey:
+            type: apiKey
+            in: header
+            name: X-WorldMonitor-Key
+            description: User-issued WorldMonitor API key.
+        ApiKeyHeader:
+            type: apiKey
+            in: header
+            name: X-Api-Key
+            description: Alias header for the WorldMonitor API key (X-WorldMonitor-Key).
+        BearerAuth:
+            type: http
+            scheme: bearer
+            description: 'Bearer token: a Clerk-issued JWT for browser session flows, passed as Authorization: Bearer <token>.'
     schemas:
+        UnauthorizedError:
+            type: object
+            properties:
+                error:
+                    type: string
+                    description: Human-readable error message.
+            required:
+                - error
+            description: Returned when the API key is missing, malformed, or lacks current API access.
         Error:
             type: object
             properties:
@@ -1307,6 +1670,26 @@ components:
                     type: string
                     description: Error message (e.g., 'user not found', 'database connection failed')
             description: Error is returned when a handler encounters an error. It contains a simple error message that the developer can customize.
+        ForbiddenError:
+            type: object
+            properties:
+                error:
+                    type: string
+                    description: Human-readable entitlement failure reason.
+                requiredTier:
+                    type: integer
+                    format: int32
+                    description: Minimum entitlement tier required for this endpoint.
+                currentTier:
+                    type: integer
+                    format: int32
+                    description: Caller entitlement tier when known.
+                planKey:
+                    type: string
+                    description: Caller plan key when known.
+            required:
+                - error
+            description: Returned when a PRO-gated endpoint denies access because the caller has no resolved authenticated user, entitlements cannot be verified, or the caller lacks the required entitlement tier.
         FieldViolation:
             type: object
             properties:
@@ -1818,7 +2201,10 @@ components:
                     maximum: 250
                     minimum: 1
                     format: int32
-                    description: Maximum number of articles to return (1-250).
+                    description: |-
+                        Maximum number of articles to return. Defaults to 10 when omitted or <= 0. The
+                         handler caps returned results at 20, so values above 20 (though accepted, up to the
+                         validation limit of 250) still return at most 20 articles.
                 timespan:
                     type: string
                     description: |-
@@ -2169,7 +2555,9 @@ components:
                     description: Company name to enrich when a domain is not available.
             description: |-
                 Request to fetch enrichment data for a company.
-                 Requires either domain (e.g. "github.com") or name (e.g. "GitHub").
+                 NOTE: This endpoint is DISABLED — the handler returns an empty stub regardless of
+                 input. Requires either domain (e.g. "github.com") or name (e.g. "GitHub") to pass
+                 validation, but no enrichment is performed.
         GetCompanyEnrichmentResponse:
             type: object
             properties:
@@ -2196,7 +2584,9 @@ components:
                     items:
                         type: string
                         description: List of sources successfully reached (e.g. "github", "sec_edgar").
-            description: Aggregated company data from multiple public sources.
+            description: |-
+                Company enrichment data. DISABLED: the handler returns an empty stub — `company`
+                 echoes only the requested name/domain, and all other fields are empty/undefined.
         EnrichedCompany:
             type: object
             properties:
@@ -2279,7 +2669,10 @@ components:
                 domain:
                     type: string
                     description: Company domain to discover signals for.
-            description: Request to discover and classify company signals (hiring, funding, tech changes).
+            description: |-
+                Request to discover and classify company signals (hiring, funding, tech changes).
+                 NOTE: This endpoint is DISABLED — the handler returns an empty stub regardless of
+                 input. `company` is still required to pass validation, but no signals are discovered.
         ListCompanySignalsResponse:
             type: object
             properties:
@@ -2297,7 +2690,10 @@ components:
                     type: integer
                     format: int64
                     description: 'Unix timestamp in milliseconds when signals were discovered.. Warning: Values > 2^53 may lose precision in JavaScript'
-            description: Discovered company signals with classification and engagement metrics.
+            description: |-
+                Discovered company signals with classification and engagement metrics.
+                 DISABLED: the handler returns an empty stub — `signals` is always empty and `summary`
+                 reports zero counts; only the echoed `company`/`domain` are populated.
         CompanySignal:
             type: object
             properties:

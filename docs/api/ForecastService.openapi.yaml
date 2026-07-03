@@ -2,6 +2,11 @@ openapi: 3.1.0
 info:
     title: ForecastService API
     version: 1.0.0
+security:
+    - WorldMonitorKey: []
+    - ApiKeyHeader: []
+servers:
+    - url: https://api.worldmonitor.app
 paths:
     /api/forecast/v1/get-forecasts:
         get:
@@ -83,6 +88,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -98,7 +115,11 @@ paths:
             parameters:
                 - name: runId
                   in: query
-                  description: Currently ignored; always returns the latest package. Reserved for Phase 3 per-run lookup.
+                  description: |-
+                    Optional run identifier. Does not select the package — the latest stored package is
+                     always returned regardless of this value. When supplied and it differs from the
+                     returned package's runId, the response `note` field is populated to warn that per-run
+                     filtering is not yet active. Reserved for Phase 3 per-run lookup.
                   required: false
                   example: "example-id"
                   schema:
@@ -122,6 +143,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -170,6 +203,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
+                "403":
+                    description: API access requires an active subscription (the API key's subscription is inactive or expired).
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ForbiddenError'
                 default:
                     description: Error response
                     content:
@@ -190,6 +235,10 @@ paths:
                  to retrieve the result. Mirrors run-scenario.ts pattern. See #3734.
                 Requires entitlement tier >= 1.
             operationId: TriggerSimulation
+            security:
+                - WorldMonitorKey: []
+                - ApiKeyHeader: []
+                - BearerAuth: []
             requestBody:
                 content:
                     application/json:
@@ -216,6 +265,12 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "401":
+                    description: Missing or invalid API key.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnauthorizedError'
                 "403":
                     description: PRO entitlement access denied.
                     content:
@@ -229,7 +284,31 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/Error'
 components:
+    securitySchemes:
+        WorldMonitorKey:
+            type: apiKey
+            in: header
+            name: X-WorldMonitor-Key
+            description: User-issued WorldMonitor API key.
+        ApiKeyHeader:
+            type: apiKey
+            in: header
+            name: X-Api-Key
+            description: Alias header for the WorldMonitor API key (X-WorldMonitor-Key).
+        BearerAuth:
+            type: http
+            scheme: bearer
+            description: 'Bearer token: a Clerk-issued JWT for browser session flows, passed as Authorization: Bearer <token>.'
     schemas:
+        UnauthorizedError:
+            type: object
+            properties:
+                error:
+                    type: string
+                    description: Human-readable error message.
+            required:
+                - error
+            description: Returned when the API key is missing, malformed, or lacks current API access.
         Error:
             type: object
             properties:
@@ -577,7 +656,11 @@ components:
             properties:
                 runId:
                     type: string
-                    description: Currently ignored; always returns the latest package. Reserved for Phase 3 per-run lookup.
+                    description: |-
+                        Optional run identifier. Does not select the package — the latest stored package is
+                         always returned regardless of this value. When supplied and it differs from the
+                         returned package's runId, the response `note` field is populated to warn that per-run
+                         filtering is not yet active. Reserved for Phase 3 per-run lookup.
         GetSimulationPackageResponse:
             type: object
             properties:

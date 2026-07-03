@@ -2,6 +2,11 @@ openapi: 3.1.0
 info:
     title: SeismologyService API
     version: 1.0.0
+security:
+    - WorldMonitorKey: []
+    - ApiKeyHeader: []
+servers:
+    - url: https://api.worldmonitor.app
 paths:
     /api/seismology/v1/list-earthquakes:
         get:
@@ -10,6 +15,7 @@ paths:
             summary: ListEarthquakes
             description: ListEarthquakes retrieves recent earthquakes from the USGS GeoJSON feed.
             operationId: ListEarthquakes
+            security: []
             parameters:
                 - name: start
                   in: query
@@ -33,7 +39,9 @@ paths:
                     format: int64
                 - name: page_size
                   in: query
-                  description: Maximum items per page (1-100).
+                  description: |-
+                    Maximum items per page. Defaults to 500 when omitted or 0; the handler applies no
+                     clamp, so the requested value directly limits the returned list (no enforced maximum).
                   required: false
                   example: 25
                   schema:
@@ -91,6 +99,17 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/Error'
 components:
+    securitySchemes:
+        WorldMonitorKey:
+            type: apiKey
+            in: header
+            name: X-WorldMonitor-Key
+            description: User-issued WorldMonitor API key.
+        ApiKeyHeader:
+            type: apiKey
+            in: header
+            name: X-Api-Key
+            description: Alias header for the WorldMonitor API key (X-WorldMonitor-Key).
     schemas:
         Error:
             type: object
@@ -141,7 +160,9 @@ components:
                 pageSize:
                     type: integer
                     format: int32
-                    description: Maximum items per page (1-100).
+                    description: |-
+                        Maximum items per page. Defaults to 500 when omitted or 0; the handler applies no
+                         clamp, so the requested value directly limits the returned list (no enforced maximum).
                 cursor:
                     type: string
                     description: |-

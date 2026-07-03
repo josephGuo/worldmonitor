@@ -2,6 +2,11 @@ openapi: 3.1.0
 info:
     title: LeadsService API
     version: 1.0.0
+security:
+    - WorldMonitorKey: []
+    - ApiKeyHeader: []
+servers:
+    - url: https://api.worldmonitor.app
 paths:
     /api/leads/v1/submit-contact:
         post:
@@ -10,6 +15,7 @@ paths:
             summary: SubmitContact
             description: SubmitContact stores an enterprise contact submission in Convex and emails ops. Turnstile-gated. Missing or invalid Cloudflare Turnstile token returns 403 Bot verification failed.
             operationId: SubmitContact
+            security: []
             requestBody:
                 content:
                     application/json:
@@ -42,7 +48,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
                 "403":
-                    description: Bot verification failed.
+                    description: "Bot verification failed."
                     content:
                         application/json:
                             schema:
@@ -58,8 +64,9 @@ paths:
             tags:
                 - LeadsService
             summary: RegisterInterest
-            description: RegisterInterest adds an email to the Pro waitlist and sends a confirmation email.
+            description: RegisterInterest adds an email to the Pro waitlist and sends a confirmation email. Turnstile-gated (desktop sources authenticate a bypass with a shared-secret HMAC instead). A failed Cloudflare Turnstile check returns 403 Bot verification failed; a desktop-source request with a missing or invalid HMAC signature returns 403 Desktop authentication failed.
             operationId: RegisterInterest
+            security: []
             requestBody:
                 content:
                     application/json:
@@ -92,6 +99,12 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ValidationError'
+                "403":
+                    description: "Bot verification or desktop authentication failed."
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
                 default:
                     description: Error response
                     content:
@@ -99,6 +112,17 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/Error'
 components:
+    securitySchemes:
+        WorldMonitorKey:
+            type: apiKey
+            in: header
+            name: X-WorldMonitor-Key
+            description: User-issued WorldMonitor API key.
+        ApiKeyHeader:
+            type: apiKey
+            in: header
+            name: X-Api-Key
+            description: Alias header for the WorldMonitor API key (X-WorldMonitor-Key).
     schemas:
         Error:
             type: object
