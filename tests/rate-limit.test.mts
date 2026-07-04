@@ -42,11 +42,15 @@ async function importFreshRateLimitModule() {
 }
 
 describe('rate-limit getClientIp (#3531 — drop spoofable x-forwarded-for)', () => {
-  it('prefers cf-connecting-ip when Cloudflare is in front', () => {
+  afterEach(() => { delete process.env.CF_EDGE_PROOF_SECRET; });
+
+  it('prefers cf-connecting-ip when Cloudflare proof is present', () => {
+    process.env.CF_EDGE_PROOF_SECRET = 'edge-secret-xyz';
     const req = makeRequest({
       'cf-connecting-ip': '203.0.113.7',
       'x-real-ip': '192.0.2.5',
       'x-forwarded-for': '198.51.100.8',
+      'x-wm-edge-proof': 'edge-secret-xyz',
     });
     assert.equal(getClientIp(req), '203.0.113.7');
   });
@@ -74,6 +78,48 @@ describe('rate-limit getClientIp (#3531 — drop spoofable x-forwarded-for)', ()
   it('treats whitespace-only header values as absent', () => {
     const req = makeRequest({ 'cf-connecting-ip': '   ', 'x-real-ip': '192.0.2.5' });
     assert.equal(getClientIp(req), '192.0.2.5');
+  });
+});
+
+describe('rate-limit getClientIp — Cloudflare edge-proof (GHSA-c267)', () => {
+  afterEach(() => { delete process.env.CF_EDGE_PROOF_SECRET; });
+
+  it('unconfigured (no CF_EDGE_PROOF_SECRET): ignores cf-connecting-ip and uses x-real-ip', () => {
+    delete process.env.CF_EDGE_PROOF_SECRET;
+    const req = makeRequest({ 'cf-connecting-ip': '203.0.113.7', 'x-real-ip': '192.0.2.5' });
+    assert.equal(getClientIp(req), '192.0.2.5');
+  });
+
+  it('configured + valid proof header: trusts cf-connecting-ip', () => {
+    process.env.CF_EDGE_PROOF_SECRET = 'edge-secret-xyz';
+    const req = makeRequest({
+      'cf-connecting-ip': '203.0.113.7',
+      'x-real-ip': '192.0.2.5',
+      'x-wm-edge-proof': 'edge-secret-xyz',
+    });
+    assert.equal(getClientIp(req), '203.0.113.7');
+  });
+
+  it('configured + MISSING proof: ignores spoofable cf-connecting-ip, uses x-real-ip', () => {
+    process.env.CF_EDGE_PROOF_SECRET = 'edge-secret-xyz';
+    const req = makeRequest({ 'cf-connecting-ip': '203.0.113.7', 'x-real-ip': '192.0.2.5' });
+    assert.equal(getClientIp(req), '192.0.2.5');
+  });
+
+  it('configured + WRONG proof: ignores cf-connecting-ip, uses x-real-ip', () => {
+    process.env.CF_EDGE_PROOF_SECRET = 'edge-secret-xyz';
+    const req = makeRequest({
+      'cf-connecting-ip': '203.0.113.7',
+      'x-real-ip': '192.0.2.5',
+      'x-wm-edge-proof': 'wrong-secret',
+    });
+    assert.equal(getClientIp(req), '192.0.2.5');
+  });
+
+  it('configured + no proof + no x-real-ip: shared UNKNOWN bucket (spoofed cf-connecting-ip cannot rotate identities)', () => {
+    process.env.CF_EDGE_PROOF_SECRET = 'edge-secret-xyz';
+    const req = makeRequest({ 'cf-connecting-ip': '203.0.113.7' });
+    assert.equal(getClientIp(req), UNKNOWN_CLIENT_IP);
   });
 });
 
@@ -201,7 +247,7 @@ describe('rate-limit fail-open / fail-closed posture (#3531 M9)', () => {
     const mod = await importFreshRateLimitModule();
     const pathname = '/api/news/v1/summarize-article';
 
-    assert.deepEqual(ENDPOINT_RATE_POLICIES[pathname], { limit: 60, window: '60 s' });
+    assert.deepEqual(ENDPOINT_RATE_POLICIES[pathname], { limit: 30, window: '60 s' });
     assert.ok(
       pathname in FAIL_CLOSED_ENDPOINT_RATE_POLICY_REQUIRED,
       'LLM-backed summarize-article must stay in the fail-closed requirement registry',
@@ -221,6 +267,7 @@ describe('rate-limit fail-open / fail-closed posture (#3531 M9)', () => {
       'https://worldmonitor.app',
       'CORS headers should be propagated on the degraded response',
     );
+    assert.equal(res.headers.get('Retry-After'), '5');
   });
 
   it('deduct-situation is an explicit fail-closed endpoint policy route (#4676)', async () => {
