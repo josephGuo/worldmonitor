@@ -5,7 +5,7 @@ import {
   applyPerMinuteLimit,
   PRODUCTION_DEPS,
   resolveAuthContext,
-  runProPreChecks,
+  runContextPreChecks,
   wwwAuthHeader,
 } from './auth';
 import {
@@ -283,6 +283,53 @@ function handleSseReplay(req: Request, corsHeaders: Record<string, string>): Res
 }
 
 // ---------------------------------------------------------------------------
+// /.well-known/mcp dual-role support
+// ---------------------------------------------------------------------------
+// vercel.json rewrites /.well-known/mcp into this handler so ONE URL is both
+// the discovery manifest (plain GET → static server card) and a live
+// Streamable HTTP endpoint (POST initialize etc.). Agent-readiness scanners
+// (orank `mcp-server`) POST `initialize` AT the well-known URL; when a static
+// file answered that with a bodyless 405 the check scored "MCP manifest found
+// at /.well-known/mcp but protocol handshake failed" (3/6) even though /mcp
+// itself handshakes cleanly.
+// Two manifest aliases: bare `/.well-known/mcp` (SEP-1649 server-card style)
+// and `/.well-known/mcp.json` (the ora.ai/registry convention whose schema
+// keys the endpoint as top-level `url`). Both rewrite here via vercel.json.
+const WELL_KNOWN_MCP_PATHS = new Set(['/.well-known/mcp', '/.well-known/mcp.json']);
+// Module-scope cache: the card is a static asset, immutable per deployment.
+let serverCardCache: string | null = null;
+async function serveServerCard(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
+  if (serverCardCache === null) {
+    try {
+      const res = await fetch(new URL('/.well-known/mcp/server-card.json', req.url));
+      if (!res.ok) throw new Error(`server-card fetch ${res.status}`);
+      serverCardCache = await res.text();
+    } catch {
+      // Self-fetch failed (deploy skew / transient) — point the fetcher at the
+      // canonical static path instead of caching a failure.
+      return new Response(null, {
+        status: 302,
+        headers: { Location: '/.well-known/mcp/server-card.json', ...corsHeaders },
+      });
+    }
+  }
+  return new Response(serverCardCache, {
+    status: 200,
+    // Cache-Control comes AFTER the ...corsHeaders spread: getMcpCorsHeaders()
+    // carries MCP_CACHE_CONTROL (`no-store`) for the live JSON-RPC/SSE endpoint,
+    // but the manifest is a static, immutable-per-deploy asset that must stay
+    // cacheable (it was `public, max-age=3600` as a static file). Spreading last
+    // would clobber that back to no-store and re-hit the function on every
+    // discovery fetch.
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      ...corsHeaders,
+      'Cache-Control': 'public, max-age=3600',
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Main handler
 // ---------------------------------------------------------------------------
 export async function mcpHandler(
@@ -300,11 +347,25 @@ export async function mcpHandler(
     return new Response(null, { status: 200, headers: withMcpNoStore({ 'Content-Type': 'application/json', ...corsHeaders }) });
   }
 
-  // Origin validation: allow claude.ai/claude.com web clients; allow absent origin (desktop/CLI)
-  const origin = req.headers.get('Origin');
-  if (origin && origin !== 'https://claude.ai' && origin !== 'https://claude.com') {
-    return new Response('Forbidden', { status: 403, headers: withMcpNoStore(corsHeaders) });
+  // /.well-known/mcp manifest GET: the card is public static data. A GET that
+  // asks for `text/event-stream` (an SDK opening the optional standalone
+  // stream) or carries `Last-Event-ID` (SSE replay) falls through to the
+  // normal endpoint GET handling so transport semantics stay identical to /mcp.
+  if (
+    req.method === 'GET' &&
+    WELL_KNOWN_MCP_PATHS.has(new URL(req.url).pathname) &&
+    !req.headers.get('last-event-id') &&
+    !(req.headers.get('accept') ?? '').includes('text/event-stream')
+  ) {
+    return serveServerCard(req, corsHeaders);
   }
+
+  // No Origin gate (issue #4802): the endpoint advertises CORS `*`, auth is
+  // API-key/Bearer (no cookies → no CSRF surface), and MCP-spec Origin
+  // validation targets DNS rebinding against localhost servers — not a public
+  // HTTPS endpoint. A claude.ai-only allowlist here 403'd ChatGPT web
+  // connectors, MCP Inspector (localhost origin), and every other
+  // browser-context client AFTER their preflight had already succeeded.
 
   if (req.method !== 'POST' && req.method !== 'GET') {
     return new Response(null, { status: 405, headers: withMcpNoStore({ Allow: 'POST, GET, HEAD, OPTIONS', ...corsHeaders }) });
@@ -338,10 +399,8 @@ export async function mcpHandler(
     }
     const auth = await resolveAuthContext(req, deps, resourceMetadataUrl, corsHeaders);
     if (!auth.ok) return auth.response;
-    if (auth.context.kind === 'pro') {
-      const proCheck = await runProPreChecks(auth.context, deps, resourceMetadataUrl, corsHeaders, ctx);
-      if (proCheck) return proCheck;
-    }
+    const getPreCheck = await runContextPreChecks(auth.context, deps, resourceMetadataUrl, corsHeaders, ctx);
+    if (getPreCheck) return getPreCheck;
     const getLimited = await applyPerMinuteLimit(auth.context, corsHeaders);
     if (getLimited) return getLimited;
     return handleSseReplay(req, corsHeaders);
@@ -406,10 +465,8 @@ export async function mcpHandler(
     const auth = await resolveAuthContext(req, deps, resourceMetadataUrl, corsHeaders);
     if (!auth.ok) return auth.response;
     context = auth.context;
-    if (context.kind === 'pro') {
-      const proCheck = await runProPreChecks(context, deps, resourceMetadataUrl, corsHeaders, ctx);
-      if (proCheck) return proCheck;
-    }
+    const preCheck = await runContextPreChecks(context, deps, resourceMetadataUrl, corsHeaders, ctx);
+    if (preCheck) return preCheck;
     const limited = await applyPerMinuteLimit(context, corsHeaders);
     if (limited) return limited;
   }
