@@ -23,6 +23,7 @@ const STATIC_SCRIPT_NONCE = 'wm-static-bootstrap';
 // deploy-config.test.mjs would demand a script-src sha256 hash for it).
 const WM_SAMEAS = [
   'https://github.com/koala73/worldmonitor',
+  'https://www.npmjs.com/package/worldmonitor',
   'https://x.com/worldmonitorai',
   'https://x.com/eliehabib',
   'https://discord.gg/re63kWKxaz',
@@ -40,7 +41,13 @@ const ORGANIZATION_JSONLD = `    <script type="application/ld+json" nonce="${STA
     '@type': 'Person',
     name: 'Elie Habib',
     url: 'https://x.com/eliehabib',
-    sameAs: ['https://x.com/eliehabib', 'https://github.com/koala73'],
+    sameAs: [
+      'https://x.com/eliehabib',
+      'https://github.com/koala73',
+      'https://www.linkedin.com/in/elie-habib-7047b931',
+      'https://www.wikidata.org/wiki/Q121365724',
+      'https://www.crunchbase.com/person/elie-habib-2',
+    ],
   },
   sameAs: WM_SAMEAS,
   contactPoint: {
