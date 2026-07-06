@@ -825,6 +825,18 @@ function forecastId(domain, region, title) {
   return `fc-${domain}-${hash}`;
 }
 
+// Stable id for forecasts whose titles embed run-varying data (military
+// dominantCountry/surgeType, state-derived cluster labels). The id must key
+// on the semantic slot, not the display title, or the same evolving
+// situation splits across ids between runs — breaking trend continuity and
+// outcome matching.
+function forecastIdFromKey(domain, slotKey) {
+  const hash = crypto.createHash('sha256')
+    .update(`${domain}:${slotKey}`)
+    .digest('hex').slice(0, 8);
+  return `fc-${domain}-${hash}`;
+}
+
 function normalize(value, min, max) {
   if (max <= min) return 0;
   return Math.max(0, Math.min(1, (value - min) / (max - min)));
@@ -920,8 +932,8 @@ function makePrediction(domain, region, title, probability, confidence, timeHori
     title,
     scenario: '',
     feedSummary: '',
-    probability: Math.round(Math.max(0, Math.min(1, probability)) * 1000) / 1000,
-    confidence: Math.round(Math.max(0, Math.min(1, confidence)) * 1000) / 1000,
+    probability: Math.round(Math.max(0, Math.min(1, Number.isFinite(probability) ? probability : 0)) * 1000) / 1000,
+    confidence: Math.round(Math.max(0, Math.min(1, Number.isFinite(confidence) ? confidence : 0)) * 1000) / 1000,
     timeHorizon,
     signals,
     cascades: [],
@@ -1163,7 +1175,7 @@ function detectSupplyChainScenarios(inputs) {
 
     const aisGaps = anomalies.filter(a =>
       (a.type === 'ais_gaps' || a.type === 'ais_gap') &&
-      (a.region || a.zone || '').toLowerCase().includes(route.toLowerCase()),
+      textIncludesTerm((a.region || a.zone || '').toLowerCase(), route.toLowerCase()),
     );
     if (aisGaps.length > 0) {
       signals.push({ type: 'ais_gap', value: `${aisGaps.length} AIS gap anomalies near ${route}`, weight: 0.3 });
@@ -1171,7 +1183,7 @@ function detectSupplyChainScenarios(inputs) {
     }
 
     const nearbyJam = jamming.filter(j =>
-      (j.region || j.zone || j.name || '').toLowerCase().includes(route.toLowerCase()),
+      textIncludesTerm((j.region || j.zone || j.name || '').toLowerCase(), route.toLowerCase()),
     );
     if (nearbyJam.length > 0) {
       signals.push({ type: 'gps_jamming', value: `GPS interference near ${route}`, weight: 0.2 });
@@ -1452,6 +1464,11 @@ function buildStateDerivedForecast(stateUnit, domain, bucket, candidate, marketC
     domain === 'supply_chain' ? '7d' : '30d',
     signals,
   );
+  // Key on the canonical state-unit identity (content hash over structural
+  // fields, NOT the display label) plus bucket: label churn no longer moves
+  // the id, while two distinct same-region/same-bucket units keep distinct
+  // ids — the cross-state dedup intentionally publishes up to 2 such bets.
+  prediction.id = forecastIdFromKey(domain, `state:${bucket.id}:${stateUnit?.id || stateUnit?.dominantRegion || stateUnit?.regions?.[0] || ''}`);
   prediction.generationOrigin = 'state_derived';
   prediction.feedSummary = buildStateDerivedFeedSummary(
     domain,
@@ -1604,10 +1621,18 @@ function deriveStateDrivenForecasts({
     }
   }
 
+  // Slot ids make same (domain, bucket, dominantRegion) forecasts share an id
+  // regardless of cluster label — keep only the best-ranked one per id.
+  const seenSlotIds = new Set();
   return crossDeduped
     .sort((a, b) => (Number(a.stateDerivedBackfill) - Number(b.stateDerivedBackfill))
       || (b.probability * b.confidence) - (a.probability * a.confidence)
-      || a.title.localeCompare(b.title));
+      || a.title.localeCompare(b.title))
+    .filter((pred) => {
+      if (seenSlotIds.has(pred.id)) return false;
+      seenSlotIds.add(pred.id);
+      return true;
+    });
 }
 
 function detectPoliticalScenarios(inputs) {
@@ -1643,7 +1668,7 @@ function detectPoliticalScenarios(inputs) {
 
     const protestAnomalies = anomalies.filter(a =>
       (a.type === 'protest' || a.type === 'unrest') &&
-      (a.country || a.region || '').toLowerCase().includes(countryName),
+      textIncludesTerm((a.country || a.region || '').toLowerCase(), countryName),
     );
     if (protestAnomalies.length > 0) {
       const maxZ = Math.max(...protestAnomalies.map(a => a.zScore || a.z_score || 0));
@@ -1711,7 +1736,7 @@ function detectMilitaryScenarios(inputs) {
 
     const milFlights = anomalies.filter(a =>
       (a.type === 'military_flights' || a.type === 'military') &&
-      [region, theaterLabel, theaterId].some((part) => part && (a.region || a.theater || '').toLowerCase().includes(part.toLowerCase())),
+      [region, theaterLabel, theaterId].some((part) => part && textIncludesTerm((a.region || a.theater || '').toLowerCase(), part.toLowerCase())),
     );
     if (milFlights.length > 0) {
       const maxZ = Math.max(...milFlights.map(a => a.zScore || a.z_score || 0));
@@ -1787,11 +1812,13 @@ function detectMilitaryScenarios(inputs) {
       ? buildMilitaryForecastTitle(theaterId, theaterLabel, highestSurge)
       : `Military posture escalation: ${region}`;
 
-    predictions.push(makePrediction(
+    const milPred = makePrediction(
       'military', region,
       title,
       prob, confidence, '7d', signals,
-    ));
+    );
+    milPred.id = forecastIdFromKey('military', `theater:${theaterId}`);
+    predictions.push(milPred);
   }
 
   return predictions;
@@ -1823,7 +1850,7 @@ function detectInfraScenarios(inputs) {
     let sourceCount = 1;
 
     const relatedCyber = cyber.filter(t =>
-      (t.country || t.target || t.region || '').toLowerCase().includes(countryLower),
+      textIncludesTerm((t.country || t.target || t.region || '').toLowerCase(), countryLower),
     );
     if (relatedCyber.length > 0) {
       signals.push({ type: 'cyber', value: `${relatedCyber.length} cyber threats targeting ${country}`, weight: 0.3 });
@@ -1831,7 +1858,7 @@ function detectInfraScenarios(inputs) {
     }
 
     const nearbyJam = jamming.filter(j =>
-      (j.country || j.region || j.name || '').toLowerCase().includes(countryLower),
+      textIncludesTerm((j.country || j.region || j.name || '').toLowerCase(), countryLower),
     );
     if (nearbyJam.length > 0) {
       signals.push({ type: 'gps_jamming', value: `GPS interference in ${country}`, weight: 0.2 });
@@ -2057,6 +2084,30 @@ function tokenizeText(text) {
     .filter(token => token.length >= 3);
 }
 
+// Word-boundary term matching to prevent substring false positives
+// (Mali matching Somalia, Niger matching Nigeria, Iran matching Tirana).
+// Boundary class mirrors the tokenizeText delimiter so both matchers agree.
+// A plural suffix on the text side still counts — attacks/elections must
+// match the singular hints — but a term nested inside a DIFFERENT word
+// never does. "es" is only a plural after sibilants (gas→gases, tax→taxes);
+// allowing it globally made "war" match "wares".
+const TERM_MATCH_REGEX_CACHE_MAX = 4000;
+const termMatchRegexCache = new Map();
+function textIncludesTerm(lowerText, lowerTerm) {
+  if (!lowerText || !lowerTerm) return false;
+  let re = termMatchRegexCache.get(lowerTerm);
+  if (!re) {
+    if (termMatchRegexCache.size >= TERM_MATCH_REGEX_CACHE_MAX) {
+      termMatchRegexCache.delete(termMatchRegexCache.keys().next().value);
+    }
+    const escaped = lowerTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pluralSuffix = /(?:s|x|z|ch|sh)$/.test(lowerTerm) ? '(?:es)?' : 's?';
+    re = new RegExp(`(?:^|[^a-z0-9])${escaped}${pluralSuffix}(?:[^a-z0-9]|$)`);
+    termMatchRegexCache.set(lowerTerm, re);
+  }
+  return re.test(lowerText);
+}
+
 function uniqueLowerTerms(terms) {
   return [...new Set((terms || [])
     .map(term => (term || '').toLowerCase().trim())
@@ -2069,7 +2120,7 @@ function countTermMatches(text, terms) {
   let score = 0;
   for (const term of uniqueLowerTerms(terms)) {
     if (term.length < 3) continue;
-    if (!lower.includes(term)) continue;
+    if (!textIncludesTerm(lower, term)) continue;
     hits += 1;
     score += term.length > 8 ? 4 : term.length > 5 ? 3 : 2;
   }
@@ -2110,16 +2161,16 @@ function computeHeadlineRelevance(headline, terms, domain, options = {}) {
   const tagMismatch = headlineTags.length > 0 && expectedTags.size > 0 && !tagOverlap;
   let score = regionScore + (tagOverlap ? 3 : 0) - (tagMismatch ? 4 : 0);
   for (const hint of getDomainTerms(domain)) {
-    if (lower.includes(hint)) score += 1;
+    if (textIncludesTerm(lower, hint)) score += 1;
   }
   const titleTokens = options.titleTokens || [];
   for (const token of titleTokens) {
-    if (lower.includes(token)) score += 2;
+    if (textIncludesTerm(lower, token)) score += 2;
   }
   if (options.requireRegion && regionHits === 0 && !tagOverlap) return 0;
   if (options.requireSemantic) {
-    const domainHits = getDomainTerms(domain).filter(hint => lower.includes(hint)).length;
-    const titleHits = titleTokens.filter(token => lower.includes(token)).length;
+    const domainHits = getDomainTerms(domain).filter(hint => textIncludesTerm(lower, hint)).length;
+    const titleHits = titleTokens.filter(token => textIncludesTerm(lower, token)).length;
     if (domainHits === 0 && titleHits === 0) return 0;
   }
   return Math.max(0, score);
@@ -2137,7 +2188,7 @@ function computeMarketMatchScore(pred, marketTitle, regionTerms, options = {}) {
   let score = regionScore + (tagOverlap ? 2 : 0) - (tagMismatch ? 5 : 0);
   let domainHits = 0;
   for (const hint of getDomainTerms(pred.domain)) {
-    if (lower.includes(hint)) {
+    if (textIncludesTerm(lower, hint)) {
       domainHits += 1;
       score += 1;
     }
@@ -2145,7 +2196,7 @@ function computeMarketMatchScore(pred, marketTitle, regionTerms, options = {}) {
   let titleHits = 0;
   const titleTokens = options.titleTokens || extractMeaningfulTokens(pred.title, regionTerms);
   for (const token of titleTokens) {
-    if (lower.includes(token)) {
+    if (textIncludesTerm(lower, token)) {
       titleHits += 1;
       score += 2;
     }
@@ -2165,7 +2216,8 @@ function detectFromPredictionMarkets(inputs) {
   const markets = inputs.predictionMarkets?.geopolitical || [];
 
   for (const m of markets) {
-    const yesPrice = (m.yesPrice || 50) / 100;
+    if (!Number.isFinite(m?.yesPrice)) continue;
+    const yesPrice = m.yesPrice / 100;
     if (yesPrice < 0.6 || yesPrice > 0.9) continue;
     const tags = tagRegions(m.title);
     if (tags.length === 0) continue;
@@ -2336,6 +2388,7 @@ function calibrateWithMarkets(predictions, markets) {
         return { market: m, sameMacroRegion, ...match };
       })
       .filter(item => {
+        if (!Number.isFinite(item.market.yesPrice)) return false; // a price-less anchor would blend toward a fabricated 50%
         if (item.tagMismatch && item.regionHits === 0) return false;
         const hasSpecificRegionSignal = item.regionHits > 0 || item.tagOverlap;
         const hasSemanticOverlap = item.titleHits > 0 || item.domainHits > 0;
@@ -2351,7 +2404,7 @@ function calibrateWithMarkets(predictions, markets) {
     const best = candidates[0];
     const match = best?.market || null;
     if (match) {
-      const marketProb = (match.yesPrice || 50) / 100;
+      const marketProb = match.yesPrice / 100;
       pred.calibration = {
         marketTitle: match.title,
         marketPrice: +marketProb.toFixed(3),
@@ -2414,13 +2467,24 @@ function getSearchTermsForRegion(region) {
   if (!countryEntry) {
     const regionLower = region.toLowerCase();
     const regionBase = region.replace(/\s*\([^)]*\)\s*$/, '').toLowerCase(); // strip "(Zaire)", "(Burma)", etc.
+    // Exact name match always wins; containment falls back to the LONGEST
+    // contained name so "DR Congo" resolves to DR Congo, never Congo, and
+    // "Guinea-Bissau" / "Papua New Guinea" never inherit Guinea's terms.
+    let matched = null;
     for (const [, entry] of Object.entries(codes)) {
       const nameLower = entry.name.toLowerCase();
-      if (nameLower === regionLower || nameLower === regionBase || regionLower.includes(nameLower)) {
-        terms.push(entry.name);
-        terms.push(...entry.keywords);
+      if (nameLower === regionLower || nameLower === regionBase) {
+        matched = entry;
         break;
       }
+      if (textIncludesTerm(regionLower, nameLower)
+        && (!matched || nameLower.length > matched.name.length)) {
+        matched = entry;
+      }
+    }
+    if (matched) {
+      terms.push(matched.name);
+      terms.push(...matched.keywords);
     }
   }
 
@@ -3228,7 +3292,17 @@ async function extractCriticalSignalBundle(inputs) {
   if (candidates.length === 0) return bundle;
 
   const { url, token } = getRedisCredentials();
-  const cacheKey = `forecast:critical-signals:llm:${buildCriticalSignalCandidateHash(candidates)}`;
+  // The key carries the resolved LLM route (#4965 review): the R13-pinned
+  // default and a FORECAST_LLM_CRITICAL_*-unpinned route must not reuse each
+  // other's frames within the TTL — strength/confidence magnitudes are
+  // model-dependent and probability-coupled.
+  const criticalLlmOptions = getForecastLlmCallOptions('critical_signals');
+  const criticalRouteTag = [
+    (criticalLlmOptions.providerOrder || []).join('-') || 'default',
+    criticalLlmOptions.modelOverrides?.openrouter || 'table',
+    criticalLlmOptions.modelOverrides?.groq || 'table',
+  ].join('_').replace(/[^a-zA-Z0-9._\/-]/g, '-');
+  const cacheKey = `forecast:critical-signals:llm:${criticalRouteTag}:${buildCriticalSignalCandidateHash(candidates)}`;
   const fallbackSignalsFromCandidates = (coveredIndexes = new Set()) =>
     extractRegexCriticalNewsSignals(inputs, candidates.filter((item) => !coveredIndexes.has(item.candidateIndex)));
 
@@ -3262,7 +3336,7 @@ async function extractCriticalSignalBundle(inputs) {
   }
 
   const llmOptions = {
-    ...getForecastLlmCallOptions('critical_signals'),
+    ...criticalLlmOptions,
     stage: 'critical_signals',
     maxTokens: 1200,
     temperature: 0.1,
@@ -3902,7 +3976,9 @@ async function extractImpactExpansionBundle({
   if (selectedCandidatePackets.length === 0) return bundle;
 
   const { url, token } = getRedisCredentials();
-  const cacheKey = `forecast:impact-expansion:llm:${buildImpactExpansionCandidateHash(selectedCandidatePackets, learnedSection)}`;
+  // v2 (2026-07-06, #4944 U6): impact stage moved to deepseek-v4-flash — the
+  // candidate hash is not model-sensitive, so retire old-model rows explicitly.
+  const cacheKey = `forecast:impact-expansion:llm:v2:${buildImpactExpansionCandidateHash(selectedCandidatePackets, learnedSection)}`;
   const cached = await redisGet(url, token, cacheKey);
   if (Array.isArray(cached?.candidates)) {
     const extractedCandidates = sanitizeImpactExpansionDrafts(cached.candidates, selectedCandidatePackets);
@@ -3939,7 +4015,7 @@ async function extractImpactExpansionBundle({
     const batch = selectedCandidatePackets.slice(i, i + IMPACT_EXPANSION_CONCURRENCY);
     const batchResults = await Promise.all(
       batch.map(async (packet) => {
-        const singleCacheKey = `forecast:impact-expansion:llm:${buildImpactExpansionCandidateHash([packet], learnedSection)}`;
+        const singleCacheKey = `forecast:impact-expansion:llm:v2:${buildImpactExpansionCandidateHash([packet], learnedSection)}`;
         const singleCached = await redisGet(url, token, singleCacheKey);
         if (Array.isArray(singleCached?.candidates)) {
           const hits = sanitizeImpactExpansionDrafts(singleCached.candidates, [packet]);
@@ -14037,9 +14113,13 @@ function selectForecastsForEnrichment(predictions, options = {}) {
 }
 
 // ── Phase 2: LLM Scenario Enrichment ───────────────────────
+// openrouter-first since #4944 U6: forecast NARRATIVE (never probabilities —
+// detectors own those) runs DeepSeek V4 Flash with reasoning disabled; groq
+// llama-3.3-70b-versatile is the free-tier/outage fallback. Per-stage
+// FORECAST_LLM_*_PROVIDER_ORDER env still overrides.
 const FORECAST_LLM_PROVIDERS = [
-  { name: 'groq', envKey: 'GROQ_API_KEY', apiUrl: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.1-8b-instant', timeout: 20_000 },
-  { name: 'openrouter', envKey: 'OPENROUTER_API_KEY', apiUrl: 'https://openrouter.ai/api/v1/chat/completions', model: 'google/gemini-2.5-flash', timeout: 25_000 },
+  { name: 'openrouter', envKey: 'OPENROUTER_API_KEY', apiUrl: 'https://openrouter.ai/api/v1/chat/completions', model: 'deepseek/deepseek-v4-flash', timeout: 25_000, extraBody: { reasoning: { enabled: false } } },
+  { name: 'groq', envKey: 'GROQ_API_KEY', apiUrl: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.3-70b-versatile', timeout: 20_000 },
 ];
 const FORECAST_LLM_PROVIDER_NAMES = new Set(FORECAST_LLM_PROVIDERS.map(provider => provider.name));
 // 3 retries (=4 attempts/provider): during an OpenRouter slowdown 2 retries all timed
@@ -14113,6 +14193,31 @@ function getForecastLlmCallOptions(stage = 'default') {
         ? (process.env.FORECAST_LLM_MARKET_IMPLICATIONS_MODEL_OPENROUTER || process.env.FORECAST_LLM_MODEL_OPENROUTER)
       : process.env.FORECAST_LLM_MODEL_OPENROUTER;
 
+  // R13 pin (#4944 U6): critical_signals is NOT narrative-only — its LLM
+  // strength/confidence flow into state-derived (market/supply_chain)
+  // forecast probabilities and publish selection (frames → world signals →
+  // pressure/confirmation scores → buildStateDerivedForecast probability).
+  // Hold this stage on the pre-#4944 models so the DeepSeek narrative
+  // migration cannot move probabilities before the #4930 resolver baseline
+  // exists. ONLY the stage-scoped FORECAST_LLM_CRITICAL_PROVIDER_ORDER
+  // unpins it — a global FORECAST_LLM_PROVIDER_ORDER must not move a
+  // probability-coupled stage as a side effect (review finding on #4965).
+  if (stage === 'critical_signals' && !criticalProviderOrder) {
+    return {
+      providerOrder: ['groq', 'openrouter'],
+      modelOverrides: {
+        groq: 'llama-3.1-8b-instant',
+        // ONLY the stage-scoped model env may change the pinned fallback —
+        // a global FORECAST_LLM_MODEL_OPENROUTER must not move the
+        // probability-coupled stage either (review finding on #4965).
+        openrouter: process.env.FORECAST_LLM_CRITICAL_MODEL_OPENROUTER || 'google/gemini-2.5-flash',
+      },
+      // Legacy request-body parity: the pinned models predate the
+      // reasoning-off extraBody on the table's openrouter entry.
+      extraBodyOverrides: { openrouter: null },
+    };
+  }
+
   return {
     providerOrder,
     modelOverrides: openrouterModel ? { openrouter: openrouterModel } : {},
@@ -14134,6 +14239,11 @@ function resolveForecastLlmProviders(options = {}) {
     providers.push({
       ...provider,
       model: options.modelOverrides?.[provider.name] || provider.model,
+      // `null` explicitly clears the table entry's extraBody (R13 pin);
+      // undefined leaves it untouched.
+      extraBody: options.extraBodyOverrides?.[provider.name] !== undefined
+        ? (options.extraBodyOverrides[provider.name] || undefined)
+        : provider.extraBody,
     });
   }
   return providers.length > 0 ? providers : FORECAST_LLM_PROVIDERS;
@@ -14537,6 +14647,7 @@ async function callForecastLLM(systemPrompt, userPrompt, options = {}) {
                 ],
                 max_tokens: options.maxTokens || 1500,
                 temperature: options.temperature ?? 0.3,
+                ...(provider.extraBody || {}),
               }),
               signal: AbortSignal.timeout(Math.max(1, Math.min(provider.timeout, usableBudgetMs))),
             });
@@ -14951,7 +15062,9 @@ async function enrichScenariosWithLLM(predictions) {
   // Call 1: Combined scenario + perspectives for top-2
   if (topWithPerspectives.length > 0) {
     const hash = buildNarrativeCacheHash(COMBINED_SYSTEM_PROMPT, buildUserPrompt(topWithPerspectives));
-    const cacheKey = `forecast:llm-combined:${hash}`;
+    // v2 (2026-07-06, #4944 U6): narrative moved to deepseek-v4-flash — the
+    // prompt hash is not model-sensitive, so retire old-model rows explicitly.
+    const cacheKey = `forecast:llm-combined:v2:${hash}`;
     console.log(`  [LLM:combined] start selected=${topWithPerspectives.length} cacheKey=${cacheKey}`);
     const cached = await redisGet(url, token, cacheKey);
 
@@ -15098,7 +15211,8 @@ async function enrichScenariosWithLLM(predictions) {
   // Call 2: Scenario-only for predictions 3-4
   if (scenarioOnly.length > 0) {
     const hash = buildNarrativeCacheHash(SCENARIO_SYSTEM_PROMPT, buildUserPrompt(scenarioOnly));
-    const cacheKey = `forecast:llm-scenarios:${hash}`;
+    // v2 (2026-07-06, #4944 U6): see the combined-stage bump note above.
+    const cacheKey = `forecast:llm-scenarios:v2:${hash}`;
     console.log(`  [LLM:scenario] start selected=${scenarioOnly.length} cacheKey=${cacheKey}`);
     const cached = await redisGet(url, token, cacheKey);
 
@@ -16255,7 +16369,9 @@ function validateMarketImplications(cards, allowedTickers = ALL_ALLOWED_TICKERS)
 
 const MARKET_IMPLICATIONS_META_KEY = 'seed-meta:intelligence:market-implications';
 const MARKET_IMPLICATIONS_META_TTL = 86400 * 7;
-const MARKET_IMPLICATIONS_STAGE_CACHE_PREFIX = 'forecast:llm-market-implications:';
+// v2 (2026-07-06, #4944 U6): narrative moved to deepseek-v4-flash — the
+// fingerprint is not model-sensitive, so retire old-model rows explicitly.
+const MARKET_IMPLICATIONS_STAGE_CACHE_PREFIX = 'forecast:llm-market-implications:v2:';
 
 // Input-hash guard for the market_implications LLM stage (#4894). This was
 // the only forecast stage with no pre-call cache — a 2,500-token completion
@@ -17628,6 +17744,8 @@ export {
   PRIOR_KEY,
   HISTORY_KEY,
   HISTORY_MAX_RUNS,
+  forecastIdFromKey,
+  buildStateDerivedForecast,
   HISTORY_MAX_FORECASTS,
   TRACE_LATEST_KEY,
   TRACE_RUNS_KEY,

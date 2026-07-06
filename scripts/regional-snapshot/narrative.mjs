@@ -24,6 +24,7 @@ import { createHash } from 'node:crypto';
 
 import { extractFirstJsonObject, cleanJsonText } from '../_llm-json.mjs';
 import { withRetry, httpRetryError, createLlmBudgetError, isLlmBudgetError } from '../_seed-utils.mjs';
+import { buildLlmCallEvent, emitLlmEvents } from '../lib/llm-telemetry.cjs';
 
 const CHROME_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
@@ -53,6 +54,21 @@ const MAX_WATCH_ITEMS = 3;
  */
 const DEFAULT_PROVIDERS = [
   {
+    name: 'openrouter',
+    envKey: 'OPENROUTER_API_KEY',
+    apiUrl: 'https://openrouter.ai/api/v1/chat/completions',
+    model: 'deepseek/deepseek-v4-flash',
+    timeout: 30_000,
+    headers: (key) => ({
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://worldmonitor.app',
+      'X-Title': 'World Monitor',
+      'User-Agent': CHROME_UA,
+    }),
+    extraBody: { reasoning: { enabled: false } },
+  },
+  {
     name: 'groq',
     envKey: 'GROQ_API_KEY',
     apiUrl: 'https://api.groq.com/openai/v1/chat/completions',
@@ -61,20 +77,6 @@ const DEFAULT_PROVIDERS = [
     headers: (key) => ({
       Authorization: `Bearer ${key}`,
       'Content-Type': 'application/json',
-      'User-Agent': CHROME_UA,
-    }),
-  },
-  {
-    name: 'openrouter',
-    envKey: 'OPENROUTER_API_KEY',
-    apiUrl: 'https://openrouter.ai/api/v1/chat/completions',
-    model: 'google/gemini-2.5-flash',
-    timeout: 30_000,
-    headers: (key) => ({
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://worldmonitor.app',
-      'X-Title': 'World Monitor',
       'User-Agent': CHROME_UA,
     }),
   },
@@ -320,9 +322,25 @@ export async function callLlmDefault({ systemPrompt, userPrompt }, opts = {}) {
   const budgetStartedAtMs = Date.now();
   const usableBudgetMs = () => Math.max(0, budgetStartedAtMs + callBudgetMs - Date.now() - NARRATIVE_LLM_CALL_BUDGET_GUARD_MS);
 
+  // llm_call telemetry (#4944 U5): one event per provider OUTCOME (the
+  // withRetry duration covers in-provider retries), unified with the
+  // Vercel-side stream via scripts/lib/llm-telemetry.cjs.
+  const promptChars = (systemPrompt?.length ?? 0) + (userPrompt?.length ?? 0);
+  const events = [];
+  let attemptIndex = 0;
+
   for (const provider of DEFAULT_PROVIDERS) {
     const envVal = process.env[provider.envKey];
     if (!envVal) continue;
+    const t0 = Date.now();
+    const record = (ok, extra = {}) => {
+      events.push(buildLlmCallEvent({
+        provider: provider.name, model: provider.model, stage: 'regional-narrative', ok,
+        durationMs: Date.now() - t0, promptChars, maxTokens: NARRATIVE_MAX_TOKENS,
+        fallbackIndex: attemptIndex++,
+        ...extra,
+      }));
+    };
     try {
       const resp = await withRetry(async () => {
         const usable = usableBudgetMs();
@@ -339,6 +357,7 @@ export async function callLlmDefault({ systemPrompt, userPrompt }, opts = {}) {
             max_tokens: NARRATIVE_MAX_TOKENS,
             temperature: NARRATIVE_TEMPERATURE,
             response_format: { type: 'json_object' },
+            ...(provider.extraBody || {}),
           }),
           signal: AbortSignal.timeout(Math.max(1, Math.min(provider.timeout, usable))),
         });
@@ -349,15 +368,22 @@ export async function callLlmDefault({ systemPrompt, userPrompt }, opts = {}) {
       }, NARRATIVE_LLM_MAX_RETRIES, retryDelayMs);
 
       const json = /** @type {any} */ (await resp.json());
+      const usage = {
+        tokensTotal: json?.usage?.total_tokens ?? 0,
+        tokensPrompt: json?.usage?.prompt_tokens ?? 0,
+        tokensCompletion: json?.usage?.completion_tokens ?? 0,
+      };
       const text = json?.choices?.[0]?.message?.content;
       if (typeof text !== 'string' || text.trim().length === 0) {
         console.warn(`[narrative] ${provider.name}: empty response`);
+        record(false, { ...usage, reason: 'empty' });
         continue;
       }
 
       const trimmed = text.trim();
       if (validate && !validate(trimmed)) {
         console.warn(`[narrative] ${provider.name}: response failed validation, trying next provider`);
+        record(false, { ...usage, reason: 'validate_reject' });
         continue;
       }
 
@@ -366,14 +392,27 @@ export async function callLlmDefault({ systemPrompt, userPrompt }, opts = {}) {
         ? json.model
         : provider.model;
 
+      record(true, { ...usage, model: actualModel });
+      void emitLlmEvents(events); // fire-and-forget: telemetry never delays the return path
       return { text: trimmed, provider: provider.name, model: actualModel };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[narrative] ${provider.name}: ${msg}`);
+      const httpMatch = /HTTP (\d{3})/.exec(msg);
+      record(false, {
+        reason: isLlmBudgetError(err) ? 'budget_exhausted'
+          : err?.name === 'TimeoutError' || err?.name === 'AbortError' ? 'timeout'
+          : httpMatch ? `http_${httpMatch[1]}`
+          : 'fetch_error',
+      });
       // Budget spent — give up rather than burning the next provider's timeout.
-      if (isLlmBudgetError(err)) return null;
+      if (isLlmBudgetError(err)) {
+        void emitLlmEvents(events); // fire-and-forget: telemetry never delays the return path
+        return null;
+      }
     }
   }
+  void emitLlmEvents(events); // fire-and-forget: telemetry never delays the return path
   return null;
 }
 
@@ -465,7 +504,9 @@ export async function generateRegionalNarrative(region, snapshot, evidence, opts
 
 // ── Prompt-hash narrative cache plumbing (#4896 item 1) ────────────────────
 
-const NARRATIVE_CACHE_PREFIX = 'intelligence:narrative-cache:v1:';
+// v1 → v2 (2026-07-06, #4944 U6): narrative model moved to deepseek-v4-flash;
+// the prompt hash is not model-sensitive, so retire old-model rows explicitly.
+const NARRATIVE_CACHE_PREFIX = 'intelligence:narrative-cache:v2:';
 const NARRATIVE_CACHE_TTL_SEC = 86_400;
 
 function defaultNarrativeCache() {
