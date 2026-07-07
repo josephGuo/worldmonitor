@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { loadEnvFile, runSeed, CHROME_UA, withRetry, parseRetryAfterMs, getResponseHeader, isRetryableHttpStatus } from './_seed-utils.mjs';
 import { unwrapEnvelope } from './_seed-envelope-source.mjs';
 import { tagRegions } from './_prediction-scoring.mjs';
+import { attachResolutionSpecs } from './_forecast-resolution.mjs';
 import { resolveR2StorageConfig, putR2JsonObject, getR2JsonObject } from './_r2-storage.mjs';
 import { extractFirstJsonObject, extractFirstJsonArray, cleanJsonText } from './_llm-json.mjs';
 import { loadTickerSet } from './_ticker-validation.mjs';
@@ -947,6 +948,7 @@ function makePrediction(domain, region, title, probability, confidence, timeHori
     trend: 'stable',
     priorProbability: 0,
     calibration: null,
+    resolution: null,
     caseFile: null,
     generationOrigin: 'legacy_detector',
     stateDerivedBackfill: false,
@@ -4571,6 +4573,18 @@ function buildHistoryForecastEntry(pred) {
       effect: cascade.effect,
       probability: cascade.probability,
     })),
+    // Persist projections into the 45-day history too (#4933 audit gap —
+    // canonical payload already emits them at :5100; history was the only
+    // store dropping them, so the per-horizon curve a future multi-horizon
+    // Brier needs was lost). Mirror the canonical payload's shape.
+    projections: pred.projections ? {
+      h24: Number(pred.projections.h24 || 0),
+      d7: Number(pred.projections.d7 || 0),
+      d30: Number(pred.projections.d30 || 0),
+    } : null,
+    // Resolution spec (#4976 Bet 1) — same camelCase block the canonical
+    // payload emits, so Bet 2's resolver can score forecasts still in-window.
+    resolution: buildResolutionOutputBlock(pred.resolution),
   };
 }
 
@@ -5057,6 +5071,36 @@ function slimForecastCaseForPublish(caseFile = null) {
   };
 }
 
+// Emit the resolution spec (#4976 Bet 1) as a camelCase block (D6) matching
+// the generated `Forecast` type. Follows proto3-JSON omission semantics for
+// the message's `optional` fields: a field that does not apply to the kind is
+// OMITTED (absent key), never null and never coerced to 0 — a judged spec
+// with threshold 0 would be indistinguishable from a hard ">= 0" bar, and an
+// explicit null would contradict the generated `threshold?: number` type that
+// Bet-2 consumers compile against. `kind` and `deadline` are always present.
+// Deliberate divergence from the sibling `calibration: null` idiom:
+// ResolutionSpec is machine-consumed against the generated types, so the wire
+// shape matches what proto3 JSON actually specifies for unset optionals.
+// Returns undefined when the forecast has no spec, so the enclosing payload
+// omits `resolution` entirely (JSON.stringify drops undefined properties).
+// Shared by the canonical payload and the 45-day history entry (R6).
+function buildResolutionOutputBlock(resolution) {
+  if (!resolution || typeof resolution !== 'object') return undefined;
+  const num = (v) => (Number.isFinite(v) ? Number(v) : undefined);
+  const str = (v) => (typeof v === 'string' && v.length > 0 ? v : undefined);
+  return {
+    kind: str(resolution.kind),
+    deadline: num(resolution.deadline),
+    ...(str(resolution.metricKey) !== undefined && { metricKey: str(resolution.metricKey) }),
+    ...(str(resolution.operator) !== undefined && { operator: str(resolution.operator) }),
+    ...(num(resolution.threshold) !== undefined && { threshold: num(resolution.threshold) }),
+    ...(num(resolution.baselineValue) !== undefined && { baselineValue: num(resolution.baselineValue) }),
+    ...(str(resolution.window) !== undefined && { window: str(resolution.window) }),
+    ...(str(resolution.sourceFeed) !== undefined && { sourceFeed: str(resolution.sourceFeed) }),
+    ...(str(resolution.question) !== undefined && { question: str(resolution.question) }),
+  };
+}
+
 function buildPublishedForecastPayload(pred) {
   return {
     id: pred.id,
@@ -5102,6 +5146,7 @@ function buildPublishedForecastPayload(pred) {
       d7: Number(pred.projections.d7 || 0),
       d30: Number(pred.projections.d30 || 0),
     } : null,
+    resolution: buildResolutionOutputBlock(pred.resolution),
     caseFile: slimForecastCaseForPublish(pred.caseFile),
     simulationAdjustment: Number(pred.simulationAdjustment || 0),
     simPathConfidence: Number(pred.simPathConfidence || 0),
@@ -14609,6 +14654,12 @@ async function callForecastLLM(systemPrompt, userPrompt, options = {}) {
   const providers = resolveForecastLlmProviders(options);
   const stageBudgetMs = getForecastLlmStageBudgetMs(options);
   const budgetStartedAtMs = Date.now();
+  // Per-provider retry count is overridable per call. Budget-constrained tail
+  // stages (market_implications) pass 0 so a slow primary cannot burn the shared
+  // run budget across 4 attempts and strand the fallback provider (#5003 review).
+  const providerMaxRetries = Number.isFinite(options.maxRetries)
+    ? Math.max(0, Math.floor(options.maxRetries))
+    : FORECAST_LLM_PROVIDER_MAX_RETRIES;
   const requestedOrder = Array.isArray(options.providerOrder) && options.providerOrder.length > 0
     ? options.providerOrder.join(',')
     : providers.map(provider => provider.name).join(',');
@@ -14709,9 +14760,10 @@ async function callForecastLLM(systemPrompt, userPrompt, options = {}) {
               // timeout (attemptTimeoutMs < provider.timeout) AND the run budget is
               // now exhausted — i.e. we never gave the provider its full window, so
               // we cannot call this a provider failure. When the call gets the full
-              // provider.timeout (the MARKET_IMPLICATIONS_MIN_RUN_BUDGET_MS >= 30s
-              // guard guarantees this for admitted market_implications calls), a
-              // timeout is unambiguously a provider failure -> sawProviderFailure.
+              // provider.timeout (market_implications' admission guard reserves the
+              // whole resolved chain — every runnable provider's timeout + the stage
+              // guard, with maxRetries:0 — so each admitted attempt gets its full
+              // window), a timeout is unambiguously a provider failure -> sawProviderFailure.
               const budgetCappedTimeout = timedOut
                 && attemptTimeoutMs < provider.timeout
                 && getUsableForecastLlmBudgetMs(budgetStartedAtMs, stageBudgetMs) <= 0;
@@ -14723,7 +14775,7 @@ async function callForecastLLM(systemPrompt, userPrompt, options = {}) {
             }
             throw err;
           }
-        }, FORECAST_LLM_PROVIDER_MAX_RETRIES, retryDelayMs);
+        }, providerMaxRetries, retryDelayMs);
 
         let json;
         try {
@@ -15434,6 +15486,11 @@ async function fetchForecasts() {
     : [[], null, null];
   const priorWorldState = priorWorldStates[0] ?? priorWorldStateFallback;
   const publishSelectionMemoryIndex = buildPublishSelectionMemoryIndex(priorWorldState);
+  // Single per-run timestamp: threaded into the resolution enrichment seam
+  // (so spec deadlines = runGeneratedAt + horizon) AND into the canonical
+  // payload's generatedAt below, so deadlines and the payload agree. Never
+  // call Date.now() inside the builder module (R5).
+  const runGeneratedAt = Date.now();
 
   console.log('  Reading input data from Redis...');
   const inputs = await readInputKeys();
@@ -15547,6 +15604,13 @@ async function fetchForecasts() {
     fullRunStateUnits,
     selectionMarketInputCoverage,
   );
+  // Resolvability contract (#4976 Bet 1, D1 seam): attach a machine-checkable
+  // resolution spec to every forecast. Placed AFTER the state-derived
+  // if-block closes (:15496) so it runs unconditionally on every batch —
+  // including zero-state-derived runs — and BEFORE prepareForecastMetrics.
+  // Threads the single per-run timestamp so spec deadlines agree with the
+  // canonical payload's generatedAt. No publish-selection change (D2).
+  attachResolutionSpecs(predictions, inputs, runGeneratedAt);
   attachMarketSelectionContext(predictions, marketSelectionIndex);
   prepareForecastMetrics(predictions);
 
@@ -15588,7 +15652,7 @@ async function fetchForecasts() {
     predictions: publishedPredictions,
     fullRunPredictions,
     inputs,
-    generatedAt: Date.now(),
+    generatedAt: runGeneratedAt,
     enrichmentMeta,
     publishTelemetry,
     publishSelectionPool,
@@ -16439,18 +16503,24 @@ const MARKET_IMPLICATIONS_META_TTL = 86400 * 7;
 // fingerprint is not model-sensitive, so retire old-model rows explicitly.
 const MARKET_IMPLICATIONS_STAGE_CACHE_PREFIX = 'forecast:llm-market-implications:v2:';
 
-// A market_implications completion needs ~20s wall-clock (observed 2026-07-06),
-// and the primary provider (openrouter deepseek-v4-flash) has a 25s call timeout.
-// Admit the tail stage only when the shared run budget (#4978) still covers the
-// FULL provider timeout PLUS the 5s stage guard that getUsableForecastLlmBudgetMs
-// subtracts (25_000 + 5_000 = 30_000). Below that, an admitted call is timeout-
-// CAPPED below the provider's own timeout, which is indistinguishable from a
-// genuinely hung provider — so it would either waste a doomed request (needs
-// ~20s, gets <20s) OR misreport a real provider timeout as a benign starve and
-// suppress a legitimate SEED_ERROR. Skipping instead preserves last-good honestly
-// (age-based STALE_SEED still escalates past 2h). Keep >= max(provider.timeout in
-// FORECAST_LLM_PROVIDERS) + FORECAST_LLM_STAGE_BUDGET_GUARD_MS.
-const MARKET_IMPLICATIONS_MIN_RUN_BUDGET_MS = 30_000;
+// Minimum shared run budget to admit the tail stage (#4978): reserve the RESOLVED,
+// RUNNABLE provider chain for THIS call — every provider in the (possibly env-
+// overridden) order that actually has an API key, ONE attempt each (market_implications
+// forces maxRetries:0), summed with the 5s stage guard that getUsableForecastLlmBudgetMs
+// subtracts. Reserving only the PRIMARY timeout (the original 30_000) was a latent bug:
+// with the default openrouter→groq order a 25s deepseek-v4-flash timeout drained the
+// budget so the groq FALLBACK was stranded and a recoverable timeout was misreported as
+// SEED_ERROR (health WARNING). Reserving the full chain means an admitted call can exhaust
+// the primary AND still run the fallback; below that we skip and preserve last-good (green,
+// age-based STALE_SEED still escalates past 2h) rather than attempt a chain we cannot finish.
+// Provider-order/key aware, so a single-provider override or a missing key reserves only what
+// that chain needs (no over-skip); a chain with NO runnable providers reserves just the guard,
+// so a genuine no-key outage is admitted and surfaces SEED_ERROR instead of hiding as a starve.
+function getMarketImplicationsMinRunBudgetMs(llmOptions = {}) {
+  const runnable = resolveForecastLlmProviders(llmOptions).filter((provider) => process.env[provider.envKey]);
+  const chainMs = runnable.reduce((sum, provider) => sum + (provider.timeout || 0), 0);
+  return chainMs + FORECAST_LLM_STAGE_BUDGET_GUARD_MS;
+}
 
 // Input-hash guard for the market_implications LLM stage (#4894). This was
 // the only forecast stage with no pre-call cache — a 2,500-token completion
@@ -16567,24 +16637,31 @@ async function buildAndSeedMarketImplications(inputs) {
   // stage runs; callForecastLLM would then throw a budget error, return null,
   // and we'd (mis)write a SEED_ERROR for benign, self-healing resource
   // contention. Skip gracefully and preserve last-good instead.
+  // Resolve the call options up front so the admission reservation matches the exact
+  // providers this call will use (env-overridable order, key-filtered).
+  const llmOptions = getForecastLlmCallOptions('market_implications');
+  const minRunBudgetMs = getMarketImplicationsMinRunBudgetMs(llmOptions);
   const runBudgetRemainingMs = getRemainingForecastLlmRunBudgetMs();
-  if (runBudgetRemainingMs < MARKET_IMPLICATIONS_MIN_RUN_BUDGET_MS) {
+  if (runBudgetRemainingMs < minRunBudgetMs) {
     const remaining = Math.max(0, Math.round(runBudgetRemainingMs));
-    console.warn(`  [MarketImplications] Skipped: shared LLM run budget exhausted (${remaining}ms left, need ${MARKET_IMPLICATIONS_MIN_RUN_BUDGET_MS}ms) — preserving last-good, no SEED_ERROR`);
-    console.log(JSON.stringify({ event: 'llm_market_implications', skipped: 'run_budget_exhausted', remainingMs: remaining }));
+    console.warn(`  [MarketImplications] Skipped: shared LLM run budget too low for the provider chain (${remaining}ms left, need ${minRunBudgetMs}ms) — preserving last-good, no SEED_ERROR`);
+    console.log(JSON.stringify({ event: 'llm_market_implications', skipped: 'run_budget_exhausted', remainingMs: remaining, needMs: minRunBudgetMs }));
     await preserveMarketImplicationsLastGoodOnStarve();
     return;
   }
 
   const userPrompt = `World state as of ${new Date().toISOString()}:\n\n${context}\n\nAllowed tickers: ${[...ALL_ALLOWED_TICKERS].join(', ')}`;
 
-  const llmOptions = getForecastLlmCallOptions('market_implications');
   const result = await callForecastLLM(MARKET_IMPLICATIONS_SYSTEM_PROMPT, userPrompt, {
     ...llmOptions,
     stage: 'market_implications',
     maxTokens: 2500,
     temperature: 0.25,
     returnFailureReason: true,
+    // One attempt per provider: reserving the full retry chain (4 attempts × 2
+    // providers) would exceed the entire run budget, so a slow primary must fall
+    // straight through to the fallback instead of retrying it (#5003 review).
+    maxRetries: 0,
   });
 
   if (!result?.text) {
@@ -17938,6 +18015,7 @@ export {
   writeForecastTraceArtifacts,
   buildForecastTraceArtifactKeys,
   parseForecastRunGeneratedAt,
+  readInputKeys,
   readForecastTraceArtifactsForRun,
   buildForecastRunStatusPayload,
   writeForecastRunStatusArtifact,
