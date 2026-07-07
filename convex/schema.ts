@@ -547,6 +547,21 @@ export default defineSchema({
     onHoldAt: v.optional(v.number()),
     rawPayload: v.any(),
     updatedAt: v.number(),
+    // Renewal-reconciliation bookkeeping (see
+    // `payments/billing:reconcileMissedDodoRenewals`). Orthogonal to
+    // `updatedAt` — these are NEVER bumped on a webhook state change, only
+    // when the reconciliation cron attempts (and fails/skips) a row. Used to
+    // back off permanently-failing rows (e.g. test-mode-era subs that 404
+    // against the live Dodo client) so they stop starving the batch's scan
+    // slots. Cleared on a successful reconcile AND on a webhook that renews the
+    // sub (so a new stale episode starts from a clean slate).
+    lastReconcileAttemptAt: v.optional(v.number()),
+    reconcileFailureCount: v.optional(v.number()),
+    // Count of CONSECUTIVE definitive Dodo 404s (reset by any non-404 reconcile
+    // outcome). Distinct from `reconcileFailureCount` (which counts all failure
+    // kinds for backoff) so the terminal "subscription deleted in Dodo"
+    // downgrade requires repeated 404s specifically, not just any prior failure.
+    reconcileNotFoundCount: v.optional(v.number()),
   })
     .index("by_userId", ["userId"])
     .index("by_dodoSubscriptionId", ["dodoSubscriptionId"])
@@ -691,11 +706,28 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_dodoPaymentId", ["dodoPaymentId"])
+    .index("by_occurredAt", ["occurredAt"])
     // Time-bounded read for the duplicate-payment guard (#4438): it only needs
     // recent rows (within the staleness window), so it queries this index with a
     // range on occurredAt instead of collecting the user's whole (unbounded,
     // rawPayload-carrying) payment history — keeps the guard fail-open.
     .index("by_userId_occurredAt", ["userId", "occurredAt"]),
+
+  paymentReconciliationAttempts: defineTable({
+    dodoPaymentId: v.string(),
+    userId: v.string(),
+    planKey: v.optional(v.string()),
+    action: v.union(
+      v.literal("terminal_reconciled"),
+      v.literal("customer_notified"),
+      v.literal("ops_notified"),
+    ),
+    observedStatus: v.string(),
+    pendingOccurredAt: v.number(),
+    reconciledAt: v.number(),
+  })
+    .index("by_dodoPaymentId", ["dodoPaymentId"])
+    .index("by_reconciledAt", ["reconciledAt"]),
 
   productPlans: defineTable({
     dodoProductId: v.string(),

@@ -42,6 +42,29 @@ function isLocalDeployment(): boolean {
   return mode.includes('sidecar') || mode.includes('docker');
 }
 
+// OpenRouter provider routing. WorldMonitor is a geopolitical product, so
+// inference must never physically run on a China-hosted provider — one could
+// log queries or bias outputs on the exact topics we cover (Taiwan, Xinjiang,
+// the South China Sea, etc.). We BLOCK the known China-based providers and let
+// OpenRouter serve the model (DeepSeek weights are fine; hosting is the
+// concern) from the fastest of the rest.
+//   - `ignore`: blocklist. These MUST be OpenRouter's lowercase provider
+//     SLUGS (from GET /api/v1/providers), NOT display names — OpenRouter
+//     silently drops unrecognized entries, so a display name like "DeepSeek"
+//     matches nothing and the block is a no-op (caught in #4993 review).
+//     Verified against /providers 2026-07-07. RE-AUDIT periodically — a new
+//     China-based entrant would otherwise be eligible.
+//   - `sort: throughput`: also steers off OpenRouter's cheapest-but-slowest
+//     default (DeepInfra ~17 tok/s) to the fastest eligible provider, which is
+//     the brief-latency win we were chasing (#4983 follow-up).
+const OPENROUTER_BLOCKED_PROVIDERS = [
+  'baidu', 'alibaba', 'deepseek', 'siliconflow', 'streamlake', 'novita',
+];
+const OPENROUTER_PROVIDER_ROUTING = {
+  ignore: OPENROUTER_BLOCKED_PROVIDERS,
+  sort: 'throughput',
+} as const;
+
 export function getProviderCredentials(
   provider: string,
   overrides: ProviderCredentialOverrides = {},
@@ -102,8 +125,12 @@ export function getProviderCredentials(
       // Hybrid-reasoning models (DeepSeek V4) reason by default via
       // OpenRouter's normalized `reasoning` param; utility calls must not
       // pay reasoning tokens. The reasoning profile opts back in, letting
-      // the model's own default apply.
-      extraBody: overrides.enableReasoning ? undefined : { reasoning: { enabled: false } },
+      // the model's own default apply. `provider` routing is always sent —
+      // the China-provider exclusion is not optional (see the constant).
+      extraBody: {
+        ...(overrides.enableReasoning ? {} : { reasoning: { enabled: false } }),
+        provider: OPENROUTER_PROVIDER_ROUTING,
+      },
     };
   }
 
@@ -249,9 +276,17 @@ function callLlmProfile(
 export const callLlmTool = (opts: Omit<LlmCallOptions, 'providerOrder' | 'modelOverrides'>) =>
   callLlmProfile(opts, 'LLM_TOOL_PROVIDER', 'LLM_TOOL_MODEL', 'groq');
 
-/** Powerful model for synthesis and reasoning tasks. Configurable via LLM_REASONING_PROVIDER / LLM_REASONING_MODEL. */
+/**
+ * Powerful model for synthesis and reasoning tasks. Configurable via
+ * LLM_REASONING_PROVIDER / LLM_REASONING_MODEL. Reasoning is ON by default,
+ * but a caller may pass `enableReasoning: false` to use the same
+ * high-quality model with reasoning DISABLED — required for short-output
+ * stages (a 2–3 sentence brief blurb) where an actual reasoning model
+ * (e.g. deepseek-v4-pro) would otherwise spend its whole small max_tokens
+ * budget on hidden reasoning tokens and return empty content (#4983).
+ */
 export const callLlmReasoning = (opts: Omit<LlmCallOptions, 'providerOrder' | 'modelOverrides'>) =>
-  callLlmProfile({ ...opts, enableReasoning: true }, 'LLM_REASONING_PROVIDER', 'LLM_REASONING_MODEL', 'openrouter');
+  callLlmProfile({ enableReasoning: true, ...opts }, 'LLM_REASONING_PROVIDER', 'LLM_REASONING_MODEL', 'openrouter');
 
 // enableReasoning is omitted too: the reasoning stream hardcodes it on —
 // exposing the knob on the stream type would be a silent no-op for callers.

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 
-import { callLlm } from '../server/_shared/llm.ts';
+import { callLlm, callLlmReasoning } from '../server/_shared/llm.ts';
 
 const originalFetch = globalThis.fetch;
 const originalGroqApiKey = process.env.GROQ_API_KEY;
@@ -9,9 +9,17 @@ const originalOpenRouterApiKey = process.env.OPENROUTER_API_KEY;
 const originalOllamaApiUrl = process.env.OLLAMA_API_URL;
 const originalLlmApiUrl = process.env.LLM_API_URL;
 const originalLlmApiKey = process.env.LLM_API_KEY;
+const originalLlmReasoningProvider = process.env.LLM_REASONING_PROVIDER;
+const originalLlmReasoningModel = process.env.LLM_REASONING_MODEL;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+
+  if (originalLlmReasoningProvider === undefined) delete process.env.LLM_REASONING_PROVIDER;
+  else process.env.LLM_REASONING_PROVIDER = originalLlmReasoningProvider;
+
+  if (originalLlmReasoningModel === undefined) delete process.env.LLM_REASONING_MODEL;
+  else process.env.LLM_REASONING_MODEL = originalLlmReasoningModel;
 
   if (originalGroqApiKey === undefined) delete process.env.GROQ_API_KEY;
   else process.env.GROQ_API_KEY = originalGroqApiKey;
@@ -30,6 +38,40 @@ afterEach(() => {
 });
 
 describe('callLlm', () => {
+  it('excludes China-hosted providers and sorts by throughput on every OpenRouter call', async () => {
+    process.env.OPENROUTER_API_KEY = 'or-test-key';
+    delete process.env.GROQ_API_KEY;
+    delete process.env.OLLAMA_API_URL;
+    delete process.env.LLM_API_URL;
+    delete process.env.LLM_API_KEY;
+
+    const bodies: Array<Record<string, unknown>> = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method || 'GET') === 'GET') return new Response('', { status: 200 });
+      bodies.push(JSON.parse(String(init?.body || '{}')) as Record<string, unknown>);
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }], usage: { total_tokens: 5 } }), { status: 200 });
+    }) as typeof fetch;
+
+    // Utility (reasoning off) AND reasoning-on must both carry the exclusion.
+    await callLlm({ messages: [{ role: 'user', content: 'x' }] });
+    await callLlm({ messages: [{ role: 'user', content: 'y' }], enableReasoning: true });
+
+    for (const b of bodies) {
+      const prov = b.provider as { ignore?: string[]; sort?: string } | undefined;
+      assert.ok(prov, 'every OpenRouter body must carry provider routing');
+      assert.equal(prov.sort, 'throughput');
+      // Lowercase OpenRouter provider SLUGS (verified via GET /providers) —
+      // display-name casing is silently ignored by OpenRouter (#4993 review).
+      for (const cn of ['baidu', 'alibaba', 'deepseek', 'siliconflow', 'streamlake', 'novita']) {
+        assert.ok(prov.ignore?.includes(cn), `China provider slug ${cn} must be excluded`);
+        assert.equal(cn, cn.toLowerCase(), 'slug must be lowercase to match OpenRouter');
+      }
+    }
+    // reasoning-off body still disables reasoning; reasoning-on omits it.
+    assert.deepEqual(bodies[0]?.reasoning, { enabled: false });
+    assert.equal('reasoning' in (bodies[1] ?? {}), false);
+  });
+
   it('preserves the default provider order (openrouter-first since #4944)', async () => {
     process.env.GROQ_API_KEY = 'groq-test-key';
     process.env.OPENROUTER_API_KEY = 'or-test-key';
@@ -106,6 +148,48 @@ describe('callLlm', () => {
     assert.equal(postBodies.length, 1);
     // Opt-in leaves the model's own reasoning default in effect.
     assert.equal('reasoning' in (postBodies[0] ?? {}), false);
+  });
+
+  it('callLlmReasoning honors enableReasoning:false to disable reasoning on the reasoning-tier model (#4983)', async () => {
+    process.env.OPENROUTER_API_KEY = 'or-test-key';
+    process.env.LLM_REASONING_PROVIDER = 'openrouter';
+    process.env.LLM_REASONING_MODEL = 'deepseek/deepseek-v4-pro';
+    delete process.env.GROQ_API_KEY;
+    delete process.env.OLLAMA_API_URL;
+    delete process.env.LLM_API_URL;
+    delete process.env.LLM_API_KEY;
+
+    const bodies: Array<Record<string, unknown>> = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method || 'GET') === 'GET') return new Response('', { status: 200 });
+      bodies.push(JSON.parse(String(init?.body || '{}')) as Record<string, unknown>);
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: 'Closure would choke a fifth of seaborne crude.' } }],
+        usage: { total_tokens: 30 },
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    // Short-stage caller opts OUT of reasoning: the tiny max_tokens budget
+    // must go to the answer, not hidden reasoning tokens (the #4983 bug).
+    const off = await callLlmReasoning({
+      messages: [{ role: 'user', content: 'Why does this matter?' }],
+      maxTokens: 260,
+      enableReasoning: false,
+    });
+    assert.ok(off);
+    assert.equal(off.model, 'deepseek/deepseek-v4-pro', 'still uses the reasoning-tier model');
+    assert.deepEqual(bodies[0]?.reasoning, { enabled: false }, 'reasoning must be disabled on the wire');
+
+    // Default (no override) keeps reasoning on for genuinely analytical stages.
+    bodies.length = 0;
+    const on = await callLlmReasoning({
+      messages: [{ role: 'user', content: 'Deduce the situation.' }],
+      maxTokens: 1500,
+    });
+    assert.ok(on);
+    assert.equal('reasoning' in (bodies[0] ?? {}), false, 'default leaves reasoning on (no disable body)');
+    // LLM_REASONING_* are restored by the shared afterEach (snapshot-based),
+    // which runs even if an assertion above throws — no manual cleanup here.
   });
 
   it('ignores DeepSeek reasoning message fields and serves content untouched', async () => {
