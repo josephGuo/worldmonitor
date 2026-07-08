@@ -18,6 +18,8 @@ import { assignStoryIdentity, adoptExistingCanonical } from './dedup.mjs';
 import { classifyOpinion } from '../../../_shared/opinion-classifier.js';
 import { classifyFeelGood } from '../../../_shared/feelgood-classifier.js';
 import { classifyEphemeralLiveCoverage } from '../../../../shared/ephemeral-live-classifier.js';
+import { buildTickerDictionary, extractTickers } from '../../../../shared/ticker-extract.js';
+import stocksData from '../../../../shared/stocks.json';
 import { buildClassifyCacheKey } from '../../intelligence/v1/_shared';
 import { getSourceTier } from '../../../_shared/source-tiers';
 import {
@@ -27,7 +29,6 @@ import {
   STORY_ALIAS_KEY,
   DIGEST_ACCUMULATOR_KEY,
   STORY_TTL,
-  STORY_TRACK_KEY_PREFIX,
   DIGEST_ACCUMULATOR_TTL,
 } from '../../../_shared/cache-keys';
 import { getRelayBaseUrl, getRelayHeaders } from '../../../_shared/relay';
@@ -146,6 +147,10 @@ const FLASHPOINT_SCORING_KEYWORDS: readonly string[] = diplomacyKeywordsData.fla
 const DIPLOMACY_FLASHPOINT_PAIRS: ReadonlyArray<readonly [string, string]> =
   diplomacyKeywordsData.diplomacyFlashpointPairs as unknown as ReadonlyArray<readonly [string, string]>;
 
+// #4922a: compiled once — the company-name alternation regex is the
+// expensive part of ticker extraction.
+const TICKER_DICTIONARY = buildTickerDictionary(stocksData.symbols);
+
 const DIPLOMACY_FLASHPOINT_BOOST = 18;
 const ENTITY_CORROBORATION_SCORE_PER_SOURCE = 4;
 const ENTITY_CORROBORATION_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -192,6 +197,11 @@ interface ParsedItem {
   // delayed digest/brief, even when conflict vocabulary makes them score high.
   // Stamped here and re-classified by buildDigest for pre-stamp residue.
   isEphemeralLiveCoverage: boolean;
+  // #4922a: stock tickers extracted at parse time from title + description
+  // (cashtags + shared/stocks.json company names). Uppercase, deduped,
+  // ≤8 (proto NewsItem.tickers max_items=8). Optional so items rehydrated
+  // from pre-rollout cache rows stay valid; toProtoItem defaults to [].
+  tickers?: string[];
 }
 
 const MAX_DESCRIPTION_LEN = 400;
@@ -590,6 +600,7 @@ function parseRssXml(xml: string, feed: ServerFeed, variant: string): ParseResul
       isOpinion: classifyOpinion({ title, link, description }),
       isFeelGood: classifyFeelGood({ title, link, description }),
       isEphemeralLiveCoverage: classifyEphemeralLiveCoverage({ title, link, description }),
+      tickers: extractTickers(`${title} ${description}`, TICKER_DICTIONARY),
     });
   }
 
@@ -956,9 +967,9 @@ async function readStoryTracks(titleHashes: string[]): Promise<Map<string, Story
   if (titleHashes.length === 0) return new Map();
   const fields = ['firstSeen', 'lastSeen', 'mentionCount', 'sourceCount', 'currentScore', 'peakScore'];
   const commands = titleHashes.map(h => [
-    'HMGET', `${STORY_TRACK_KEY_PREFIX}${h}`, ...fields,
+    'HMGET', STORY_TRACK_KEY(h), ...fields,
   ]);
-  const results = await runRedisPipeline(commands, true);
+  const results = await runRedisPipeline(commands);
   const map = new Map<string, StoryTrack>();
   for (let i = 0; i < titleHashes.length; i++) {
     const vals = results[i]?.result as string[] | null;
@@ -993,6 +1004,7 @@ function toProtoItem(item: ParsedItem, storyMeta?: ProtoStoryMeta): ProtoNewsIte
     },
     locationName: '',
     snippet: item.description ?? '',
+    tickers: item.tickers ?? [],
   };
 }
 
@@ -1527,6 +1539,7 @@ export const __testing__ = {
   promoteDiplomacySeverity,
   computeEntityCorroborationSignals,
   computeEntityCorroborationCounts,
+  readStoryTracks,
   resolveMaxAgeMs,
   capLlmUpgrade,
   MAX_DESCRIPTION_LEN,
