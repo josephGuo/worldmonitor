@@ -172,6 +172,12 @@ const CYBER_PROB_VOLUME_WEIGHT = 0.5;       // weight of volume in probability f
 const CYBER_PROB_TYPE_WEIGHT = 0.15;        // weight of type diversity in probability formula
 const CONFLICT_BASE_DETECTOR_PROB_MAX = 0.90;
 const UCDP_CONFLICT_ZONE_PROB_MAX = 0.85;
+const UCDP_CONFLICT_ZONE_GATE_PROB_MIN = 0.35;
+const MARKET_DETECTOR_PROB_MAX = 0.85;
+const SUPPLY_CHAIN_DETECTOR_PROB_MAX = 0.85;
+const POLITICAL_DETECTOR_PROB_MAX = 0.80;
+const MILITARY_DETECTOR_PROB_MAX = 0.90;
+const INFRASTRUCTURE_DETECTOR_PROB_MAX = 0.85;
 const VELOCITY_SPIKE_PROBABILITY_LIFT = 0.08;
 const VELOCITY_SPIKE_PROBABILITY_MAX = 0.99;
 const DEFENSE_DIRECT_CONFIRMATION_PRESSURE_LIFT = 0.12;
@@ -283,6 +289,122 @@ const FRED_MARKET_INPUT_KEYS = {
 };
 
 const FRED_MARKET_SERIES = Object.keys(FRED_MARKET_INPUT_KEYS);
+
+function countArrayField(payload, fieldName) {
+  if (Array.isArray(payload)) return payload.length;
+  const value = payload?.[fieldName];
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function countObjectCollection(payload) {
+  if (!payload) return 0;
+  if (Array.isArray(payload)) return payload.length;
+  if (typeof payload !== 'object') return 0;
+
+  const arrayLengths = Object.values(payload)
+    .filter((value) => Array.isArray(value))
+    .map((value) => value.length);
+  if (arrayLengths.length > 0) {
+    return arrayLengths.reduce((sum, length) => sum + length, 0);
+  }
+
+  return Object.entries(payload)
+    .filter(([key, value]) => value != null && !['asOf', 'generatedAt', 'computedAt', 'fetchedAt', 'source', 'version'].includes(key))
+    .length;
+}
+
+function countTemporalAnomalySnapshotRecords(payload) {
+  if (Array.isArray(payload)) return payload.length;
+  if (!payload || typeof payload !== 'object') return 0;
+  if (Array.isArray(payload.trackedTypes)) return payload.trackedTypes.length;
+  return countArrayField(payload, 'anomalies');
+}
+
+function countPredictionMarketRecords(payload) {
+  const geopoliticalCount = countArrayField(payload, 'geopolitical');
+  const techCount = countArrayField(payload, 'tech');
+  const financeCount = countArrayField(payload, 'finance');
+  return (geopoliticalCount > 0 || techCount > 0) && financeCount > 0
+    ? geopoliticalCount + techCount + financeCount
+    : 0;
+}
+
+function countFredSeriesRecords(payload) {
+  const observations = payload?.series?.observations ?? payload?.observations;
+  return Array.isArray(observations) ? observations.length : 0;
+}
+
+function buildForecastInputFeedDefinitions() {
+  return [
+    { key: CII_RISK_SCORE_CACHE_KEYS.stale, label: 'ciiScores', countRecords: countObjectCollection },
+    { key: 'temporal:anomalies:v1', label: 'temporalAnomalies', countRecords: countTemporalAnomalySnapshotRecords },
+    { key: 'theater_posture:sebuf:stale:v1', label: 'theaterPosture', countRecords: countObjectCollection },
+    { key: 'military:forecast-inputs:stale:v1', label: 'militaryForecastInputs', countRecords: (value) => countArrayField(value, 'theaters') + countArrayField(value, 'surges') },
+    { key: 'prediction:markets-bootstrap:v1', label: 'predictionMarkets', countRecords: countPredictionMarketRecords },
+    { key: 'supply_chain:chokepoints:v4', label: 'chokepoints', countRecords: countObjectCollection },
+    { key: 'conflict:iran-events:v1', label: 'iranEvents', countRecords: (value) => countArrayField(value, 'events'), enabled: iranEventsEnabled },
+    { key: 'conflict:ucdp-events:v1', label: 'ucdpEvents', countRecords: (value) => countArrayField(value, 'events') },
+    { key: 'unrest:events:v1', label: 'unrestEvents', countRecords: (value) => countArrayField(value, 'events') },
+    { key: 'infra:outages:v1', label: 'outages', countRecords: (value) => countArrayField(value, 'outages') },
+    { key: 'cyber:threats-bootstrap:v2', label: 'cyberThreats', countRecords: (value) => countArrayField(value, 'threats') || countObjectCollection(value) },
+    { key: 'intelligence:gpsjam:v2', label: 'gpsJamming', countRecords: countObjectCollection },
+    { key: 'news:insights:v1', label: 'newsInsights', countRecords: (value) => countArrayField(value, 'topStories') || countObjectCollection(value) },
+    { key: 'news:digest:v1:full:en', label: 'newsDigest', countRecords: (value) => countArrayField(value, 'topStories') || countArrayField(value, 'stories') || countObjectCollection(value) },
+    { key: 'sanctions:pressure:v1', label: 'sanctionsPressure', countRecords: countObjectCollection },
+    { key: 'thermal:escalation:v1', label: 'thermalEscalation', countRecords: countObjectCollection },
+    { key: MARKET_INPUT_KEYS.stocks, label: 'market:stocks', countRecords: (value) => extractQuoteItems(value).length },
+    { key: MARKET_INPUT_KEYS.commodities, label: 'market:commodities', countRecords: (value) => extractQuoteItems(value).length },
+    { key: MARKET_INPUT_KEYS.sectors, label: 'market:sectors', countRecords: (value) => extractSectorItems(value).length },
+    { key: MARKET_INPUT_KEYS.gulfQuotes, label: 'market:gulfQuotes', countRecords: (value) => extractQuoteItems(value).length },
+    { key: MARKET_INPUT_KEYS.etfFlows, label: 'market:etfFlows', countRecords: (value) => extractEtfItems(value).length },
+    { key: MARKET_INPUT_KEYS.crypto, label: 'market:crypto', countRecords: (value) => extractQuoteItems(value).length },
+    { key: MARKET_INPUT_KEYS.stablecoins, label: 'market:stablecoins', countRecords: (value) => countArrayField(value, 'stablecoins') },
+    { key: MARKET_INPUT_KEYS.bisExchange, label: 'market:bisExchange', countRecords: (value) => extractRateItems(value).length },
+    { key: MARKET_INPUT_KEYS.bisPolicy, label: 'market:bisPolicy', countRecords: (value) => extractRateItems(value).length },
+    { key: MARKET_INPUT_KEYS.shippingRates, label: 'market:shippingRates', countRecords: (value) => extractShippingIndices(value).length },
+    { key: MARKET_INPUT_KEYS.correlationCards, label: 'market:correlationCards', countRecords: (value) => extractCorrelationCards(value).length },
+    { key: 'conflict:acled:v1:all:0:0', label: 'acledEvents', countRecords: (value) => countArrayField(value, 'events') },
+    { key: 'conflict:ema-windows:v1', label: 'emaWindows', countRecords: countObjectCollection },
+    ...FRED_MARKET_SERIES.map((seriesId) => ({
+      key: FRED_MARKET_INPUT_KEYS[seriesId],
+      label: `fred:${seriesId}`,
+      countRecords: countFredSeriesRecords,
+    })),
+  ];
+}
+
+function buildForecastInputFetchKeys() {
+  return buildForecastInputFeedDefinitions()
+    .filter((feed) => !feed.enabled || feed.enabled())
+    .map((feed) => feed.key);
+}
+
+function buildForecastInputPresenceRows(parsedByKey = {}) {
+  return buildForecastInputFeedDefinitions()
+    .filter((feed) => !feed.enabled || feed.enabled())
+    .map((feed) => {
+      let records = 0;
+      try {
+        records = Object.prototype.hasOwnProperty.call(parsedByKey, feed.key)
+          ? feed.countRecords(parsedByKey[feed.key])
+          : 0;
+      } catch {
+        records = 0;
+      }
+      return {
+        key: feed.key,
+        label: feed.label,
+        records: Number.isFinite(records) && records > 0 ? records : 0,
+      };
+    });
+}
+
+function warnOnMissingForecastInputs(rows = [], logger = console) {
+  for (const row of rows) {
+    if ((row?.records ?? 0) > 0) continue;
+    logger.warn(`  [ForecastInputs] ${row.label} ${row.key} records=0 (missing/empty forecast input)`);
+  }
+}
 
 const MARKET_BUCKET_CONFIG = [
   {
@@ -742,41 +864,7 @@ async function warmPingChokepoints() {
 
 async function readInputKeys() {
   const { url, token } = getRedisCredentials();
-  const fredKeys = FRED_MARKET_SERIES.map((seriesId) => FRED_MARKET_INPUT_KEYS[seriesId]);
-  const keys = [
-    CII_RISK_SCORE_CACHE_KEYS.stale,
-    'temporal:anomalies:v1',
-    'theater_posture:sebuf:stale:v1',
-    'military:forecast-inputs:stale:v1',
-    'prediction:markets-bootstrap:v1',
-    'supply_chain:chokepoints:v4',
-    // Iran-events sunset: don't fetch the (dormant) key into the pipeline batch
-    // when disabled — the assembly below already feeds empty iranEvents.
-    ...(iranEventsEnabled() ? ['conflict:iran-events:v1'] : []),
-    'conflict:ucdp-events:v1',
-    'unrest:events:v1',
-    'infra:outages:v1',
-    'cyber:threats-bootstrap:v2',
-    'intelligence:gpsjam:v2',
-    'news:insights:v1',
-    'news:digest:v1:full:en',
-    'sanctions:pressure:v1',
-    'thermal:escalation:v1',
-    MARKET_INPUT_KEYS.stocks,
-    MARKET_INPUT_KEYS.commodities,
-    MARKET_INPUT_KEYS.sectors,
-    MARKET_INPUT_KEYS.gulfQuotes,
-    MARKET_INPUT_KEYS.etfFlows,
-    MARKET_INPUT_KEYS.crypto,
-    MARKET_INPUT_KEYS.stablecoins,
-    MARKET_INPUT_KEYS.bisExchange,
-    MARKET_INPUT_KEYS.bisPolicy,
-    MARKET_INPUT_KEYS.shippingRates,
-    MARKET_INPUT_KEYS.correlationCards,
-    'conflict:acled:v1:all:0:0',
-    'conflict:ema-windows:v1',
-    ...fredKeys,
-  ];
+  const keys = buildForecastInputFetchKeys();
   // Sized for Upstash REST /pipeline payload limits.
   //
   // STRLEN audit 2026-04-14: 40 input keys total ~2.27 MB; top 5 keys
@@ -824,6 +912,7 @@ async function readInputKeys() {
     } catch { return null; }
   };
   const parsedByKey = Object.fromEntries(keys.map((key, index) => [key, parse(index)]));
+  warnOnMissingForecastInputs(buildForecastInputPresenceRows(parsedByKey));
   const fredSeries = Object.fromEntries(
     FRED_MARKET_SERIES
       .map((seriesId) => [seriesId, parsedByKey[FRED_MARKET_INPUT_KEYS[seriesId]]])
@@ -1147,7 +1236,7 @@ function detectMarketScenarios(inputs) {
     affectedRegions.add(region);
 
     const riskNorm = normalize(cp.riskScore || (risk === 'critical' ? 85 : 70), 40, 100);
-    const prob = Math.min(0.85, riskNorm * commodity.sensitivity);
+    const prob = Math.min(MARKET_DETECTOR_PROB_MAX, riskNorm * commodity.sensitivity);
 
     predictions.push(makePrediction(
       'market', region,
@@ -1242,7 +1331,7 @@ function detectSupplyChainScenarios(inputs) {
     }
 
     const riskNorm = normalize(cp.riskScore || 70, 40, 100);
-    const prob = Math.min(0.85, riskNorm * 0.7 + (aisGaps.length > 0 ? 0.1 : 0) + (nearbyJam.length > 0 ? 0.05 : 0));
+    const prob = Math.min(SUPPLY_CHAIN_DETECTOR_PROB_MAX, riskNorm * 0.7 + (aisGaps.length > 0 ? 0.1 : 0) + (nearbyJam.length > 0 ? 0.05 : 0));
     const confidence = Math.max(0.3, normalize(sourceCount, 0, 4));
 
     predictions.push(makePrediction(
@@ -1290,6 +1379,16 @@ function getStateDerivedAllowedBuckets(domain) {
   if (domain === 'supply_chain') return ['freight', 'energy'];
   if (domain === 'market') return ['energy', 'sovereign_risk', 'rates_inflation', 'fx_stress'];
   return [];
+}
+
+const DOMAIN_PROBABILITY_CAPS = {
+  market: MARKET_DETECTOR_PROB_MAX,
+  supply_chain: SUPPLY_CHAIN_DETECTOR_PROB_MAX,
+};
+
+function capDomainProbability(domain, probability) {
+  const cap = DOMAIN_PROBABILITY_CAPS[domain] ?? 1;
+  return Math.min(cap, probability);
 }
 
 function getStateDerivedMinimumScore(domain, bucketId) {
@@ -1469,11 +1568,12 @@ function computeStateDerivedBucketCandidate(domain, stateUnit, bucket, marketCon
 function buildStateDerivedForecast(stateUnit, domain, bucket, candidate, marketContext) {
   const bucketContext = marketContext?.bucketContexts?.[bucket.id] || null;
   const title = buildStateDerivedForecastTitle(domain, stateUnit, bucket.id, bucket.label);
-  const probability = clampUnitInterval(
+  const rawProbability = clampUnitInterval(
     (candidate.score * 0.56) +
     (Number(bucket.pressureScore || 0) * 0.24) +
     (Number(stateUnit?.avgProbability || 0) * 0.18),
   );
+  const probability = capDomainProbability(domain, rawProbability);
   const confidence = clampUnitInterval(
     (candidate.score * 0.34) +
     (Number(bucket.confidence || 0) * 0.28) +
@@ -1738,7 +1838,7 @@ function detectPoliticalScenarios(inputs) {
     const unrestNorm = normalize(Math.max(unrestComp, unrestCount * 10), 30, 100);
     const anomalyBoost = protestAnomalies.length > 0 ? 0.1 : 0;
     const eventBoost = unrestCount >= 5 ? 0.08 : unrestCount >= 3 ? 0.04 : 0;
-    const prob = Math.min(0.8, unrestNorm * 0.6 + anomalyBoost + eventBoost);
+    const prob = Math.min(POLITICAL_DETECTOR_PROB_MAX, unrestNorm * 0.6 + anomalyBoost + eventBoost);
     const confidence = Math.max(0.3, normalize(sourceCount, 0, 4));
 
     predictions.push(makePrediction(
@@ -1865,7 +1965,7 @@ function detectMilitaryScenarios(inputs) {
     const strikeBoost = (t?.activeOperations?.includes?.('strike_capable') || highestSurge?.strikeCapable) ? 0.06 : 0;
     const persistenceBoost = persistent ? 0.08 : 0;
     const genericPenalty = highestSurge?.surgeType === 'air_activity' && !persistent ? 0.12 : 0;
-    const prob = Math.min(0.9, Math.max(0.05, baseLine + flightBoost + postureBoost + supportBoost + strikeBoost + persistenceBoost + actorScore - genericPenalty));
+    const prob = Math.min(MILITARY_DETECTOR_PROB_MAX, Math.max(0.05, baseLine + flightBoost + postureBoost + supportBoost + strikeBoost + persistenceBoost + actorScore - genericPenalty));
     const confidence = Math.max(0.3, normalize(sourceCount, 0, 4));
     const title = highestSurge
       ? buildMilitaryForecastTitle(theaterId, theaterLabel, highestSurge)
@@ -1927,7 +2027,7 @@ function detectInfraScenarios(inputs) {
     const cyberBoost = relatedCyber.length > 0 ? 0.15 : 0;
     const jamBoost = nearbyJam.length > 0 ? 0.05 : 0;
     const baseLine = severity === 'total' ? 0.55 : 0.4;
-    const prob = Math.min(0.85, baseLine + cyberBoost + jamBoost);
+    const prob = Math.min(INFRASTRUCTURE_DETECTOR_PROB_MAX, baseLine + cyberBoost + jamBoost);
     const confidence = Math.max(0.3, normalize(sourceCount, 0, 4));
 
     predictions.push(makePrediction(
@@ -1957,7 +2057,11 @@ function detectUcdpConflictZones(inputs, emaRiskScores) {
     if (count < 10) continue;
 
     const signals = [{ type: 'ucdp', value: `${count} UCDP conflict events`, weight: 0.5 }];
-    let prob = Math.min(UCDP_CONFLICT_ZONE_PROB_MAX, normalize(count, 5, 100) * 0.7);
+    let prob = Math.min(
+      UCDP_CONFLICT_ZONE_PROB_MAX,
+      UCDP_CONFLICT_ZONE_GATE_PROB_MIN
+        + (normalize(count, 10, 100) * (UCDP_CONFLICT_ZONE_PROB_MAX - UCDP_CONFLICT_ZONE_GATE_PROB_MIN)),
+    );
 
     const emaRisk = emaRiskScores?.get(country?.toLowerCase?.() ?? '');
     if (emaRisk?.velocitySpike) {
@@ -2071,6 +2175,56 @@ const DOMAIN_HINTS = {
   cyber: ['cyber', 'malware', 'ransomware', 'intrusion', 'ddos', 'phishing', 'exploit', 'botnet'],
   infrastructure: ['outage', 'blackout', 'power', 'grid', 'pipeline', 'cyber', 'telecom', 'internet'],
 };
+
+const MARKET_CALIBRATION_WEIGHT = 0.4;
+// Detector generation can ingest thinner market rows, but calibration only
+// moves canonical probabilities from high-liquidity anchors.
+const MARKET_CALIBRATION_MIN_VOLUME = 5_000;
+const MARKET_CALIBRATION_DOMAIN_CAPS = {
+  conflict: CONFLICT_BASE_DETECTOR_PROB_MAX,
+  market: MARKET_DETECTOR_PROB_MAX,
+  supply_chain: SUPPLY_CHAIN_DETECTOR_PROB_MAX,
+  political: POLITICAL_DETECTOR_PROB_MAX,
+  military: MILITARY_DETECTOR_PROB_MAX,
+  cyber: CYBER_PROB_MAX,
+  infrastructure: INFRASTRUCTURE_DETECTOR_PROB_MAX,
+};
+const MARKET_DE_ESCALATION_OUTCOME_TERMS = [
+  'ceasefire', 'truce', 'peace', 'peaceful', 'agreement', 'diplomatic solution',
+  'withdrawal', 'reopen', 'reopened', 'restored', 'resolution', 'resolved',
+];
+const MARKET_ADVERSE_OUTCOME_TERMS = [
+  'attack', 'strike', 'war', 'conflict', 'offensive', 'unrest',
+  'instability', 'crisis', 'disruption', 'shock', 'stress', 'collapse',
+  'renewed',
+];
+const MARKET_DE_ESCALATION_OUTCOME_PATTERNS = [
+  /(?:^|[^a-z0-9])de-?escalat(?:e|es|ed|ing|ion|ory)?(?:[^a-z0-9]|$)/,
+  /(?:^|[^a-z0-9])stabili[sz](?:e|es|ed|ing|ation|ations)?(?:[^a-z0-9]|$)/,
+  /(?:^|[^a-z0-9])normali[sz](?:e|es|ed|ing|ation|ations)?(?:[^a-z0-9]|$)/,
+];
+const MARKET_ADVERSE_OUTCOME_PATTERNS = [
+  /(?:^|[^a-z0-9-])escalat(?:e|es|ed|ing|ion|ory)?(?:[^a-z0-9]|$)/,
+  /(?:^|[^a-z0-9])destabili[sz](?:e|es|ed|ing|ation|ations)?(?:[^a-z0-9]|$)/,
+  /(?:^|[^a-z0-9])fail(?:s|ed|ing|ure|ures)?(?:[^a-z0-9]|$)/,
+  /(?:^|[^a-z0-9])breach(?:es|ed|ing)?(?:[^a-z0-9]|$)/,
+  /(?:^|[^a-z0-9])violat(?:e|es|ed|ing|ion|ions)?(?:[^a-z0-9]|$)/,
+  /(?:^|[^a-z0-9])reject(?:s|ed|ing|ion|ions)?(?:[^a-z0-9]|$)/,
+  /(?:^|[^a-z0-9])resum(?:e|es|ed|ing|ption|ptions)?(?:[^a-z0-9]|$)/,
+  /(?:^|[^a-z0-9])renew(?:s|ed|ing|al|als)?(?:[^a-z0-9]|$)/,
+  /(?:^|[^a-z0-9])collaps(?:e|es|ed|ing)?(?:[^a-z0-9]|$)/,
+];
+const MARKET_DE_ESCALATION_ANCHOR_PATTERN = String.raw`(?:ceasefire|truce|peace(?: agreement| deal)?|agreement)`;
+const MARKET_DE_ESCALATION_FAILURE_PATTERN = String.raw`(?:fail(?:s|ed|ing|ure|ures)?|collaps(?:e|es|ed|ing)?|break(?:s|ing)? down|breakdown|breach(?:es|ed|ing)?|violat(?:e|es|ed|ing|ion|ions)?|reject(?:s|ed|ing|ion|ions)?|expire(?:s|d|ing)?|ends?\b(?!\s+of\b))`;
+const MARKET_FAILED_DE_ESCALATION_PATTERNS = [
+  new RegExp(String.raw`\b${MARKET_DE_ESCALATION_ANCHOR_PATTERN}\b.{0,40}\b${MARKET_DE_ESCALATION_FAILURE_PATTERN}\b`),
+  new RegExp(String.raw`\b${MARKET_DE_ESCALATION_FAILURE_PATTERN}\b.{0,40}\b${MARKET_DE_ESCALATION_ANCHOR_PATTERN}\b`),
+];
+const MARKET_ADVERSE_CONDITION_PATTERN = String.raw`(?:war|conflict|fighting|hostilities|violence|offensive|attacks?)`;
+const MARKET_ADVERSE_CONDITION_END_PATTERNS = [
+  new RegExp(String.raw`\b${MARKET_ADVERSE_CONDITION_PATTERN}\b.{0,40}\bend(?:s|ed|ing)?\b(?!\s+of\b)`),
+  new RegExp(String.raw`\bend(?:s|ed|ing)?\b(?:\s+of)?.{0,40}\b${MARKET_ADVERSE_CONDITION_PATTERN}\b`),
+];
 
 const DOMAIN_ACTOR_BLUEPRINTS = {
   conflict: [
@@ -2270,6 +2424,60 @@ function computeMarketMatchScore(pred, marketTitle, regionTerms, options = {}) {
   };
 }
 
+function textMatchesAnyPattern(text, patterns) {
+  const lower = String(text || '').toLowerCase();
+  return patterns.some((pattern) => pattern.test(lower));
+}
+
+function textHasAnyOutcomeTerm(text, terms, patterns = []) {
+  const lower = String(text || '').toLowerCase();
+  return terms.some((term) => {
+    const lowerTerm = String(term || '').toLowerCase().trim();
+    if (!lowerTerm) return false;
+    return textIncludesTerm(lower, lowerTerm);
+  }) || textMatchesAnyPattern(lower, patterns);
+}
+
+function marketTitleHasFailedDeEscalationOutcome(marketTitle) {
+  const lower = String(marketTitle || '').toLowerCase();
+  if (!textHasAnyOutcomeTerm(lower, MARKET_DE_ESCALATION_OUTCOME_TERMS, MARKET_DE_ESCALATION_OUTCOME_PATTERNS)) return false;
+  return MARKET_FAILED_DE_ESCALATION_PATTERNS.some((pattern) => pattern.test(lower));
+}
+
+function classifyMarketYesOutcome(marketTitle) {
+  if (marketTitleHasFailedDeEscalationOutcome(marketTitle)) return 'adverse';
+  if (textMatchesAnyPattern(marketTitle, MARKET_ADVERSE_CONDITION_END_PATTERNS)) return 'deescalatory';
+  if (textHasAnyOutcomeTerm(marketTitle, MARKET_DE_ESCALATION_OUTCOME_TERMS, MARKET_DE_ESCALATION_OUTCOME_PATTERNS)) return 'deescalatory';
+  if (textHasAnyOutcomeTerm(marketTitle, MARKET_ADVERSE_OUTCOME_TERMS, MARKET_ADVERSE_OUTCOME_PATTERNS)) return 'adverse';
+  return 'unknown';
+}
+
+function predictionYesOutcomeLooksDeEscalatory(pred) {
+  const signalText = (pred.signals || [])
+    .map((signal) => `${signal?.type || ''} ${signal?.value || ''}`)
+    .join(' ');
+  const text = `${pred.title || ''} ${pred.scenario || ''} ${signalText}`;
+  if (!textHasAnyOutcomeTerm(text, MARKET_DE_ESCALATION_OUTCOME_TERMS, MARKET_DE_ESCALATION_OUTCOME_PATTERNS)) return false;
+  return !textHasAnyOutcomeTerm(text, MARKET_ADVERSE_OUTCOME_TERMS, MARKET_ADVERSE_OUTCOME_PATTERNS);
+}
+
+function marketOutcomeAlignsPrediction(predictionDeEscalatoryOutcome, marketTitle) {
+  const marketOutcome = classifyMarketYesOutcome(marketTitle);
+  if (marketOutcome === 'deescalatory') return predictionDeEscalatoryOutcome;
+  if (marketOutcome === 'adverse') return !predictionDeEscalatoryOutcome;
+  return true;
+}
+
+function getMarketCalibrationVolume(market) {
+  const volume = Number(market?.volume ?? 0);
+  return Number.isFinite(volume) ? volume : 0;
+}
+
+function capMarketCalibrationProbability(domain, probability) {
+  const cap = MARKET_CALIBRATION_DOMAIN_CAPS[domain] ?? 1;
+  return +Math.max(0, Math.min(cap, probability)).toFixed(3);
+}
+
 function detectFromPredictionMarkets(inputs) {
   const predictions = [];
   const markets = inputs.predictionMarkets?.geopolitical || [];
@@ -2416,12 +2624,22 @@ const PROJECTION_CURVES = {
 };
 const PROJECTION_PROBABILITY_FLOOR = 0.01;
 const PROJECTION_PROBABILITY_CAP = 0.95;
+const PROJECTION_PEAK_ANCHORED_DOMAINS = new Set(['market']);
+
+function projectionAnchorKeyForHorizon(timeHorizon) {
+  if (timeHorizon === '24h') return 'h24';
+  if (timeHorizon === '30d') return 'd30';
+  return 'd7';
+}
 
 function computeProjections(predictions) {
   for (const pred of predictions) {
     const curve = PROJECTION_CURVES[pred.domain] || { h24: 1, d7: 1, d30: 1 };
-    const anchor = pred.timeHorizon === '24h' ? 'h24' : pred.timeHorizon === '30d' ? 'd30' : 'd7';
-    const anchorMult = curve[anchor] || 1;
+    const peakMult = Math.max(curve.h24 || 0, curve.d7 || 0, curve.d30 || 0);
+    const anchorKey = projectionAnchorKeyForHorizon(pred.timeHorizon);
+    const anchorMult = PROJECTION_PEAK_ANCHORED_DOMAINS.has(pred.domain)
+      ? peakMult
+      : (curve[anchorKey] || peakMult);
     const base = anchorMult > 0 ? pred.probability / anchorMult : pred.probability;
     pred.projections = {
       h24: Math.round(Math.min(PROJECTION_PROBABILITY_CAP, Math.max(PROJECTION_PROBABILITY_FLOOR, base * curve.h24)) * 1000) / 1000,
@@ -2433,11 +2651,21 @@ function computeProjections(predictions) {
 
 function calibrateWithMarkets(predictions, markets) {
   if (!markets?.geopolitical) return;
+  const stats = {
+    applied: 0,
+    noPrice: 0,
+    lowVolume: 0,
+    direction: 0,
+    region: 0,
+    semantic: 0,
+    capNoop: 0,
+  };
   for (const pred of predictions) {
     const keywords = REGION_KEYWORDS[pred.region] || [];
     const regionTerms = [...new Set([...getSearchTermsForRegion(pred.region), pred.region])];
     const expectedTags = buildExpectedRegionTags(regionTerms, pred.region);
     const titleTokens = extractMeaningfulTokens(pred.title, regionTerms);
+    const predictionDeEscalatoryOutcome = predictionYesOutcomeLooksDeEscalatory(pred);
     if (keywords.length === 0 && regionTerms.length === 0) continue;
     const candidates = markets.geopolitical
       .map(m => {
@@ -2447,31 +2675,62 @@ function calibrateWithMarkets(predictions, markets) {
         return { market: m, sameMacroRegion, ...match };
       })
       .filter(item => {
-        if (!Number.isFinite(item.market.yesPrice)) return false; // a price-less anchor would blend toward a fabricated 50%
-        if (item.tagMismatch && item.regionHits === 0) return false;
+        if (!Number.isFinite(item.market.yesPrice)) {
+          stats.noPrice++;
+          return false; // a price-less anchor would blend toward a fabricated 50%
+        }
+        if (getMarketCalibrationVolume(item.market) < MARKET_CALIBRATION_MIN_VOLUME) {
+          stats.lowVolume++;
+          return false;
+        }
+        if (!marketOutcomeAlignsPrediction(predictionDeEscalatoryOutcome, item.market.title)) {
+          stats.direction++;
+          return false;
+        }
+        if (item.tagMismatch && item.regionHits === 0) {
+          stats.region++;
+          return false;
+        }
         const hasSpecificRegionSignal = item.regionHits > 0 || item.tagOverlap;
         const hasSemanticOverlap = item.titleHits > 0 || item.domainHits > 0;
         if (pred.domain === 'market') {
-          return hasSpecificRegionSignal && item.titleHits > 0 && (item.domainHits > 0 || item.score >= 7);
+          const keep = hasSpecificRegionSignal && item.titleHits > 0 && (item.domainHits > 0 || item.score >= 7);
+          if (!keep) stats.semantic++;
+          return keep;
         }
-        return hasSpecificRegionSignal && (hasSemanticOverlap || item.score >= 6);
+        const keep = hasSpecificRegionSignal && (hasSemanticOverlap || item.score >= 6);
+        if (!keep) stats.semantic++;
+        return keep;
       })
       .sort((a, b) => {
         if (b.score !== a.score) return b.score - a.score;
-        return (b.market.volume || 0) - (a.market.volume || 0);
+        return getMarketCalibrationVolume(b.market) - getMarketCalibrationVolume(a.market);
       });
     const best = candidates[0];
     const match = best?.market || null;
     if (match) {
       const marketProb = match.yesPrice / 100;
+      const originalProbability = pred.probability;
+      const blendedProbability = +((MARKET_CALIBRATION_WEIGHT * marketProb)
+        + ((1 - MARKET_CALIBRATION_WEIGHT) * originalProbability)).toFixed(3);
+      const cappedProbability = capMarketCalibrationProbability(pred.domain, blendedProbability);
+      if (cappedProbability === originalProbability) {
+        stats.capNoop++;
+        continue;
+      }
       pred.calibration = {
         marketTitle: match.title,
         marketPrice: +marketProb.toFixed(3),
-        drift: +(pred.probability - marketProb).toFixed(3),
+        drift: +(originalProbability - marketProb).toFixed(3),
         source: match.source || 'polymarket',
       };
-      pred.probability = +(0.4 * marketProb + 0.6 * pred.probability).toFixed(3);
+      pred.probability = cappedProbability;
+      stats.applied++;
     }
+  }
+  const dropped = stats.noPrice + stats.lowVolume + stats.direction + stats.region + stats.semantic + stats.capNoop;
+  if (stats.applied > 0 || dropped > 0) {
+    console.log(`  [calibrateWithMarkets] applied=${stats.applied} dropped=${dropped} no_price=${stats.noPrice} low_volume=${stats.lowVolume} direction=${stats.direction} region=${stats.region} semantic=${stats.semantic} cap_noop=${stats.capNoop}`);
   }
 }
 
@@ -11567,6 +11826,17 @@ function normalizeActorName(name) {
   return s.toLowerCase().replace(/[_-]/g, ' ').replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
 }
 
+function normalizeSimulationKeywordText(text) {
+  return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function simulationTextMatchesKeyword(normalizedText, keyword) {
+  const normalizedKeyword = normalizeSimulationKeywordText(keyword);
+  if (!normalizedText || !normalizedKeyword) return false;
+  const escaped = normalizedKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|\\s)${escaped}`).test(normalizedText);
+}
+
 const BUCKET_KEYWORDS = {
   energy: ['oil', 'crude', 'petroleum', 'energy', 'lng', 'gas', 'fuel', 'brent', 'wti'],
   freight: ['freight', 'shipping', 'container', 'cargo', 'transit', 'route', 'chokepoint'],
@@ -11586,8 +11856,8 @@ const CHANNEL_KEYWORDS = {
   global_crude_spread_stress: ['crude spread', 'brent wti', 'grade spread'],
   shipping_cost_shock: ['shipping cost', 'freight cost', 'freight rate', 'route disruption', 'chokepoint', 'transit', 'shipping interrupt', 'rerouting', 'vessel', 'shipping lane', 'maritime'],
   sovereign_stress: ['sovereign', 'debt stress', 'default risk', 'credit stress', 'bond spread'],
-  risk_off_rotation: ['risk off', 'risk aversion', 'flight to safety', 'sell off', 'selloff', 'sell-off', 'capital flight', 'capital outflow', 'risk premium', 'avers', 'retreat', 'flight to', 'sovereign risk', 'shockwave', 'shock wave', 'economic shock', 'contagion', 'spiral', 'crisis'],
-  security_escalation: ['escalat', 'military action', 'conflict', 'war', 'strike', 'attack', 'military', 'geopolit'],
+  risk_off_rotation: ['risk off', 'risk aversion', 'flight to safety', 'sell off', 'selloff', 'capital flight', 'capital outflow', 'risk premium', 'avers', 'retreat', 'flight to', 'sovereign risk', 'shockwave', 'shock wave', 'economic shock', 'contagion', 'spiral', 'crisis'],
+  security_escalation: ['escalat', 'military action', 'conflict', 'war', 'strike', 'airstrik', 'geopolit'],
   yield_curve_stress: ['yield curve', 'yield spread', 'term premium'],
   volatility_shock: ['volatility', 'vix', 'vol spike'],
   safe_haven_bid: ['safe haven', 'gold', 'yen', 'swiss franc', 'treasur'],
@@ -11603,16 +11873,16 @@ const CHANNEL_KEYWORDS = {
 
 function matchesBucket(simPath, targetBucket) {
   if (!targetBucket || !simPath) return false;
-  const text = `${simPath.label || ''} ${simPath.summary || ''}`.toLowerCase();
+  const text = normalizeSimulationKeywordText(`${simPath.label || ''} ${simPath.summary || ''}`);
   const keywords = BUCKET_KEYWORDS[targetBucket] || [targetBucket.replace(/_/g, ' ')];
-  return keywords.some((kw) => text.includes(kw));
+  return keywords.some((kw) => simulationTextMatchesKeyword(text, kw));
 }
 
 function matchesChannel(simPath, channel) {
   if (!channel || !simPath) return false;
-  const text = `${simPath.label || ''} ${simPath.summary || ''}`.toLowerCase();
+  const text = normalizeSimulationKeywordText(`${simPath.label || ''} ${simPath.summary || ''}`);
   const keywords = CHANNEL_KEYWORDS[channel] || [channel.replace(/_/g, ' ')];
-  return keywords.some((kw) => text.includes(kw));
+  return keywords.some((kw) => simulationTextMatchesKeyword(text, kw));
 }
 
 const NEGATION_TERMS = ['ceasefire', 'reopen', 'reopened', 'resolv', 'diplomatic solution', 'withdrawal', 'de-escalat', 'deescalat', 'restored', 'stabiliz', 'lifted', 'normaliz', 'agreement'];
@@ -18494,6 +18764,10 @@ export {
   buildForecastTraceArtifactKeys,
   parseForecastRunGeneratedAt,
   readInputKeys,
+  buildForecastInputFeedDefinitions,
+  buildForecastInputFetchKeys,
+  buildForecastInputPresenceRows,
+  warnOnMissingForecastInputs,
   readForecastTraceArtifactsForRun,
   buildForecastRunStatusPayload,
   writeForecastRunStatusArtifact,
