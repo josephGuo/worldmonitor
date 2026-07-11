@@ -21,7 +21,7 @@ import type { TheaterPostureSummary } from '@/services/military-surge';
 import type { NewsPanel } from '@/components/NewsPanel';
 import type { AviationCommandBar } from '@/components/AviationCommandBar';
 import { MobilePanelNav } from '@/components/MobilePanelNav';
-import { debounce, saveToStorage } from '@/utils';
+import { debounce, loadFromStorage, saveToStorage } from '@/utils';
 import { escapeHtml } from '@/utils/sanitize';
 import {
   FEEDS,
@@ -71,6 +71,21 @@ import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
 import { loadPanelCollapsed, loadPanelColSpans, loadPanelSpans } from '@/utils/panel-storage';
 import { measure, mutate } from '@/utils/layout-batch';
 
+function readSessionStorageValue(key: string): string | null {
+  try {
+    return window.sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionStorageValue(key: string, value: string): void {
+  try {
+    window.sessionStorage.setItem(key, value);
+  } catch {
+    // Banner dismissal remains functional for this render even without persistence.
+  }
+}
 
 /**
  * Panels that require premium access on web. Auth-based gating applies to
@@ -671,8 +686,26 @@ export class PanelLayoutManager implements AppModule {
     }
   }
 
+  /** #5159/#5205 review: storage access can throw (blocked cookies, sandboxed
+   *  iframe) and this runs BEFORE the shell installs — an uncaught throw would
+   *  strand users on the boot skeleton. loadFromStorage is try/catch-guarded;
+   *  default is expanded. Wire format stays 'true'/'false' (JSON booleans),
+   *  identical to the previous String(isCollapsed) writes. */
+  private static isMobileMapCollapsedPreferred(): boolean {
+    return loadFromStorage<boolean>('mobile-map-collapsed', false) === true;
+  }
+
   async renderLayout(): Promise<void> {
     const isGlobeMode = getStoredMapModePreference() === 'globe';
+    // #5159: the collapsed-map cohort's #mapSection must be CREATED with
+    // .collapsed — main.css sets the expanded mobile height with !important
+    // inside a cascade layer, and layered !important beats any unlayered
+    // pre-paint override (inverse of the normal-declaration rule), so the
+    // html.wm-map-collapsed critical CSS can only cover the boot SKELETON.
+    // Seeding the class here makes the runtime collapsed rule apply from the
+    // section's first frame instead of ~150ms later via setupMobileMapToggle
+    // (which shoved #panelsGrid up 698px, field CLS ~0.62 for this cohort).
+    const mapStartsCollapsed = this.ctx.isMobile && PanelLayoutManager.isMobileMapCollapsedPreferred();
     const bootShellFootprint = import.meta.env.DEV ? captureBootShellFootprint(this.ctx.container) : null;
 
     markLcpDebug('wm:layout:render-start');
@@ -869,7 +902,7 @@ export class PanelLayoutManager implements AppModule {
       </div>
       <div class="dashboard-tabs-mount" id="panelTabsMount"></div>
       <main id="main" tabindex="-1" class="main-content${this.ctx.isDesktopApp ? ' desktop-grid' : ''}">
-        <div class="map-section" id="mapSection">
+        <div class="map-section${mapStartsCollapsed ? ' collapsed' : ''}" id="mapSection">
           <div class="panel-header">
             <div class="panel-header-left">
               <span class="panel-title">${SITE_VARIANT === 'tech' ? t('panels.techMap') : SITE_VARIANT === 'happy' ? 'Good News Map' : t('panels.map')}</span>
@@ -1164,8 +1197,7 @@ export class PanelLayoutManager implements AppModule {
     const headerLeft = mapSection?.querySelector('.panel-header-left');
     if (!mapSection || !headerLeft) return;
 
-    const stored = localStorage.getItem('mobile-map-collapsed');
-    const collapsed = stored === 'true';
+    const collapsed = PanelLayoutManager.isMobileMapCollapsedPreferred();
     if (collapsed) mapSection.classList.add('collapsed');
 
     const btn = document.createElement('button');
@@ -1177,7 +1209,7 @@ export class PanelLayoutManager implements AppModule {
     btn.addEventListener('click', () => {
       const isCollapsed = mapSection.classList.toggle('collapsed');
       this.updateMobileMapCollapseBtn(isCollapsed);
-      localStorage.setItem('mobile-map-collapsed', String(isCollapsed));
+      saveToStorage('mobile-map-collapsed', isCollapsed);
       if (!isCollapsed) window.dispatchEvent(new Event('resize'));
     });
   }
@@ -1192,7 +1224,7 @@ export class PanelLayoutManager implements AppModule {
     if (mapSection.classList.contains('hidden')) return;
     if (mapSection.classList.contains('collapsed')) {
       mapSection.classList.remove('collapsed');
-      localStorage.setItem('mobile-map-collapsed', 'false');
+      saveToStorage('mobile-map-collapsed', false);
       this.updateMobileMapCollapseBtn(false);
       window.dispatchEvent(new Event('resize'));
     }
@@ -1200,7 +1232,7 @@ export class PanelLayoutManager implements AppModule {
   }
 
   renderCriticalBanner(postures: TheaterPostureSummary[]): void {
-    const dismissedAt = sessionStorage.getItem('banner-dismissed');
+    const dismissedAt = readSessionStorageValue('banner-dismissed');
     if (dismissedAt && Date.now() - parseInt(dismissedAt, 10) < 30 * 60 * 1000) {
       return;
     }
@@ -1256,7 +1288,7 @@ export class PanelLayoutManager implements AppModule {
       trackCriticalBannerAction('dismiss', top.theaterId);
       this.criticalBannerEl?.classList.add('dismissed');
       document.body.classList.remove('has-critical-banner');
-      sessionStorage.setItem('banner-dismissed', Date.now().toString());
+      writeSessionStorageValue('banner-dismissed', Date.now().toString());
     });
   }
 
@@ -2660,8 +2692,8 @@ export class PanelLayoutManager implements AppModule {
 
     const allOrder = this.buildUnifiedOrder(sidebarIds, bottomIds);
     this.resolvedPanelOrder = allOrder;
-    localStorage.setItem(this.ctx.PANEL_ORDER_KEY, JSON.stringify(allOrder));
-    localStorage.setItem(this.ctx.PANEL_ORDER_KEY + '-bottom-set', JSON.stringify(Array.from(this.bottomSetMemory)));
+    saveToStorage(this.ctx.PANEL_ORDER_KEY, allOrder);
+    saveToStorage(this.ctx.PANEL_ORDER_KEY + '-bottom-set', Array.from(this.bottomSetMemory));
   }
 
   private buildUnifiedOrder(sidebarIds: string[], bottomIds: string[]): string[] {

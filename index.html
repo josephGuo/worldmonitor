@@ -370,6 +370,13 @@
            Hide the loading card too: otherwise its intrinsic height still shifts panels. */
         html.wm-map-collapsed .skeleton-map-bar{height:47px}
         html.wm-map-collapsed .skeleton-map-body{display:none}
+        /* #5159 NOTE: do NOT try to pre-paint-collapse the REAL .map-section from
+           here. main.css sets its expanded height with !important inside a cascade
+           layer, and for !important declarations LAYERED beats UNLAYERED — the
+           inverse of the normal-declaration rule this critical CSS relies on. The
+           real section is instead CREATED with .collapsed already present
+           (panel-layout.ts renderLayout template), so the runtime rule applies from
+           its first frame. */
         .skeleton-map-content{max-width:calc(100% - 24px);margin:12px;padding:16px}
         .skeleton-map-title{font-size:22px;line-height:1.15}
         .skeleton-map-copy{font-size:13px;line-height:1.42}
@@ -515,11 +522,12 @@
     (function(){
       if(!('serviceWorker' in navigator))return;
       var key='wm-sw-nuke';
-      if(sessionStorage.getItem(key))return;
+      var attempted=false;
+      try{if(sessionStorage.getItem(key))return}catch(e){}
       window.addEventListener('error',function(e){
         var u=e.target&&(e.target.src||e.target.href)||'';
         if(u&&/\/assets\//.test(u)){
-          sessionStorage.setItem(key,'1');
+          try{sessionStorage.setItem(key,'1')}catch(err){if(attempted)return;attempted=true}
           navigator.serviceWorker.getRegistrations().then(function(regs){
             var p=regs.map(function(r){return r.unregister()});
             Promise.all(p).then(function(){

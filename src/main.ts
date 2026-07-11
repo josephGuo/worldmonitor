@@ -209,6 +209,12 @@ function shouldSuppressCspViolation(
       // accounts.google.com / support.google.com SURFACED: a future first-party
       // Google sign-in embed regression must not be masked.
       if (frameHost.endsWith('.clients6.google.com')) return true;
+      // Tampermonkey "h5player" video-enhancement userscript (large Chinese
+      // install base) frames its own vendor host into every page with a
+      // <video> element. We never reference anzz.site; exact parsed-hostname
+      // match like the vendor rules above so lookalikes still surface
+      // (WORLDMONITOR-HT long tail — 5.8k events / 1.2k users since March).
+      if (frameHost === 'h5player.anzz.site') return true;
     } catch { /* scheme-only values fall through */ }
   }
   // Browser extensions or injected scripts. `ms-browser-extension://` is Edge's
@@ -416,7 +422,12 @@ requestAnimationFrame(() => {
 });
 
 // Clear stale settings-open flag (survives ungraceful shutdown)
-localStorage.removeItem('wm-settings-open');
+try {
+  localStorage.removeItem('wm-settings-open');
+} catch {
+  // Storage may be unavailable (blocked cookies, sandboxed iframe). The flag is
+  // only a convenience hint, so boot must continue with the in-memory default.
+}
 
 // Standalone windows: ?settings=1 = panel display settings, ?live-channels=1 = channel management
 // Both need i18n initialized so t() does not return undefined.
