@@ -1,6 +1,6 @@
 ---
 title: "AI 战略姿态"
-description: "从缓存的姿态信号和实时海军舰艇移动中计算的战区级军事姿态卡片，支持按战区位置点击直达地图。"
+description: "AI 战略姿态面板基于缓存的多源姿态情报信号与实时海军舰艇 AIS 移动轨迹数据，为全球主要战区自动计算并生成军事部署强度卡片，涵盖航母打击群、两栖攻击编队、护航舰队部署与前沿基地兵力动态，支持一键点击战区位置直达 3D 全球地图精确定位，用于宏观军力态势评估与冲突升级早期监控。"
 ---
 
 **AI Strategic Posture** 面板（内部 id `strategic-posture`）展示战区级军事姿态评估 — 将每个战区的缓存"种子"视图与实时军事舰艇移动混合，使渲染的姿态反映当今部署而非昨日部署。
@@ -29,6 +29,15 @@ description: "从缓存的姿态信号和实时海军舰艇移动中计算的战
 - **缓存姿态**：种子级战区姿态摘要，通过 `@/services/cached-theater-posture` 读取。
 - **军事舰艇**：通过 `@/services/military-vessels` 获取实时位置（驱动军事地图图层的同一数据源）。
 - **激增重算**：`@/services/military-surge` 中的 `recalcPostureWithVessels()` 将缓存基线与今日舰艇位置混合，生成显示的 `TheaterPostureSummary`。
+
+## 后端端点
+
+该面板不直接调用每条军事路由。它先读取 bootstrap/缓存姿态数据，然后仅当本地姿态缓存需要新鲜的服务器值时才使用生成的 MilitaryService 客户端。
+
+| 方法 | 路由 | 供给内容 |
+|--------|-------|---------------|
+| `GET` | `/api/military/v1/get-theater-posture` | 卡片列表的主要姿态 RPC。浏览器在回退到此路由之前会检查 bootstrap `theaterPosture`、熔断器缓存和 IndexedDB。 |
+| `GET` | `/api/military/v1/list-military-flights` | 缓存姿态载荷上游、为飞机驱动姿态和激增计算提供数据的源；面板通常消费计算出的姿态输出，而非自行重新获取航班。 |
 
 ## 刷新频率
 

@@ -1,12 +1,28 @@
 ---
 title: "军事追踪"
-description: "全球各战区内军用船舶与飞行器识别、活动激增检测、外国驻军监测以及战略姿态分析 —— 完整的军事追踪模块参考。"
+description: "WorldMonitor 军事追踪模块完整参考：通过 AIS 与 ADS-B 应答机特征识别全球战区内的军用船舶与飞行器资产，检测活动激增事件、监控敏感地区外国驻军动向，并评估 10 大活跃冲突区的打击能力与战略姿态变化，覆盖航母部署、轰炸机巡航、护航编队与前沿基地情报。"
 ---
 WorldMonitor 提供军用船舶与飞行器的专门追踪，通过应答机特征识别资产并监控活动模式。系统检测激增事件、敏感地区的外国军事存在，并评估多个战略战区的打击能力。
 
 <Note>
 系统定义了 **10 个活跃冲突区**（伊朗、霍尔木兹海峡、乌克兰、加沙、南黎巴嫩、红海、苏丹、缅甸、朝鲜非军事区、巴基斯坦-阿富汗边境）和 **4 个军事指挥热点**（INDO-PACIFIC、CENTCOM、EUCOM、ARCTIC）。不同子系统根据其具体分析将这些区域归入定制的战区列表，因此本文各处的战区数量因上下文而异。
 </Note>
+
+## 支撑端点
+
+前端使用生成的 MilitaryService 客户端进行新鲜或限定范围的读取，而部分面板会先消费 bootstrap 或断路器缓存。以下是支撑军事地图图层、姿态卡片、飞行器富化、USNI 舰队视图与国防研发磁贴的公开 REST RPC 路由。
+
+| 方法 | 路由 | 支撑内容 |
+|--------|-------|---------------|
+| `GET` | `/api/military/v1/list-military-flights` | 军机地图图层、激增输入与国家风险信号；前端通过生成客户端按边界框调用，处理器提供 Redis/中继回传的数据。 |
+| `GET` | `/api/military/v1/get-theater-posture` | AI 战略姿态卡片；`fetchCachedTheaterPosture()` 在回退到此 RPC 之前会检查 bootstrap `theaterPosture`、断路器缓存与 IndexedDB。 |
+| `GET` | `/api/military/v1/get-aircraft-details` | 用于地图弹窗与飞行器详情查询的单机 Wingbits 富化。 |
+| `POST` | `/api/military/v1/get-aircraft-details-batch` | 面向可见军机的批量 Wingbits 富化；浏览器保留本地缓存，使重复查看不会重新抓取相同的 ICAO24 记录。 |
+| `GET` | `/api/military/v1/get-wingbits-status` | Wingbits 配置检查，在启用依赖富化的 UI 之前使用。 |
+| `GET` | `/api/military/v1/get-wingbits-live-flight` | 针对所选飞行器的按需 Wingbits ECS 实时位置查询。 |
+| `GET` | `/api/military/v1/get-usni-fleet-report` | 解析后的 USNI Fleet Tracker 报告，用于海军作战序列富化与每周舰队上下文。 |
+| `GET` | `/api/military/v1/list-military-bases` | 军事基地地图图层；视口、缩放、类型、类别与国家过滤器在服务端聚类。 |
+| `GET` | `/api/military/v1/list-defense-patents` | 国防专利面板与研发信号磁贴，含 CPC、受让人与结果数限制过滤器。 |
 
 ## 军用船舶识别
 
