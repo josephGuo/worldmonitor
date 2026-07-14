@@ -16,6 +16,7 @@ const ORIGINAL_ENV = {
   UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
   UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
 };
+const ORIGINAL_SIGTERM_LISTENERS = new Set(process.rawListeners('SIGTERM'));
 
 let recordedCalls;
 let expireResult;
@@ -52,6 +53,9 @@ afterEach(() => {
   else process.env.UPSTASH_REDIS_REST_URL = ORIGINAL_ENV.UPSTASH_REDIS_REST_URL;
   if (ORIGINAL_ENV.UPSTASH_REDIS_REST_TOKEN == null) delete process.env.UPSTASH_REDIS_REST_TOKEN;
   else process.env.UPSTASH_REDIS_REST_TOKEN = ORIGINAL_ENV.UPSTASH_REDIS_REST_TOKEN;
+  for (const listener of process.rawListeners('SIGTERM')) {
+    if (!ORIGINAL_SIGTERM_LISTENERS.has(listener)) process.removeListener('SIGTERM', listener);
+  }
 });
 
 function countMetaSets(resourceSuffix) {
@@ -60,6 +64,14 @@ function countMetaSets(resourceSuffix) {
     && c.body[0] === 'SET'
     && typeof c.body[1] === 'string'
     && c.body[1] === `seed-meta:test:${resourceSuffix}`,
+  ).length;
+}
+
+function countSetsFor(key) {
+  return recordedCalls.filter(c =>
+    Array.isArray(c.body)
+    && c.body[0] === 'SET'
+    && c.body[1] === key,
   ).length;
 }
 
@@ -81,7 +93,7 @@ function expireKeys() {
     .map(cmd => cmd[1]);
 }
 
-function runEmptyContractRetry(resource) {
+function runEmptyContractRetry(resource, opts = {}) {
   return runWithExitTrap(() =>
     runSeed('test', resource, `test:${resource}:v1`, async () => ({ items: [] }), {
       validateFn: (d) => Array.isArray(d?.items),
@@ -90,6 +102,7 @@ function runEmptyContractRetry(resource) {
       schemaVersion: 1,
       maxStaleMin: 120,
       declareRecords: (d) => d.items.length,
+      ...opts,
     }),
   );
 }
@@ -104,6 +117,7 @@ test('fetch failure extends existing TTL and exits with graceful-failure code', 
       validateFn: (d) => Boolean(d),
       ttlSeconds: 3600,
       extraKeys: [{ key: 'test:fetch-fail:extra' }],
+      preserveKeys: ['test:fetch-fail:preserve-only'],
     }),
   );
 
@@ -114,8 +128,8 @@ test('fetch failure extends existing TTL and exits with graceful-failure code', 
   );
   assert.deepEqual(
     new Set(expireKeys()),
-    new Set(['test:fetch-fail:v1', 'seed-meta:test:fetch-fail', 'test:fetch-fail:extra']),
-    'fetch failure should still preserve last-good data by extending canonical, seed-meta, and extra-key TTLs',
+    new Set(['test:fetch-fail:v1', 'seed-meta:test:fetch-fail', 'test:fetch-fail:extra', 'test:fetch-fail:preserve-only']),
+    'fetch failure should still preserve canonical, seed-meta, extra-key, and explicitly preserved last-good TTLs',
   );
   assert.equal(
     countMetaSets('fetch-fail'), 0,
@@ -125,14 +139,16 @@ test('fetch failure extends existing TTL and exits with graceful-failure code', 
 
 test('contract RETRY hard-fails when expired keys make last-good preservation impossible', async () => {
   expireResult = 0;
-  const exitCode = await runEmptyContractRetry('retry-missing');
+  const exitCode = await runEmptyContractRetry('retry-missing', {
+    preserveKeys: ['test:retry-missing:preserve-only'],
+  });
 
   assert.equal(exitCode, 1,
     'zero-yield RETRY must be a hard failure when EXPIRE confirms the last-good keys are gone');
   assert.deepEqual(
     new Set(expireKeys()),
-    new Set(['test:retry-missing:v1', 'seed-meta:test:retry-missing']),
-    'RETRY must attempt to preserve both canonical and seed-meta keys before deciding its exit state',
+    new Set(['test:retry-missing:v1', 'seed-meta:test:retry-missing', 'test:retry-missing:preserve-only']),
+    'RETRY must preserve explicit companion keys before deciding its exit state',
   );
   assert.equal(countMetaSets('retry-missing'), 0,
     'a failed RETRY must not write fresh seed-meta and mask the outage');
@@ -140,14 +156,16 @@ test('contract RETRY hard-fails when expired keys make last-good preservation im
 
 test('contract RETRY remains graceful when every last-good key is preserved', async () => {
   expireResult = 1;
-  const exitCode = await runEmptyContractRetry('retry-preserved');
+  const exitCode = await runEmptyContractRetry('retry-preserved', {
+    preserveKeys: ['test:retry-preserved:preserve-only'],
+  });
 
   assert.equal(exitCode, 0,
     'zero-yield RETRY may remain exit 0 when every last-good key was actually preserved');
   assert.deepEqual(
     new Set(expireKeys()),
-    new Set(['test:retry-preserved:v1', 'seed-meta:test:retry-preserved']),
-    'RETRY must attempt to preserve both keys before treating the zero-yield run as graceful',
+    new Set(['test:retry-preserved:v1', 'seed-meta:test:retry-preserved', 'test:retry-preserved:preserve-only']),
+    'RETRY must preserve explicit companion keys before treating the zero-yield run as graceful',
   );
 });
 
@@ -179,6 +197,73 @@ test('validation failure WITHOUT emptyDataIsFailure DOES refresh seed-meta (quie
     countMetaSets('empty-legacy') >= 1,
     'legacy behavior for quiet-period feeds (news, events) must still write ' +
     'seed-meta count=0 so health does not false-positive STALE_SEED',
+  );
+});
+
+test('contract extra keys publish their explicit seed-meta after a successful write', async () => {
+  const exitCode = await runWithExitTrap(() => runSeed('test', 'extra-meta-success', 'test:extra-meta-success:v1', async () => ({
+    events: [{ id: 'canonical' }],
+    warnings: [{ id: 'warning' }],
+  }), {
+    validateFn: (data) => Array.isArray(data?.events),
+    ttlSeconds: 3600,
+    sourceVersion: 'test-v1',
+    schemaVersion: 1,
+    maxStaleMin: 120,
+    declareRecords: (data) => data.events.length,
+    extraKeys: [{
+      key: 'test:extra-meta-success:warnings',
+      transform: (data) => data.warnings,
+      declareRecords: (warnings) => warnings.length,
+      metaKey: 'seed-meta:test:extra-meta-success:warnings',
+      metaCritical: true,
+      skipWhenEmpty: true,
+    }],
+  }));
+
+  assert.equal(exitCode, 0);
+  assert.equal(
+    countSetsFor('seed-meta:test:extra-meta-success:warnings'),
+    1,
+    'a published extra key must refresh its explicit seed-meta key',
+  );
+});
+
+test('skipWhenEmpty preserves the last-good extra key without refreshing its seed-meta', async () => {
+  const exitCode = await runWithExitTrap(() => runSeed('test', 'extra-meta-empty', 'test:extra-meta-empty:v1', async () => ({
+    events: [{ id: 'canonical' }],
+    warnings: [],
+  }), {
+    validateFn: (data) => Array.isArray(data?.events),
+    ttlSeconds: 3600,
+    sourceVersion: 'test-v1',
+    schemaVersion: 1,
+    maxStaleMin: 120,
+    declareRecords: (data) => data.events.length,
+    extraKeys: [{
+      key: 'test:extra-meta-empty:warnings',
+      transform: (data) => data.warnings,
+      declareRecords: (warnings) => warnings.length,
+      metaKey: 'seed-meta:test:extra-meta-empty:warnings',
+      metaCritical: true,
+      skipWhenEmpty: true,
+    }],
+  }));
+
+  assert.equal(exitCode, 0);
+  assert.equal(
+    countSetsFor('seed-meta:test:extra-meta-empty:warnings'),
+    0,
+    'an empty transformed extra key must not refresh freshness metadata',
+  );
+  assert.equal(
+    countSetsFor('test:extra-meta-empty:warnings'),
+    0,
+    'an empty transformed extra key must not overwrite the last-good payload',
+  );
+  assert.ok(
+    expireKeys().includes('test:extra-meta-empty:warnings'),
+    'the skipped extra key must have its TTL extended to preserve last-good data',
   );
 });
 

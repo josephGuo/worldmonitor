@@ -49,17 +49,17 @@ const EXCLUDED_FROM_MCP = new Map([
   ['health:china-coverage:v1',
     'operational: bounded China coverage verdict and reason codes consumed by api/health.js and the read-only operator audit; source content remains available through its domain tools, so this summary is not a queryable MCP slice (#5271).'],
   ['economic:global-tenders:v1:source:sam',
-    'ops surface: per-source procurement availability, freshness, and record count; consumed by api/health.js while tender content is exposed through the paginated economic RPC.'],
+    'ops surface: per-source procurement availability, freshness, and record count; consumed by api/health.js while tender content is exposed through the bounded MCP procurement tool, which proxies the paginated economic RPC.'],
   ['economic:global-tenders:v1:source:ted',
-    'ops surface: per-source procurement availability, freshness, and record count; consumed by api/health.js while tender content is exposed through the paginated economic RPC.'],
+    'ops surface: per-source procurement availability, freshness, and record count; consumed by api/health.js while tender content is exposed through the bounded MCP procurement tool, which proxies the paginated economic RPC.'],
   ['economic:global-tenders:v1:source:contracts-finder',
-    'ops surface: per-source procurement availability, freshness, and record count; consumed by api/health.js while tender content is exposed through the paginated economic RPC.'],
+    'ops surface: per-source procurement availability, freshness, and record count; consumed by api/health.js while tender content is exposed through the bounded MCP procurement tool, which proxies the paginated economic RPC.'],
   ['economic:global-tenders:v1:source:canada-buys',
-    'ops surface: per-source procurement availability, freshness, and record count; consumed by api/health.js while tender content is exposed through the paginated economic RPC.'],
+    'ops surface: per-source procurement availability, freshness, and record count; consumed by api/health.js while tender content is exposed through the bounded MCP procurement tool, which proxies the paginated economic RPC.'],
   ['economic:global-tenders:v1:source:gets',
-    'ops surface: per-source procurement availability, freshness, and record count; consumed by api/health.js while tender content is exposed through the paginated economic RPC.'],
+    'ops surface: per-source procurement availability, freshness, and record count; consumed by api/health.js while tender content is exposed through the bounded MCP procurement tool, which proxies the paginated economic RPC.'],
   ['economic:global-tenders:v1:source:world-bank',
-    'ops surface: per-source procurement availability, freshness, and record count; consumed by api/health.js while tender content is exposed through the paginated economic RPC.'],
+    'ops surface: per-source procurement availability, freshness, and record count; consumed by api/health.js while tender content is exposed through the bounded MCP procurement tool, which proxies the paginated economic RPC.'],
 
   // ===========================================================================
   // Intermediate / pipeline keys (data surfaces through a sibling tool)
@@ -70,6 +70,8 @@ const EXCLUDED_FROM_MCP = new Map([
     'intermediate: seed-to-seed pipeline key, only populated after seed-military-flights runs (matches api/health.js:463 ON_DEMAND_KEYS rationale).'],
   ['intelligence:military-cii:v1',
     'intermediate: per-country military-presence aggregate (own/foreign flights+vessels, AIS disruption buckets) read by server/worldmonitor/intelligence/v1/get-risk-scores.ts to feed the CII Security component; surfaces transitively via the country-risk score returned by get_country_risk. Not a queryable MCP slice on its own.'],
+  ['weather:hko-warnings:v1',
+    'intermediate: dedicated HKO warning snapshot is independently health-monitored, while its warning events are merged into natural:events:v1 and exposed by get_natural_disasters. The raw side snapshot has no separate MCP schema or filter surface.'],
 
   // ===========================================================================
   // Cascade-mirror fallbacks (live/stale/backup of a sibling already exposed)
@@ -96,8 +98,14 @@ const EXCLUDED_FROM_MCP = new Map([
     'cascade-mirror: RPC variant of aviation:delays-bootstrap:v2 (covered by get_aviation_status). Same seed-meta key (seed-meta:aviation:faa).'],
   ['cyber:threats:v2',
     'cascade-mirror: RPC variant of cyber:threats-bootstrap:v2 (covered by get_cyber_threats). Same seed-meta key (seed-meta:cyber:threats).'],
+  ['conflict:ucdp-events-bootstrap:v1',
+    'cascade-mirror: pre-compacted dashboard view of conflict:ucdp-events:v1 (covered by get_conflict_events). Carries the 150 rows the panel renders plus precomputed classifications/aggregates; agents must read the canonical key, which carries all 2,000 events (#5300).'],
   ['wildfire:fires-bootstrap:v1',
     'cascade-mirror: pre-compacted dashboard/RPC variant of wildfire:fires:v1 (covered by get_natural_events). It preserves the same top-500 response while avoiding canonical-payload Redis egress.'],
+  ['thermal:escalation-bootstrap:v1',
+    'cascade-mirror: pre-compacted dashboard view of thermal:escalation:v1 (the canonical key remains the tool/RPC source). Capped to the top-24 ranked clusters the dashboard renders — agents should read the canonical key, which carries the full cluster set (#5300).'],
+  ['forecast:predictions-bootstrap:v1',
+    'cascade-mirror: dashboard list projection of forecast:predictions:v2 (covered by get_forecast_predictions). It is the same predictions minus the caseFile dossiers — MCP callers want the dossiers, so the tool keeps reading the canonical key.'],
   ['aviation:delays:intl:v3',
     'cascade-mirror: international delays sibling of aviation:delays-bootstrap:v2 (covered by get_aviation_status) — deferred to a future expanded aviation tool that exposes the intl variant directly.'],
   ['aviation:notam:closures:v2',

@@ -101,8 +101,27 @@ describe('China coverage manifest', () => {
     );
     assert.equal(
       CHINA_COVERAGE_ENTRIES.find((entry) => entry.id === 'aviation.china-hubs')?.launchStatus,
-      'planned',
-      'synthetic bootstrap alert rows are not truthful provider coverage',
+      'launched',
+      'the canonical per-hub coverage contract is now provider-backed',
+    );
+    for (const id of ['energy.jodi-oil', 'energy.jodi-gas', 'news.china']) {
+      assert.equal(
+        CHINA_COVERAGE_ENTRIES.find((entry) => entry.id === id)?.launchStatus,
+        'blocked',
+        `${id} must remain explicit until its source-specific China contract is available`,
+      );
+    }
+    assert.deepEqual(
+      CHINA_COVERAGE_ENTRIES.find((entry) => entry.id === 'aviation.china-hubs')?.content.probe,
+      {
+        kind: 'array-coverage',
+        path: ['coverage'],
+        field: 'iata',
+        values: ['PEK', 'PVG', 'CAN', 'SZX', 'CTU', 'KMG', 'URC', 'HKG'],
+        validField: 'status',
+        validValues: ['normal', 'disruption'],
+        timestampPaths: [['updatedAt']],
+      },
     );
   });
 
@@ -185,23 +204,84 @@ describe('China coverage manifest', () => {
     assert.deepEqual(missing, { status: 'EMPTY', records: 0 });
   });
 
-  it('does not count synthetic aviation bootstrap filler as launched China coverage', () => {
+  it('counts canonical provider coverage rather than synthetic aviation bootstrap filler', () => {
     const aviation = CHINA_COVERAGE_ENTRIES.find((entry) => entry.id === 'aviation.china-hubs');
     const alerts = ['PEK', 'PVG', 'CAN', 'HKG'].map((iata) => ({
       iata,
       severity: 'FLIGHT_DELAY_SEVERITY_NORMAL',
       updatedAt: NOW,
     }));
+    const coverage = ['PEK', 'PVG', 'CAN', 'SZX', 'CTU', 'KMG', 'URC', 'HKG'].map((iata) => ({
+      iata,
+      status: 'normal',
+      updatedAt: NOW,
+    }));
     const result = evaluate(
       aviation,
-      { 'aviation:delays-bootstrap:v2': { alerts } },
+      { 'aviation:delays-bootstrap:v2': { alerts, coverage } },
       { 'seed-meta:aviation:intl': { fetchedAt: NOW, status: 'ok' } },
     );
 
-    assert.equal(result.entries[0].launchStatus, 'planned');
-    assert.equal(result.entries[0].status, 'planned');
-    assert.equal(result.counts.launched, 0);
-    assert.equal(result.counts.planned, 1);
+    assert.equal(result.entries[0].launchStatus, 'launched');
+    assert.equal(result.entries[0].status, 'healthy');
+    assert.equal(result.counts.launched, 1);
+    assert.equal(result.counts.planned, 0);
+
+    const providerFailure = evaluate(
+      aviation,
+      {
+        'aviation:delays-bootstrap:v2': {
+          alerts,
+          coverage: coverage.map((hub) => (hub.iata === 'URC' ? { ...hub, status: 'failed' } : hub)),
+        },
+      },
+      { 'seed-meta:aviation:intl': { fetchedAt: NOW, status: 'ok' } },
+    );
+    assert.equal(providerFailure.entries[0].status, 'degraded');
+    assert.deepEqual(providerFailure.entries[0].content, {
+      status: 'partial', ageMin: null, maxAgeMin: 120, required: 8, present: 7,
+    });
+    assert.ok(providerFailure.entries[0].reasonCodes.includes(CHINA_COVERAGE_REASON_CODES.CHINA_COVERAGE_PARTIAL));
+
+    const providerOmission = evaluate(
+      aviation,
+      {
+        'aviation:delays-bootstrap:v2': {
+          alerts,
+          coverage: coverage.map((hub) => (hub.iata === 'KMG' ? { ...hub, status: 'omitted' } : hub)),
+        },
+      },
+      { 'seed-meta:aviation:intl': { fetchedAt: NOW, status: 'ok' } },
+    );
+    assert.equal(providerOmission.entries[0].status, 'degraded');
+    assert.deepEqual(providerOmission.entries[0].content, {
+      status: 'partial', ageMin: null, maxAgeMin: 120, required: 8, present: 7,
+    });
+    assert.ok(providerOmission.entries[0].reasonCodes.includes(CHINA_COVERAGE_REASON_CODES.CHINA_COVERAGE_PARTIAL));
+  });
+
+  it('uses Railway market transport plus the seeded CN index payload for China market coverage', () => {
+    const market = CHINA_COVERAGE_ENTRIES.find((entry) => entry.id === 'market.china-index');
+    const data = {
+      'market:stock-index:v1:CN': {
+        available: true,
+        price: 3355,
+        fetchedAt: NOW,
+      },
+    };
+
+    const healthy = evaluate(market, data, { 'seed-meta:market:stocks': { fetchedAt: NOW, status: 'ok' } });
+    assert.equal(healthy.entries[0].status, 'healthy');
+
+    const staleTransport = evaluate(market, data, {
+      'seed-meta:market:stocks': { fetchedAt: NOW - 1_441 * 60_000, status: 'ok' },
+    });
+    assert.equal(staleTransport.entries[0].status, 'degraded');
+    assert.ok(staleTransport.entries[0].reasonCodes.includes(CHINA_COVERAGE_REASON_CODES.TRANSPORT_STALE));
+
+    const missingTransport = evaluate(market, data);
+    assert.equal(missingTransport.entries[0].status, 'degraded');
+    assert.ok(missingTransport.entries[0].reasonCodes.includes(CHINA_COVERAGE_REASON_CODES.TRANSPORT_MISSING));
   });
 
   it('fails read-only audits cleanly on missing credentials and partial pipelines', async () => {
@@ -286,6 +366,19 @@ describe('China coverage evaluator', () => {
     assert.ok(result.entries[0].reasonCodes.includes(CHINA_COVERAGE_REASON_CODES.CONTENT_STALE));
   });
 
+  it('uses the IMF WEO forecast-year freshness convention for China macro', () => {
+    const imfEntry = CHINA_COVERAGE_ENTRIES.find((entry) => entry.id === 'economic.imf-macro');
+    const result = evaluate(
+      imfEntry,
+      { 'economic:imf:macro:v2': { countries: { CN: { latestYear: 2026, inflationPct: 1.2 } } } },
+      { 'seed-meta:economic:imf-macro': { fetchedAt: NOW - 5 * 60_000, status: 'ok' } },
+    );
+
+    assert.equal(result.entries[0].transport.status, 'fresh');
+    assert.equal(result.entries[0].content.status, 'fresh');
+    assert.equal(result.entries[0].status, 'healthy');
+  });
+
   it('treats future-dated transport and content timestamps as stale', () => {
     const result = evaluate(
       singleEntry(),
@@ -354,6 +447,17 @@ describe('China coverage evaluator', () => {
     assert.equal(result.status, 'healthy');
     assert.equal(result.entries[0].status, 'planned');
     assert.deepEqual(result.entries[0].reasonCodes, [CHINA_COVERAGE_REASON_CODES.NOT_LAUNCHED]);
+  });
+
+  it('reports a stable reason when a China contract is blocked', () => {
+    const blocked = CHINA_COVERAGE_ENTRIES.find((entry) => entry.id === 'news.china');
+    const result = evaluate(blocked);
+
+    assert.equal(result.entries[0].status, 'blocked');
+    assert.deepEqual(result.entries[0].reasonCodes, [
+      CHINA_COVERAGE_REASON_CODES.NOT_LAUNCHED,
+      CHINA_COVERAGE_REASON_CODES.CHINA_COVERAGE_PROJECTION_UNAVAILABLE,
+    ]);
   });
 
   it('renders a bounded human-readable audit without raw upstream data', () => {

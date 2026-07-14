@@ -9,6 +9,25 @@ import { __testing__ as healthTesting } from '../api/health.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
 
+// Keys the repo already knows nothing consumes: planned-but-unwired, or fetched by
+// some route other than tier hydration. Module-scoped so BOTH guards can use it —
+// the hydration-coverage test (which allows them) and the tier-freeloader test
+// (which forbids them from riding in a bundle every client downloads). #5300.
+const PENDING_CONSUMERS = new Set([ 'chokepointBaselines', 'imfMacro',
+      'imfGrowth', 'imfLabor', 'imfExternal',
+      'portwatchChokepointsRef', 'portwatchPortActivity', 'sprPolicies', 'electricityPrices', 'jodiOil',
+      'eurostatHousePrices', 'eurostatGovDebtQ', 'eurostatIndProd',
+      // BIS extended dataflows are consumed via a direct scoped bootstrap
+      // fetch in CountryDeepDivePanel (housing cycle tile), not through the
+      // getHydratedData session cache — fetched on-click per country.
+      'bisDsr', 'bisPropertyResidential', 'bisPropertyCommercial',
+      // energyDisruptions is bootstrap-hydrated so the RPC handler has
+      // warm data, but panel drawers fetch events lazily via
+      // listEnergyDisruptions() on drawer open — no getHydratedData()
+      // call site. Classifier extends this post-launch.
+      'energyDisruptions',
+]);
+
 describe('Bootstrap cache key registry', () => {
   const cacheKeysPath = join(root, 'server', '_shared', 'cache-keys.ts');
   const cacheKeysSrc = readFileSync(cacheKeysPath, 'utf-8');
@@ -357,28 +376,16 @@ describe('Bootstrap key hydration coverage', () => {
     walk(join(root, 'src'));
     const allSrc = srcFiles.map(f => readFileSync(f, 'utf-8')).join('\n');
 
-    // Keys with planned but not-yet-wired consumers
-    const PENDING_CONSUMERS = new Set([
-      'correlationCards', 'euGasStorage', 'chokepointBaselines', 'imfMacro',
-      'imfGrowth', 'imfLabor', 'imfExternal',
-      'portwatchChokepointsRef', 'portwatchPortActivity', 'sprPolicies',
-      'wsbTickers', 'electricityPrices', 'jodiOil',
-      'eurostatHousePrices', 'eurostatGovDebtQ', 'eurostatIndProd',
-      // BIS extended dataflows are consumed via a direct scoped bootstrap
-      // fetch in CountryDeepDivePanel (housing cycle tile), not through the
-      // getHydratedData session cache — fetched on-click per country.
-      'bisDsr', 'bisPropertyResidential', 'bisPropertyCommercial',
-      // energyDisruptions is bootstrap-hydrated so the RPC handler has
-      // warm data, but panel drawers fetch events lazily via
-      // listEnergyDisruptions() on drawer open — no getHydratedData()
-      // call site. Classifier extends this post-launch.
-      'energyDisruptions',
-    ]);
     for (const key of keys) {
       if (PENDING_CONSUMERS.has(key)) continue;
+      // Two valid consumer forms. `getHydratedData(k)` reads a key delivered by a
+      // tier bundle. `ensureHydrated(k)` (#5300) reads a key that rides in no
+      // tier: it returns the tier value if one is present and otherwise fetches
+      // the key through its own CDN-shielded `?keys=<k>&public=1` URL. Both prove
+      // the key is actually consumed — which is what this guard is for.
       assert.ok(
-        allSrc.includes(`getHydratedData('${key}')`),
-        `Bootstrap key '${key}' has no getHydratedData('${key}') consumer in src/ — data is fetched but never used`,
+        allSrc.includes(`getHydratedData('${key}')`) || allSrc.includes(`ensureHydrated('${key}')`),
+        `Bootstrap key '${key}' has no getHydratedData('${key}') or ensureHydrated('${key}') consumer in src/ — data is fetched but never used`,
       );
     }
   });
@@ -415,27 +422,35 @@ describe('Bootstrap tier definitions', () => {
     const block = src.match(/BOOTSTRAP_TIERS[^{]*\{([^}]+)\}/);
     if (!block) return {};
     const result = {};
-    for (const m of block[1].matchAll(/(\w+):\s+'(slow|fast)'/g)) {
+    for (const m of block[1].matchAll(/(\w+):\s+'(slow|fast|on-demand)'/g)) {
       result[m[1]] = m[2];
     }
     return result;
   }
 
-  it('SLOW_KEYS + FAST_KEYS cover all BOOTSTRAP_CACHE_KEYS with no overlap', () => {
+  // Every registered key must be classified exactly once: it rides in the fast
+  // tier, the slow tier, or neither (ON_DEMAND_KEYS — fetched per-key, only by
+  // the clients that render it; #5300). "Neither" is now a deliberate state, not
+  // an omission, so it needs a home in the invariant rather than a hole in it.
+  it('SLOW_KEYS + FAST_KEYS + ON_DEMAND_KEYS cover all BOOTSTRAP_CACHE_KEYS with no overlap', () => {
     const slow = extractSetKeys(bootstrapSrc, 'SLOW_KEYS');
     const fast = extractSetKeys(bootstrapSrc, 'FAST_KEYS');
+    const onDemand = extractSetKeys(bootstrapSrc, 'ON_DEMAND_KEYS');
     const all = extractBootstrapKeys(bootstrapSrc);
 
-    const union = new Set([...slow, ...fast]);
-    assert.deepEqual([...union].sort(), [...all].sort(), 'SLOW_KEYS ∪ FAST_KEYS must equal BOOTSTRAP_CACHE_KEYS');
+    const union = new Set([...slow, ...fast, ...onDemand]);
+    assert.deepEqual([...union].sort(), [...all].sort(), 'SLOW ∪ FAST ∪ ON_DEMAND must equal BOOTSTRAP_CACHE_KEYS');
 
-    const intersection = [...slow].filter(k => fast.has(k));
-    assert.equal(intersection.length, 0, `Overlap between tiers: ${intersection.join(', ')}`);
+    for (const [a, b, label] of [[slow, fast, 'slow/fast'], [slow, onDemand, 'slow/on-demand'], [fast, onDemand, 'fast/on-demand']]) {
+      const overlap = [...a].filter(k => b.has(k));
+      assert.equal(overlap.length, 0, `Overlap between ${label}: ${overlap.join(', ')}`);
+    }
   });
 
-  it('tier sets in bootstrap.js match BOOTSTRAP_TIERS in cache-keys.ts', () => {
+  it('key sets in bootstrap.js match BOOTSTRAP_TIERS in cache-keys.ts', () => {
     const slow = extractSetKeys(bootstrapSrc, 'SLOW_KEYS');
     const fast = extractSetKeys(bootstrapSrc, 'FAST_KEYS');
+    const onDemand = extractSetKeys(bootstrapSrc, 'ON_DEMAND_KEYS');
     const tiers = extractTierKeys(cacheKeysSrc);
 
     for (const k of slow) {
@@ -444,9 +459,75 @@ describe('Bootstrap tier definitions', () => {
     for (const k of fast) {
       assert.equal(tiers[k], 'fast', `FAST_KEYS has '${k}' but BOOTSTRAP_TIERS says '${tiers[k]}'`);
     }
+    for (const k of onDemand) {
+      assert.equal(tiers[k], 'on-demand', `ON_DEMAND_KEYS has '${k}' but BOOTSTRAP_TIERS says '${tiers[k]}'`);
+    }
     const tierKeys = new Set(Object.keys(tiers));
-    const setKeys = new Set([...slow, ...fast]);
-    assert.deepEqual([...tierKeys].sort(), [...setKeys].sort(), 'BOOTSTRAP_TIERS keys must match SLOW_KEYS ∪ FAST_KEYS');
+    const setKeys = new Set([...slow, ...fast, ...onDemand]);
+    assert.deepEqual([...tierKeys].sort(), [...setKeys].sort(), 'BOOTSTRAP_TIERS keys must match SLOW ∪ FAST ∪ ON_DEMAND');
+  });
+
+  // The structural guard. A tier bundle is downloaded by EVERY client on EVERY boot,
+  // so a key earns its place there only if a client actually reads its hydration.
+  // Scan the source for real consumers — do NOT trust PENDING_CONSUMERS here: it is
+  // an allow-list that goes stale the moment a consumer is wired up (euGasStorage,
+  // correlationCards and wsbTickers were all still on it long after they had one).
+  // A key with no getHydratedData/ensureHydrated call site is freight: ship it
+  // on demand instead (#5300).
+  it('every tier key has a hydration consumer — a tier is not a dumping ground', () => {
+    const slow = extractSetKeys(bootstrapSrc, 'SLOW_KEYS');
+    const fast = extractSetKeys(bootstrapSrc, 'FAST_KEYS');
+
+    const srcFiles = [];
+    function walk(dir) {
+      for (const entry of readdirSync(dir)) {
+        const full = join(dir, entry);
+        if (statSync(full).isDirectory()) walk(full);
+        else if (entry.endsWith('.ts') && !full.includes('/generated/')) srcFiles.push(full);
+      }
+    }
+    walk(join(root, 'src'));
+    const allSrc = srcFiles.map((f) => readFileSync(f, 'utf-8')).join('\n');
+
+    const freight = [...slow, ...fast].filter((k) =>
+      !allSrc.includes(`getHydratedData('${k}')`) && !allSrc.includes(`ensureHydrated('${k}')`));
+
+    assert.deepEqual(
+      freight,
+      [],
+      `these keys ride in a tier every client downloads but no client reads their hydration — move them to ON_DEMAND_KEYS: ${freight.join(', ')}`,
+    );
+  });
+
+  it('keeps PENDING_CONSUMERS in sync with real hydration call sites', () => {
+    const srcFiles = [];
+    function walk(dir) {
+      for (const entry of readdirSync(dir)) {
+        const full = join(dir, entry);
+        if (statSync(full).isDirectory()) walk(full);
+        else if (entry.endsWith('.ts') && !full.includes('/generated/')) srcFiles.push(full);
+      }
+    }
+    walk(join(root, 'src'));
+    const allSrc = srcFiles.map((f) => readFileSync(f, 'utf-8')).join('\n');
+
+    const stale = [...PENDING_CONSUMERS].filter((key) =>
+      allSrc.includes(`getHydratedData('${key}')`) || allSrc.includes(`ensureHydrated('${key}')`));
+
+    assert.deepEqual(
+      stale,
+      [],
+      `PENDING_CONSUMERS entries have real hydration consumers and must be removed: ${stale.join(', ')}`,
+    );
+  });
+
+  it('on-demand keys are NOT served by the tier bundles every client downloads', () => {
+    const slow = extractSetKeys(bootstrapSrc, 'SLOW_KEYS');
+    const fast = extractSetKeys(bootstrapSrc, 'FAST_KEYS');
+    const onDemand = extractSetKeys(bootstrapSrc, 'ON_DEMAND_KEYS');
+
+    assert.ok(onDemand.has('cyberThreats'), 'cyberThreats must stay on-demand: its layer is off by default in every variant');
+    assert.ok(!slow.has('cyberThreats') && !fast.has('cyberThreats'), 'cyberThreats must not ride in a tier');
   });
 });
 

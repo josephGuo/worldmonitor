@@ -25,6 +25,22 @@ const HEALTH_VERDICT_SNAPSHOT_KEY = healthVerdictRedisKey(
   process.env.VERCEL_ENV,
   process.env.VERCEL_GIT_COMMIT_SHA,
 );
+// The memoized verdict is stored TWICE, and the difference is the whole point.
+// The full snapshot carries the entire `checks` map (~228 entries, ~20 KB). The
+// compact snapshot carries what `?compact=1` actually returns — status, summary,
+// checkedAt and the handful of problem entries — about 1 KB.
+//
+// `?compact=1` is the browser poll: every client hits it every 5 minutes (~115k
+// times/day). Before this split each of those reads pulled the full 20 KB blob out
+// of Redis to render ~1 KB of it, which is ~2.2 GB/day of egress for bytes the
+// caller throws away (#5300). One sweep writes both keys, so they can never
+// disagree.
+const HEALTH_VERDICT_COMPACT_SNAPSHOT_BASE_KEY = 'health:verdict:compact:v1';
+const HEALTH_VERDICT_COMPACT_SNAPSHOT_KEY = healthVerdictRedisKey(
+  HEALTH_VERDICT_COMPACT_SNAPSHOT_BASE_KEY,
+  process.env.VERCEL_ENV,
+  process.env.VERCEL_GIT_COMMIT_SHA,
+);
 const HEALTH_VERDICT_SNAPSHOT_TTL_SECONDS = 60;
 // Edge runtime mirror of scripts/china-coverage-manifest.mjs. Edge functions
 // cannot import scripts/; tests enforce key and status-projection parity.
@@ -82,12 +98,14 @@ const BOOTSTRAP_KEYS = {
   unrestEvents:      'unrest:events:v1',
   iranEvents:        'conflict:iran-events:v1',
   ucdpEvents:        'conflict:ucdp-events:v1',
+  ucdpEventsBootstrap: 'conflict:ucdp-events-bootstrap:v1',
   weatherAlerts:     'weather:alerts:v1',
   spending:          'economic:spending:v1',
   techEvents:        'research:tech-events-bootstrap:v1',
   gdeltIntel:        'intelligence:gdelt-intel:v1',
   correlationCards:   'correlation:cards-bootstrap:v1',
   forecasts:         'forecast:predictions:v2',
+  forecastsBootstrap: 'forecast:predictions-bootstrap:v1',
   securityAdvisories: 'intelligence:advisories-bootstrap:v1',
   customsRevenue:    'trade:customs-revenue:v1',
   comtradeFlows:     'comtrade:flows:v1',
@@ -152,6 +170,7 @@ const BOOTSTRAP_KEYS = {
 
 const STANDALONE_KEYS = {
   chinaCoverage:      CHINA_COVERAGE_SUMMARY_KEY,
+  hkoWarnings:        'weather:hko-warnings:v1',
   // #4920 completeness measurement (daily GH Actions publishers) — ops
   // keys: health-monitored but NOT bootstrap-hydrated into page loads.
   newsFeedHealth:    'news:feed-health:v1',
@@ -224,6 +243,7 @@ const STANDALONE_KEYS = {
   // key as the probe target rather than pretending one country key is global.
   comtradeBilateralHs4:  'seed-meta:comtrade:bilateral-hs4',
   thermalEscalation:     'thermal:escalation:v1',
+  thermalEscalationBootstrap: 'thermal:escalation-bootstrap:v1',
   tariffTrendsUs:           'trade:tariffs:v1:840:all:10',
   militaryForecastInputs:   'military:forecast-inputs:stale:v1',
   gscpi:                    'economic:fred:v1:GSCPI:0',
@@ -335,7 +355,7 @@ const SEED_META = {
   gulfQuotes:       { key: 'seed-meta:market:gulf-quotes',      maxStaleMin: 30 },
   stablecoinMarkets:{ key: 'seed-meta:market:stablecoins',      maxStaleMin: 60 },
   naturalEvents:    { key: 'seed-meta:natural:events',          maxStaleMin: 540 }, // 3h Railway climate bundle; 3x cadence preserves a full missed run.
-  hkoWarnings:      { key: 'seed-meta:weather:hko-warnings',    maxStaleMin: 540 }, // written by the natural-event seed's successful HKO extra-key publish.
+  hkoWarnings:      { key: 'seed-meta:weather:hko-warnings',    maxStaleMin: 540 }, // successful HKO responses publish a snapshot even when no tropical-cyclone warning is active.
   flightDelays:     { key: 'seed-meta:aviation:faa',            maxStaleMin: 90 }, // CACHE_TTL=7200s; matches notamClosures from same cron
   notamClosures:    { key: 'seed-meta:aviation:notam',          maxStaleMin: 240 }, // 2h interval; 240min = 2x interval
   predictionMarkets: { key: 'seed-meta:prediction:markets',     maxStaleMin: 90 },
@@ -397,6 +417,7 @@ const SEED_META = {
   riskScores:       { key: 'seed-meta:intelligence:risk-scores',  maxStaleMin: 30, minRecordCount: 3 }, // CII warm-ping every 8min; recordCount is realtime signal-density coverage for score-relevant conflict (ACLED or UCDP), news, and cyber families, not raw feed availability; quiet-but-fresh feeds may warn COVERAGE_PARTIAL.
   iranEvents:       { key: 'seed-meta:conflict:iran-events',      maxStaleMin: 20160 }, // manual seed from LiveUAMap; 20160 = 14d = 2× weekly cadence
   ucdpEvents:       { key: 'seed-meta:conflict:ucdp-events',      maxStaleMin: 420 },
+  ucdpEventsBootstrap: { key: 'seed-meta:conflict:ucdp-events-bootstrap', maxStaleMin: 420 }, // Same cron. Monitored separately because the bootstrap tier now hydrates from the compact projection, and a transform/write failure there must not hide behind a healthy canonical key (#5300).
   acledIntel:       { key: 'seed-meta:conflict:acled-intel',      maxStaleMin: 38 }, // conflict:acled:v1:all:0:0, now ACLED-or-GDELT fallback for the forecast EMA input (#5099).
   militaryFlights:  { key: 'seed-meta:military:flights',           maxStaleMin: 30 }, // cron ~10min (LIVE_TTL=600s); 30min = 3x interval,
   militaryCii:      { key: 'seed-meta:intelligence:military-cii',  maxStaleMin: 45 }, // seed-military-cii cron ~10min; 45 = generous grace (relay-dependent; preserve-last-good runs still refresh meta)
@@ -418,6 +439,7 @@ const SEED_META = {
   telegramFeed:     { key: 'seed-meta:intelligence:telegram-feed:v1', maxStaleMin: 10 }, // 60s poll interval; 10min grace catches poll failures before they go stale in the panel
   digestNotifications: { key: 'seed-meta:digest:last-run',          maxStaleMin: 90 }, // Railway digest-notifications cron runs every 30min; 90 = 3x cadence and detects a dead cron before daily digests are missed.
   forecasts:        { key: 'seed-meta:forecast:predictions',       maxStaleMin: 90 },
+  forecastsBootstrap: { key: 'seed-meta:forecast:predictions-bootstrap', maxStaleMin: 90 }, // Same cron. Monitored separately: the fast tier now hydrates from the dashboard list, and a transform/write failure there must not hide behind a healthy canonical key (#5300).
   forecastResolutions: { key: 'seed-meta:forecast:resolutions',     maxStaleMin: 2160 }, // daily Bet-2 resolver; 36h catches a missed cron without flapping on normal daily jitter
   forecastScorecard:   { key: 'seed-meta:forecast:scorecard',       maxStaleMin: 2160 }, // scorecard extra key written by seed-forecast-resolutions
   forecastBets:        { key: 'seed-meta:forecast:bets',            maxStaleMin: 2880 }, // #5233 shadow bet-engine seeder; daily cron (05:00 UTC), 48h = 2× interval
@@ -453,6 +475,7 @@ const SEED_META = {
   fuelPrices:          { key: 'seed-meta:economic:fuel-prices',               maxStaleMin: 10080 }, // weekly seed; 10080 = 7 days
   faoFoodPriceIndex:   { key: 'seed-meta:economic:fao-ffpi',                  maxStaleMin: 86400 }, // monthly seed; 86400 = 60 days (2x interval)
   thermalEscalation:   { key: 'seed-meta:thermal:escalation',                 maxStaleMin: 360 }, // cron every 2h; 360 = 3x interval (was 240 = 2x)
+  thermalEscalationBootstrap: { key: 'seed-meta:thermal:escalation-bootstrap', maxStaleMin: 360 }, // Same cron as above. Monitored separately because the bootstrap tier now hydrates from the compact projection, and a transform/write failure there must not hide behind a healthy canonical key (#5300).
   nationalDebt:        { key: 'seed-meta:economic:national-debt',              maxStaleMin: 86400 }, // monthly seed (seed-bundle-macro intervalMs: 30 * DAY); 60d = 2x interval absorbs one missed run. Prior 10080 (7d) was narrower than the cron interval so every cron past day 7 alarmed STALE_SEED.
   tariffTrendsUs:      { key: 'seed-meta:trade:tariffs:v1:840:all:10',        maxStaleMin: 540 }, // co-pinned to TARIFF_TTL (8h=480min) + 60min grace. Prior 900 (15h) created an 8h-15h silent window where data had expired but seed-meta was still considered fresh, masking real outages as status=EMPTY (not STALE_SEED). See scripts/seed-supply-chain-trade.mjs TARIFF_TTL.
   // publish.ts runs once daily (02:30 UTC); seed-meta TTL=52h — maxStaleMin must cover the full 24h cycle
@@ -695,6 +718,9 @@ const EMPTY_DATA_OK_KEYS = new Set([
   'cableHealth', // `cables: {}` = no active subsea cable disruptions per NGA NAVAREA warnings — all cables implicitly healthy. Also covers NGA-upstream-down windows where get-cable-health writes back the fallback response (empty cables); without this, those would alarm EMPTY_DATA.
   'forecastBets', // #5233 shadow bet-engine stream; absent before the cron ships it and empty on weeks the energy feed yields no bet — tolerate as STALE_SEED (warn), not EMPTY (crit).
   'forecastFunnel', // #5233 funnel guardrail is a new afterPublish side-write; before the first seed-forecasts run ships it the key is absent — tolerate as STALE_SEED (warn), not EMPTY (crit). A COLLAPSED funnel still surfaces via seed-meta status:'error' → SEED_ERROR, which classifyKey checks before this branch.
+  'thermalEscalationBootstrap', // Compact dashboard projection is absent until the first thermal seeder tick after deploy — tolerate as STALE_SEED (warn), not EMPTY (crit). Once published, seed-meta staleness still catches a stopped writer.
+  'ucdpEventsBootstrap', // Compact dashboard projection is absent until the first ucdp seeder tick after deploy — tolerate as STALE_SEED (warn), not EMPTY (crit). Once published, seed-meta staleness still catches a stopped writer.
+  'forecastsBootstrap', // Dashboard list is absent until the first seed-forecasts tick after deploy — tolerate as STALE_SEED (warn), not EMPTY (crit).
   'wildfiresBootstrap', // Compact dashboard side-write is absent until the first fire seeder tick after deploy — tolerate as STALE_SEED (warn), not EMPTY (crit). Once published, seed-meta staleness still catches a stopped writer.
 ]);
 
@@ -775,12 +801,12 @@ function keyHasData(redisKey, len) {
 
 function readSeedMeta(seedCfg, keyMetaValues, keyMetaErrors, now) {
   if (!seedCfg) {
-    return { seedAge: null, seedStale: null, seedError: false, metaReadFailed: false, metaCount: null, contentAge: null };
+    return { seedAge: null, seedStale: null, seedError: false, sourceUnavailable: false, metaReadFailed: false, metaCount: null, contentAge: null };
   }
   // Per-command Redis errors on the GET seed-meta half of the pipeline must
   // not silently fall through to STALE_SEED — promote to REDIS_PARTIAL.
   if (keyMetaErrors.get(seedCfg.key)) {
-    return { seedAge: null, seedStale: null, seedError: false, metaReadFailed: true, metaCount: null, contentAge: null };
+    return { seedAge: null, seedStale: null, seedError: false, sourceUnavailable: false, metaReadFailed: true, metaCount: null, contentAge: null };
   }
   // Unwrap through the envelope helper. Legacy seed-meta is a bare
   // `{ fetchedAt, recordCount, sourceVersion, status? }` object with no `_seed`
@@ -789,7 +815,7 @@ function readSeedMeta(seedCfg, keyMetaValues, keyMetaErrors, now) {
   // the dependency so behavior stays byte-identical in PR 1.
   const meta = unwrapEnvelope(parseRedisValue(keyMetaValues.get(seedCfg.key))).data;
   if (meta?.status === 'error') {
-    return { seedAge: null, seedStale: true, seedError: true, metaReadFailed: false, metaCount: null, contentAge: null };
+    return { seedAge: null, seedStale: true, seedError: true, sourceUnavailable: false, metaReadFailed: false, metaCount: null, contentAge: null };
   }
   let seedAge = null;
   let seedStale = true;
@@ -798,10 +824,18 @@ function readSeedMeta(seedCfg, keyMetaValues, keyMetaErrors, now) {
     seedStale = seedAge > seedCfg.maxStaleMin;
   }
   const metaCount = meta?.count ?? meta?.recordCount ?? null;
+  // `unavailable` is the one sourceState that means "this deployment never opted
+  // into the adapter" (the producer had no credential to try with), as opposed to
+  // "the adapter was tried and is broken" (`stale`/`error`). Grading the two the
+  // same makes an optional, deliberately-unconfigured source an eternal warn that
+  // no amount of operator work can clear — so it is classified separately below.
+  const sourceUnavailable = meta?.sourceState === 'unavailable';
   // Source-specific producers can preserve usable last-good records while a
   // current upstream attempt is degraded. Surface that state immediately as a
   // warning without discarding the retained record count from health output.
-  const sourceDegraded = typeof meta?.sourceState === 'string' && meta.sourceState !== 'ok';
+  const sourceDegraded = typeof meta?.sourceState === 'string'
+    && meta.sourceState !== 'ok'
+    && !sourceUnavailable;
   // Content-age trio (2026-05-04 health-readiness plan). Presence of
   // maxContentAgeMin is the opt-in signal — legacy seeders without it
   // get contentAge: null and skip the STALE_CONTENT branch in classifyKey.
@@ -829,7 +863,7 @@ function readSeedMeta(seedCfg, keyMetaValues, keyMetaErrors, now) {
       contentStale: contentAgeMin == null || isFutureDated || contentAgeMin > meta.maxContentAgeMin,
     };
   }
-  return { seedAge, seedStale, seedError: sourceDegraded, metaReadFailed: false, metaCount, contentAge };
+  return { seedAge, seedStale, seedError: sourceDegraded, sourceUnavailable, metaReadFailed: false, metaCount, contentAge };
 }
 
 function isCascadeCovered(name, hasData, keyStrens, keyErrors) {
@@ -864,7 +898,7 @@ function classifyKey(name, redisKey, opts, ctx) {
 
   const strlen = keyStrens.get(redisKey) ?? 0;
   const hasData = keyHasData(redisKey, strlen);
-  const { seedAge, seedStale, seedError, metaCount, contentAge } = meta;
+  const { seedAge, seedStale, seedError, sourceUnavailable, metaCount, contentAge } = meta;
 
   // When the data key is gone the meta count is meaningless; force records=0
   // so we never display the contradictory "EMPTY records=N>0" pair (item 1).
@@ -872,7 +906,13 @@ function classifyKey(name, redisKey, opts, ctx) {
   const cascadeCovered = isCascadeCovered(name, hasData, keyStrens, keyErrors);
 
   let status;
-  if (seedError) status = 'SEED_ERROR';
+  // Precedes every fault branch: an adapter this deployment never configured has
+  // nothing to be stale, empty, or degraded ABOUT. The producer still writes the
+  // key each run (recordCount 0) so operators can see the adapter is dormant, and
+  // the moment the credential lands the next run reports sourceState 'ok' and this
+  // flips to OK on its own — no health-config change needed.
+  if (sourceUnavailable) status = 'NOT_CONFIGURED';
+  else if (seedError) status = 'SEED_ERROR';
   else if (!hasData) {
     if (cascadeCovered) status = 'OK_CASCADE';
     else if (EMPTY_DATA_OK_KEYS.has(name)) status = seedStale === true ? 'STALE_SEED' : 'OK';
@@ -920,6 +960,12 @@ function classifyKey(name, redisKey, opts, ctx) {
 const STATUS_COUNTS = {
   OK: 'ok',
   OK_CASCADE: 'ok',
+  // An optional source adapter this deployment never supplied a credential for
+  // (producer wrote sourceState:'unavailable'). Buckets to `ok` because there is
+  // no fault and no operator action that would clear it other than opting in.
+  // Must stay registered here: the summary does `STATUS_COUNTS[status] ?? 'warn'`,
+  // so an unlisted status would silently re-become the warn this exists to stop.
+  NOT_CONFIGURED: 'ok',
   STALE_SEED: 'warn',
   SEED_ERROR: 'warn',
   EMPTY_ON_DEMAND: 'warn',
@@ -1048,13 +1094,15 @@ function composeChinaCoverageStatus(entry, raw, readError = false) {
   return { ...entry, ...projected, seedStatus };
 }
 
-function parseHealthVerdictSnapshot(raw, now) {
+function parseHealthVerdictSnapshot(raw, now, { requireChecks = true } = {}) {
   if (typeof raw !== 'string') return null;
   const snapshot = parseRedisValue(raw);
   if (!snapshot || typeof snapshot !== 'object') return null;
   if (typeof snapshot.status !== 'string' || typeof snapshot.checkedAt !== 'string') return null;
   if (!snapshot.summary || typeof snapshot.summary !== 'object') return null;
-  if (!snapshot.checks || typeof snapshot.checks !== 'object') return null;
+  // The compact snapshot deliberately has no `checks` map — that omission IS the
+  // 20 KB saving. Only the full snapshot must carry one.
+  if (requireChecks && (!snapshot.checks || typeof snapshot.checks !== 'object')) return null;
 
   const checkedAtMs = Date.parse(snapshot.checkedAt);
   const ageMs = now - checkedAtMs;
@@ -1075,6 +1123,33 @@ async function releaseHealthVerdictRefreshLock(lockToken) {
   ]], 4_000).catch(() => null);
 }
 
+// Single source of truth for "is this check a problem?", shared by the compact
+// `problems` map and the failure log. Derived from STATUS_COUNTS rather than a
+// hardcoded status list: any status that buckets to `ok` is by definition not a
+// problem, so adding a new ok-bucket status (NOT_CONFIGURED) can never again
+// leave one problem surface silently reporting it. An unregistered status is
+// treated as a problem, matching the summary's `STATUS_COUNTS[s] ?? 'warn'`.
+function isProblemStatus(status) {
+  return STATUS_COUNTS[status] !== 'ok';
+}
+
+// Failure-log / ?history=1 problem set. Distinct from the compact `problems` map
+// in exactly one way: EMPTY_ON_DEMAND is suppressed here. It is warn-level for
+// visibility only (realWarnCount subtracts it, it never flips `overall`), so an
+// unrequested on-demand key must not pollute the incident signature and cause a
+// spurious failure-log append. That single exception is the ONLY divergence —
+// everything else defers to isProblemStatus.
+function collectFailureLogProblems(checks) {
+  const entries = Object.entries(checks)
+    .filter(([, c]) => isProblemStatus(c.status) && c.status !== 'EMPTY_ON_DEMAND');
+  return {
+    problemKeys: entries.map(([k, c]) => `${k}:${c.status}${c.seedAgeMin != null ? `(${c.seedAgeMin}min)` : ''}`),
+    // The dedupe signature uses only key:status (no age) so a long STALE_SEED
+    // window doesn't produce a new log entry on every poll.
+    sigKeys: entries.map(([k, c]) => `${k}:${c.status}`).sort(),
+  };
+}
+
 function healthResponseBody(snapshot, compact) {
   const body = {
     status: snapshot.status,
@@ -1087,12 +1162,25 @@ function healthResponseBody(snapshot, compact) {
     return body;
   }
 
-  const problems = {};
-  for (const [name, check] of Object.entries(snapshot.checks)) {
-    if (check.status !== 'OK' && check.status !== 'OK_CASCADE') problems[name] = check;
-  }
+  // Two shapes reach here. A freshly-swept verdict (and the full cached snapshot)
+  // carries `checks`, so derive `problems` from it. The compact snapshot key stores
+  // `problems` already computed — that is why a browser poll reads ~1 KB instead of
+  // the full 20 KB check map. Passing a compact snapshot back through here is a
+  // no-op, which is what makes buildCompactVerdictSnapshot() below safe.
+  const problems = snapshot.checks
+    ? Object.fromEntries(Object.entries(snapshot.checks).filter(([, check]) => isProblemStatus(check.status)))
+    : (snapshot.problems ?? {});
   if (Object.keys(problems).length > 0) body.problems = problems;
   return body;
+}
+
+/**
+ * The compact snapshot stored in Redis is byte-for-byte the body a `?compact=1`
+ * request returns. Deriving it from the same function that renders the response
+ * means the cached form can never drift from the live form.
+ */
+function buildCompactVerdictSnapshot(snapshot) {
+  return healthResponseBody(snapshot, true);
 }
 
 function healthResponse(snapshot, compact, headers) {
@@ -1204,10 +1292,14 @@ export default async function handler(req, ctx) {
   let ownsSnapshotRefreshLock = false;
   try {
     if (!getRedisCredentials()) throw new Error('Redis not configured');
-    const snapshotResult = await redisPipeline([['GET', HEALTH_VERDICT_SNAPSHOT_KEY]], 4_000);
+    // Read the snapshot this request will actually render. `?compact=1` — the
+    // browser poll, ~115k/day — reads the ~1 KB compact key instead of dragging the
+    // full ~20 KB check map out of Redis to show a tenth of it (#5300).
+    const snapshotKey = compact ? HEALTH_VERDICT_COMPACT_SNAPSHOT_KEY : HEALTH_VERDICT_SNAPSHOT_KEY;
+    const snapshotResult = await redisPipeline([['GET', snapshotKey]], 4_000);
     if (!snapshotResult) throw new Error('Redis request failed');
     if (snapshotResult[0]?.error) throw new Error('Redis snapshot read failed');
-    const cachedSnapshot = parseHealthVerdictSnapshot(snapshotResult[0]?.result, Date.now());
+    const cachedSnapshot = parseHealthVerdictSnapshot(snapshotResult[0]?.result, Date.now(), { requireChecks: !compact });
     if (cachedSnapshot) return healthResponse(cachedSnapshot, compact, headers);
 
     refreshLockToken = `${now}:${crypto.randomUUID()}`;
@@ -1240,9 +1332,9 @@ export default async function handler(req, ctx) {
         const remainingMs = waitDeadline - Date.now();
         if (remainingMs < HEALTH_VERDICT_MIN_REDIS_TIMEOUT_MS) break;
         const redisTimeoutMs = Math.min(4_000, remainingMs);
-        const refreshedResult = await redisPipeline([['GET', HEALTH_VERDICT_SNAPSHOT_KEY]], redisTimeoutMs);
+        const refreshedResult = await redisPipeline([['GET', snapshotKey]], redisTimeoutMs);
         if (!refreshedResult || refreshedResult[0]?.error) throw new Error('Redis snapshot wait failed');
-        const refreshedSnapshot = parseHealthVerdictSnapshot(refreshedResult[0]?.result, Date.now());
+        const refreshedSnapshot = parseHealthVerdictSnapshot(refreshedResult[0]?.result, Date.now(), { requireChecks: !compact });
         if (refreshedSnapshot) return healthResponse(refreshedSnapshot, compact, headers);
 
         lockResult = await redisPipeline([[
@@ -1382,13 +1474,7 @@ export default async function handler(req, ctx) {
     // problemKeys includes seedAgeMin for the snapshot (useful for post-mortem),
     // but the dedupe signature uses only key:status (no age) so a long STALE_SEED
     // window doesn't produce a new log entry on every poll.
-    const problemKeys = Object.entries(checks)
-      .filter(([, c]) => c.status !== 'OK' && c.status !== 'OK_CASCADE' && c.status !== 'EMPTY_ON_DEMAND')
-      .map(([k, c]) => `${k}:${c.status}${c.seedAgeMin != null ? `(${c.seedAgeMin}min)` : ''}`);
-    const sigKeys = Object.entries(checks)
-      .filter(([, c]) => c.status !== 'OK' && c.status !== 'OK_CASCADE' && c.status !== 'EMPTY_ON_DEMAND')
-      .map(([k, c]) => `${k}:${c.status}`)
-      .sort();
+    const { problemKeys, sigKeys } = collectFailureLogProblems(checks);
     console.log('[health] %s problems=[%s]', overall, problemKeys.join(', '));
     const failureLogEntry = {
       at: new Date(now).toISOString(),
@@ -1448,6 +1534,8 @@ export default async function handler(req, ctx) {
   // Await the write so the next request cannot race an unstarted background
   // SET and repeat the full sweep. A write failure does not invalidate the
   // live verdict just computed; the next request will retry by sweeping.
+  // Both snapshots are written by the SAME sweep, in one pipeline, so the compact
+  // form can never disagree with the full one or outlive it.
   const snapshotWriteResult = await redisPipeline([
     [
       'SET',
@@ -1456,8 +1544,17 @@ export default async function handler(req, ctx) {
       'EX',
       String(HEALTH_VERDICT_SNAPSHOT_TTL_SECONDS),
     ],
+    [
+      'SET',
+      HEALTH_VERDICT_COMPACT_SNAPSHOT_KEY,
+      JSON.stringify(buildCompactVerdictSnapshot(verdictSnapshot)),
+      'EX',
+      String(HEALTH_VERDICT_SNAPSHOT_TTL_SECONDS),
+    ],
   ], 4_000).catch(() => null);
-  const snapshotWriteFailed = !snapshotWriteResult || snapshotWriteResult[0]?.error;
+  const snapshotWriteFailed = !snapshotWriteResult
+    || snapshotWriteResult.length !== 2
+    || snapshotWriteResult.some((entry) => entry?.error);
   if (ownsSnapshotRefreshLock) await releaseHealthVerdictRefreshLock(refreshLockToken);
   // A failed cache write does not invalidate the live verdict. Releasing only
   // this request's token lets the next caller retry immediately without ever
@@ -1483,6 +1580,8 @@ export default async function handler(req, ctx) {
 export const __testing__ = {
   readSeedMeta,
   classifyKey,
+  healthResponseBody,
+  collectFailureLogProblems,
   ACTIVATION_MARKERS,
   STATUS_COUNTS,
   // List-typed data keys + the command builder that measures them with LLEN
@@ -1490,6 +1589,8 @@ export const __testing__ = {
   LIST_DATA_KEYS,
   dataLenCommand,
   HEALTH_VERDICT_SNAPSHOT_KEY,
+  HEALTH_VERDICT_COMPACT_SNAPSHOT_KEY,
+  buildCompactVerdictSnapshot,
   HEALTH_VERDICT_SNAPSHOT_TTL_SECONDS,
   HEALTH_VERDICT_REFRESH_LOCK_KEY,
   HEALTH_VERDICT_REFRESH_WAIT_MS,
