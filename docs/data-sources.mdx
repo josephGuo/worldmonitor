@@ -49,7 +49,7 @@ description: "Every data source, feed tier, and collection method used by World 
 - Critical mineral deposits
 - NASA FIRMS satellite fire detection (VIIRS thermal hotspots)
 - 19 global trade routes (container, energy, bulk) with multi-segment arcs through strategic chokepoints
-- Airport delays and closures across 111 monitored airports (FAA + AviationStack + ICAO NOTAM)
+- Airport delays and closures across 115 monitored airports (FAA + AviationStack + ICAO NOTAM)
 - **Aviation intelligence** — 6-tab airline intel panel (ops, flights, airlines, tracking, news, prices) with customizable airport/airline watchlists, live ADS-B flight tracking, and flight price search
 
 </details>
@@ -172,12 +172,12 @@ The Security Advisories panel displays advisories with colored level badges and 
 
 ### Airport Delay & NOTAM Monitoring
 
-111 airports across 5 regions (Americas, Europe, Asia-Pacific, MENA, Africa) are continuously monitored for delays, ground stops, and closures through three independent data sources:
+115 airports across 5 regions (Americas, Europe, Asia-Pacific, MENA, Africa) are continuously monitored for delays, ground stops, and closures through three independent data sources:
 
 | Source             | Coverage                  | Method                                                                                                  |
 | ------------------ | ------------------------- | ------------------------------------------------------------------------------------------------------- |
 | **FAA ASWS**       | 14 US hub airports        | Real-time XML feed from `nasstatus.faa.gov` — ground delays, ground stops, arrival/departure delays, closures |
-| **AviationStack**  | 40 international airports  | Last 100 flights per airport — cancellation rate and average delay duration computed from flight records  |
+| **AviationStack**  | 56 international airports  | Last 100 flights per airport — cancellation rate and average delay duration computed from flight records  |
 | **ICAO NOTAM API** | 46 MENA airports           | Real-time NOTAM (Notice to Air Missions) query for active airport/airspace closures                      |
 
 **NOTAM closure detection** targets MENA airports where airspace closures due to military activity or security events carry strategic significance. Detection uses two methods: ICAO Q-code matching (aerodrome/airspace closure codes `FA`, `AH`, `AL`, `AW`, `AC`, `AM` combined with closure qualifiers `LC`, `AS`, `AU`, `XX`, `AW`) and free-text regex scanning for closure keywords (`AD CLSD`, `AIRPORT CLOSED`, `AIRSPACE CLOSED`). When a NOTAM closure is detected, it overrides any existing delay alert for that airport with a `severe/closure` classification.
@@ -335,7 +335,7 @@ The public server digest feed inventory below is source-backed from `server/worl
 | `full` | `gov` | White House; White House Actions; State Dept; Pentagon; Federal Reserve; SEC; UN News; CISA; Treasury; DOJ |
 | `full` | `africa` | BBC Africa; News24; Africanews; Jeune Afrique (fr); Premium Times |
 | `full` | `latam` | BBC Latin America; Guardian Americas; Primicias (es); Infobae Americas (es); El Universo (es); Clarín (es); InSight Crime |
-| `full` | `asia` | BBC Asia; The Diplomat; Nikkei Asia; CNA; NDTV; South China Morning Post; The Hindu; Asia News; BBC Hindi (hi); Aaj Tak (hi); NDTV India (hi); Amar Ujala (hi) |
+| `full` | `asia` | BBC Asia; The Diplomat; Nikkei Asia; CNA; NDTV; South China Morning Post; The Hindu; Asia News; Xinhua; MIIT (China) (zh); MOFCOM (China) (zh); BBC Hindi (hi); Aaj Tak (hi); NDTV India (hi); Amar Ujala (hi) |
 | `full` | `energy` | Oil & Gas; Reuters Energy; Nuclear Energy |
 | `full` | `thinktanks` | Foreign Policy; Atlantic Council; Foreign Affairs; War on the Rocks; CSIS |
 | `full` | `crisis` | CrisisWatch; IAEA; WHO |
@@ -365,7 +365,7 @@ The public server digest feed inventory below is source-backed from `server/worl
 | `finance` | `bonds` | Bond Market |
 | `finance` | `commodities` | Oil & Gas; Gold & Metals |
 | `finance` | `crypto` | CoinDesk; Cointelegraph; The Block; Decrypt; The Defiant; Bitcoin Magazine; DL News; CryptoSlate; Unchained; DeFi News; Bloomberg Crypto; Reuters Crypto; Wu Blockchain; Messari; NFT News; Stablecoin Policy |
-| `finance` | `centralbanks` | Federal Reserve |
+| `finance` | `centralbanks` | Federal Reserve; PBoC Watch |
 | `finance` | `economic` | Economic Data |
 | `finance` | `ipo` | IPO News |
 | `finance` | `derivatives` | Options Market; Futures Trading |
@@ -501,6 +501,7 @@ WorldMonitor is grateful to the following organizations for making their data pu
 | BIS Statistics | Central bank policy rates, REER, credit-to-GDP | [stats.bis.org](https://stats.bis.org) |
 | U.S. BLS | US labor statistics | [bls.gov/developers](https://www.bls.gov/developers) |
 | USA Spending | US federal spending and contracts | [api.usaspending.gov](https://api.usaspending.gov) |
+| Global procurement opportunities | US SAM.gov, EU TED, UK Contracts Finder, CanadaBuys, New Zealand GETS, and World Bank procurement notices | [Coverage and freshness](/global-procurement-intelligence) |
 | UN Comtrade | Global merchandise trade flows | [comtradeapi.un.org](https://comtradeapi.un.org) |
 | CoinGecko | Cryptocurrency prices and market data | [coingecko.com](https://www.coingecko.com) |
 
@@ -521,6 +522,7 @@ WorldMonitor is grateful to the following organizations for making their data pu
 | NASA FIRMS | Near real-time wildfire/fire detections (VIIRS) | [firms.modaps.eosdis.nasa.gov](https://firms.modaps.eosdis.nasa.gov) |
 | NASA EONET | Natural events — storms, volcanoes, floods | [eonet.gsfc.nasa.gov](https://eonet.gsfc.nasa.gov) |
 | GDACS | UN-coordinated global disaster alerts | [gdacs.org](https://www.gdacs.org) |
+| Hong Kong Observatory | Local tropical-cyclone warning signals | [data.weather.gov.hk](https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=warnsum&lang=en) |
 | Open-Meteo | ERA5 reanalysis climate data | [open-meteo.com](https://open-meteo.com) |
 
 ### Infrastructure & Cyber

@@ -26,6 +26,9 @@ const HEALTH_VERDICT_SNAPSHOT_KEY = healthVerdictRedisKey(
   process.env.VERCEL_GIT_COMMIT_SHA,
 );
 const HEALTH_VERDICT_SNAPSHOT_TTL_SECONDS = 60;
+// Edge runtime mirror of scripts/china-coverage-manifest.mjs. Edge functions
+// cannot import scripts/; tests enforce key and status-projection parity.
+const CHINA_COVERAGE_SUMMARY_KEY = 'health:china-coverage:v1';
 const HEALTH_VERDICT_SNAPSHOT_TTL_MS = HEALTH_VERDICT_SNAPSHOT_TTL_SECONDS * 1_000;
 const HEALTH_VERDICT_REFRESH_LOCK_KEY = `${HEALTH_VERDICT_SNAPSHOT_KEY}:refresh-lock`;
 // The sweep can consume its full 8s timeout, followed by a 4s failure-log read
@@ -116,6 +119,8 @@ const BOOTSTRAP_KEYS = {
   euYieldCurve:      'economic:yield-curve-eu:v1',
   earningsCalendar:  'market:earnings-calendar:v1',
   econCalendar:      'economic:econ-calendar:v1',
+  chinaMacro:        'economic:china:macro:v1',
+  chinaReleaseCalendar: 'economic:china:release-calendar:v1',
   cotPositioning:    'market:cot:v1',
   hyperliquidFlow:   'market:hyperliquid:flow:v1',
   crudeInventories:  'economic:crude-inventories:v1',
@@ -146,6 +151,7 @@ const BOOTSTRAP_KEYS = {
 };
 
 const STANDALONE_KEYS = {
+  chinaCoverage:      CHINA_COVERAGE_SUMMARY_KEY,
   // #4920 completeness measurement (daily GH Actions publishers) — ops
   // keys: health-monitored but NOT bootstrap-hydrated into page loads.
   newsFeedHealth:    'news:feed-health:v1',
@@ -196,6 +202,12 @@ const STANDALONE_KEYS = {
   // verifies existence + freshness via the matching SEED_META entry. Same
   // shape as militaryFlights above.
   militaryCii:           'intelligence:military-cii:v1',
+  globalTendersSam:             'economic:global-tenders:v1:source:sam',
+  globalTendersTed:             'economic:global-tenders:v1:source:ted',
+  globalTendersContractsFinder: 'economic:global-tenders:v1:source:contracts-finder',
+  globalTendersCanadaBuys:      'economic:global-tenders:v1:source:canada-buys',
+  globalTendersGets:            'economic:global-tenders:v1:source:gets',
+  globalTendersWorldBank:       'economic:global-tenders:v1:source:world-bank',
   defensePatents:        'patents:defense:latest',
   temporalAnomalies:     'temporal:anomalies:v1',
   displacement:          `displacement:summary:v1:${new Date().getUTCFullYear()}`,
@@ -304,6 +316,7 @@ const STANDALONE_KEYS = {
 };
 
 const SEED_META = {
+  chinaCoverage:   { key: 'seed-meta:health:china-coverage',   maxStaleMin: 180 },
   earthquakes:      { key: 'seed-meta:seismology:earthquakes',  maxStaleMin: 30 },
   wildfires:        { key: 'seed-meta:wildfire:fires',          maxStaleMin: 360 }, // FIRMS NRT resets at midnight UTC; new-day data takes 3-6h to accumulate
   wildfiresBootstrap: { key: 'seed-meta:wildfire:fires-bootstrap', maxStaleMin: 360 }, // Compact CDN payload is a distinct publish target; monitor it so canonical fallback cannot hide transform/write failures.
@@ -321,7 +334,8 @@ const SEED_META = {
   etfFlows:         { key: 'seed-meta:market:etf-flows',        maxStaleMin: 60 },
   gulfQuotes:       { key: 'seed-meta:market:gulf-quotes',      maxStaleMin: 30 },
   stablecoinMarkets:{ key: 'seed-meta:market:stablecoins',      maxStaleMin: 60 },
-  naturalEvents:    { key: 'seed-meta:natural:events',          maxStaleMin: 360 }, // 2h cron; 3x interval; was 120 (TTL was 60min — panel went dark before health alarmed)
+  naturalEvents:    { key: 'seed-meta:natural:events',          maxStaleMin: 540 }, // 3h Railway climate bundle; 3x cadence preserves a full missed run.
+  hkoWarnings:      { key: 'seed-meta:weather:hko-warnings',    maxStaleMin: 540 }, // written by the natural-event seed's successful HKO extra-key publish.
   flightDelays:     { key: 'seed-meta:aviation:faa',            maxStaleMin: 90 }, // CACHE_TTL=7200s; matches notamClosures from same cron
   notamClosures:    { key: 'seed-meta:aviation:notam',          maxStaleMin: 240 }, // 2h interval; 240min = 2x interval
   predictionMarkets: { key: 'seed-meta:prediction:markets',     maxStaleMin: 90 },
@@ -339,6 +353,8 @@ const SEED_META = {
   cableHealth:      { key: 'seed-meta:cable-health',              maxStaleMin: 90 }, // ais-relay warm-ping runs every 30min; 90min = 3× interval catches missed pings without false positives
   submarineCables:  { key: 'seed-meta:infrastructure:submarine-cables', maxStaleMin: 25200 },
   macroSignals:     { key: 'seed-meta:economic:macro-signals',    maxStaleMin: 150 }, // seed-economy afterPublish-derived stress/macro key
+  chinaMacro:       { key: 'seed-meta:economic:china-macro', maxStaleMin: 4_320 }, // 36h gate; 72h tolerates one missed run
+  chinaReleaseCalendar: { key: 'seed-meta:economic:china-release-calendar', maxStaleMin: 4_320 },
   energyPrices:     { key: 'seed-meta:economic:energy-prices',    maxStaleMin: 150 }, // seed-economy primary runSeed resource
   bisPolicy:        { key: 'seed-meta:economic:bis',              maxStaleMin: 10080 }, // runSeed('economic','bis',...) writes seed-meta:economic:bis
   // seed-bis-extended.mjs is a child-process section spawned by
@@ -389,6 +405,13 @@ const SEED_META = {
   temporalAnomalies:{ key: 'seed-meta:temporal:anomalies',          maxStaleMin: 45 }, // request-driven producer kept warm by seed-infra; data TTL is 60min so health reaches STALE_SEED before EMPTY
   weatherAlerts:    { key: 'seed-meta:weather:alerts',             maxStaleMin: 45 }, // relay loop every 15min; 45 = 3× interval (was 30 = 2×, too tight on relay hiccup)
   spending:         { key: 'seed-meta:economic:spending',          maxStaleMin: 120 },
+  globalTenders:    { key: 'seed-meta:economic:global-tenders',   maxStaleMin: 180 },
+  globalTendersSam:             { key: 'seed-meta:economic:global-tenders:sam',              maxStaleMin: 180 },
+  globalTendersTed:             { key: 'seed-meta:economic:global-tenders:ted',              maxStaleMin: 180 },
+  globalTendersContractsFinder: { key: 'seed-meta:economic:global-tenders:contracts-finder', maxStaleMin: 180 },
+  globalTendersCanadaBuys:      { key: 'seed-meta:economic:global-tenders:canada-buys',      maxStaleMin: 180 },
+  globalTendersGets:            { key: 'seed-meta:economic:global-tenders:gets',             maxStaleMin: 180 },
+  globalTendersWorldBank:       { key: 'seed-meta:economic:global-tenders:world-bank',       maxStaleMin: 180 },
   techEvents:       { key: 'seed-meta:research:tech-events',       maxStaleMin: 480 },
   researchArxivHnTrending: { key: 'seed-meta:research:arxiv-hn-trending', maxStaleMin: 150 },
   gdeltIntel:       { key: 'seed-meta:intelligence:gdelt-intel',   maxStaleMin: 720 }, // 6h cron; 12h staleness = 2× cadence = 1 missed tick + cron jitter, alerts at 2 missed ticks. Bumped from 420 (1.16× cadence, virtually zero margin) on 2026-05-12 after the same Railway-deploy-preempted-tick pattern that hit resilienceIntervals on 2026-05-10 (PR #3652): seedAgeMin=467 vs maxStale=420 → ~1min UptimeRobot WARNING flip when a deploy preempted the 15:00 UTC tick. CACHE_TTL is 24h so per-topic merge always has a prior snapshot even at the upper end of the new budget.
@@ -571,6 +594,11 @@ if (!IRAN_EVENTS_ENABLED) {
 // chronic outage went undetected until a user noticed the panel was stuck on
 // "Loading...". Removed marketImplications below.
 const ON_DEMAND_KEYS = new Set([
+  // Deployment-order bridge: Vercel can ship this reader before Railway's
+  // hourly bundle publishes the first summary. The seeder writes a durable
+  // activation marker after its first successful publish; after that, a
+  // missing/stale summary is strict forever.
+  'chinaCoverage',
   'riskScoresLive',
   'usniFleetStale', 'positiveEventsLive',
   'bisPolicy', 'bisExchange', 'bisCredit',
@@ -651,6 +679,7 @@ const ON_DEMAND_KEYS = new Set([
 // publish; when the marker exists the key leaves ON_DEMAND softening and
 // normal EMPTY/STALE_SEED rules apply.
 const ACTIVATION_MARKERS = {
+  chinaCoverage: 'seed-activated:health:china-coverage',
   newsFeedHealth: 'seed-activated:news:feed-health',
   newsRecallBenchmark: 'seed-activated:news:recall-benchmark',
 };
@@ -673,6 +702,7 @@ const EMPTY_DATA_OK_KEYS = new Set([
 // key itself must still exist. Do not use this set in the missing-key branch.
 const ZERO_RECORD_DATA_OK_KEYS = new Set([
   ...EMPTY_DATA_OK_KEYS,
+  'globalTendersSam', 'globalTendersTed', 'globalTendersContractsFinder', 'globalTendersCanadaBuys', 'globalTendersGets', 'globalTendersWorldBank',
   // retailer-spread is SUPPRESSED to an explicit 0 by the aggregate job when a
   // market's retailers share < MIN_SPREAD_ITEMS (4) common basket items —
   // consumer-prices-core/src/jobs/aggregate.ts writes `retailer_spread_pct: 0`
@@ -768,6 +798,10 @@ function readSeedMeta(seedCfg, keyMetaValues, keyMetaErrors, now) {
     seedStale = seedAge > seedCfg.maxStaleMin;
   }
   const metaCount = meta?.count ?? meta?.recordCount ?? null;
+  // Source-specific producers can preserve usable last-good records while a
+  // current upstream attempt is degraded. Surface that state immediately as a
+  // warning without discarding the retained record count from health output.
+  const sourceDegraded = typeof meta?.sourceState === 'string' && meta.sourceState !== 'ok';
   // Content-age trio (2026-05-04 health-readiness plan). Presence of
   // maxContentAgeMin is the opt-in signal — legacy seeders without it
   // get contentAge: null and skip the STALE_CONTENT branch in classifyKey.
@@ -795,7 +829,7 @@ function readSeedMeta(seedCfg, keyMetaValues, keyMetaErrors, now) {
       contentStale: contentAgeMin == null || isFutureDated || contentAgeMin > meta.maxContentAgeMin,
     };
   }
-  return { seedAge, seedStale, seedError: false, metaReadFailed: false, metaCount, contentAge };
+  return { seedAge, seedStale, seedError: sourceDegraded, metaReadFailed: false, metaCount, contentAge };
 }
 
 function isCascadeCovered(name, hasData, keyStrens, keyErrors) {
@@ -896,9 +930,123 @@ const STATUS_COUNTS = {
   // (both bucket to 'warn' — overall status is `degraded`, not `critical`).
   // 2026-05-04 health-readiness plan, Sprint 1.
   STALE_CONTENT: 'warn',
+  CHINA_DEGRADED: 'warn',
+  CHINA_UNAVAILABLE: 'crit',
   EMPTY: 'crit',
   EMPTY_DATA: 'crit',
 };
+
+function isValidChinaCoverageSummary(candidate) {
+  if (
+    !candidate
+    || typeof candidate !== 'object'
+    || candidate.schemaVersion !== 1
+    || candidate.countryCode !== 'CN'
+    || !['healthy', 'degraded', 'unavailable'].includes(candidate.status)
+    || typeof candidate.evaluatedAt !== 'string'
+    || !Number.isFinite(Date.parse(candidate.evaluatedAt))
+    || !Array.isArray(candidate.entries)
+    || candidate.entries.length === 0
+    || candidate.entries.length > 100
+    || !candidate.counts
+    || typeof candidate.counts !== 'object'
+  ) {
+    return false;
+  }
+
+  const ids = new Set();
+  const actual = {
+    total: candidate.entries.length,
+    launched: 0,
+    planned: 0,
+    blocked: 0,
+    healthy: 0,
+    degraded: 0,
+    unavailable: 0,
+  };
+  for (const entry of candidate.entries) {
+    if (
+      !entry
+      || typeof entry !== 'object'
+      || typeof entry.id !== 'string'
+      || entry.id.length === 0
+      || entry.id.length > 100
+      || ids.has(entry.id)
+      || !['launched', 'planned', 'blocked'].includes(entry.launchStatus)
+      || !Array.isArray(entry.reasonCodes)
+      || entry.reasonCodes.length > 16
+      || entry.reasonCodes.some((reason) => typeof reason !== 'string' || reason.length > 64)
+    ) {
+      return false;
+    }
+    ids.add(entry.id);
+    actual[entry.launchStatus]++;
+    if (entry.launchStatus === 'launched') {
+      if (!['healthy', 'degraded', 'unavailable'].includes(entry.status)) return false;
+      actual[entry.status]++;
+    } else if (entry.status !== entry.launchStatus) {
+      return false;
+    }
+  }
+
+  if (actual.launched === 0) return false;
+  for (const [name, value] of Object.entries(actual)) {
+    if (candidate.counts[name] !== value) return false;
+  }
+  const expectedStatus = actual.unavailable === actual.launched
+    ? 'unavailable'
+    : actual.degraded > 0 || actual.unavailable > 0
+      ? 'degraded'
+      : 'healthy';
+  return candidate.status === expectedStatus;
+}
+
+function projectChinaCoverageStatus(raw, readError = false) {
+  if (readError) {
+    return { status: 'REDIS_PARTIAL', chinaStatus: null, reason: 'SUMMARY_READ_FAILED' };
+  }
+  const candidate = typeof raw === 'string'
+    ? unwrapEnvelope(parseRedisValue(raw)).data
+    : unwrapEnvelope(raw).data;
+  if (!isValidChinaCoverageSummary(candidate)) {
+    return { status: 'CHINA_UNAVAILABLE', chinaStatus: 'unavailable', reason: 'SUMMARY_INVALID' };
+  }
+
+  const status = {
+    healthy: 'OK',
+    degraded: 'CHINA_DEGRADED',
+    unavailable: 'CHINA_UNAVAILABLE',
+  }[candidate.status] ?? 'CHINA_UNAVAILABLE';
+  const problems = Array.isArray(candidate.entries)
+    ? candidate.entries
+      .filter((entry) => entry?.launchStatus === 'launched' && entry?.status !== 'healthy')
+      .map((entry) => ({ id: entry.id, status: entry.status, reasonCodes: entry.reasonCodes ?? [] }))
+    : [];
+  return {
+    status,
+    chinaStatus: candidate.status,
+    evaluatedAt: candidate.evaluatedAt ?? null,
+    counts: candidate.counts ?? null,
+    ...(problems.length > 0 ? { problems } : {}),
+  };
+}
+
+function composeChinaCoverageStatus(entry, raw, readError = false) {
+  if (!entry || !['OK', 'STALE_SEED', 'SEED_ERROR'].includes(entry.status)) return entry;
+
+  const seedStatus = entry.status;
+  const projected = projectChinaCoverageStatus(raw, readError);
+  if (seedStatus === 'OK') return { ...entry, ...projected };
+
+  // Preserve writer-health failures when the last summary was healthy, but do
+  // not let a stale/error seed downgrade a known China content outage from
+  // critical to warning. For degraded/unavailable summaries, surface the
+  // content verdict and retain the independent writer signal as seedStatus.
+  if (projected.status === 'OK') {
+    return { ...entry, ...projected, status: seedStatus, seedStatus };
+  }
+  return { ...entry, ...projected, seedStatus };
+}
 
 function parseHealthVerdictSnapshot(raw, now) {
   if (typeof raw !== 'string') return null;
@@ -1140,6 +1288,7 @@ export default async function handler(req, ctx) {
       ...allDataKeys.map(dataLenCommand),
       ...allMetaKeys.map(k => ['GET', k]),
       ...activationEntries.map(([, marker]) => ['EXISTS', marker]),
+      ['GET', CHINA_COVERAGE_SUMMARY_KEY],
     ];
     if (!getRedisCredentials()) throw new Error('Redis not configured');
     results = await redisPipeline(commands, 8_000);
@@ -1185,6 +1334,8 @@ export default async function handler(req, ctx) {
     const r = results[allDataKeys.length + allMetaKeys.length + i];
     if (!r?.error && Number(r?.result) === 1) activatedNames.add(activationEntries[i][0]);
   }
+  const chinaCoverageResult = results[allDataKeys.length + allMetaKeys.length + activationEntries.length];
+  const chinaCoverageRaw = chinaCoverageResult?.error ? null : chinaCoverageResult?.result;
 
   const classifyCtx = { keyStrens, keyErrors, keyMetaValues, keyMetaErrors, activatedNames, now };
   const checks = {};
@@ -1198,7 +1349,10 @@ export default async function handler(req, ctx) {
   for (const [registry, opts] of sources) {
     for (const [name, redisKey] of Object.entries(registry)) {
       totalChecks++;
-      const entry = classifyKey(name, redisKey, opts, classifyCtx);
+      let entry = classifyKey(name, redisKey, opts, classifyCtx);
+      if (name === 'chinaCoverage') {
+        entry = composeChinaCoverageStatus(entry, chinaCoverageRaw, Boolean(chinaCoverageResult?.error));
+      }
       checks[name] = entry;
       const bucket = STATUS_COUNTS[entry.status] ?? 'warn';
       counts[bucket]++;
@@ -1339,6 +1493,9 @@ export const __testing__ = {
   HEALTH_VERDICT_SNAPSHOT_TTL_SECONDS,
   HEALTH_VERDICT_REFRESH_LOCK_KEY,
   HEALTH_VERDICT_REFRESH_WAIT_MS,
+  CHINA_COVERAGE_SUMMARY_KEY,
+  projectChinaCoverageStatus,
+  composeChinaCoverageStatus,
   healthVerdictRedisKey,
   parseHealthVerdictSnapshot,
   // U7 (Tier 3 parity test): exposed for tests/mcp-bootstrap-parity.test.mjs
@@ -1348,4 +1505,5 @@ export const __testing__ = {
   STANDALONE_KEYS,
   SEED_META,
   EMPTY_DATA_OK_KEYS,
+  ZERO_RECORD_DATA_OK_KEYS,
 };
