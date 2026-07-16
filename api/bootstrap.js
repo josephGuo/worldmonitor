@@ -1,5 +1,9 @@
 import { waitUntil as vercelWaitUntil } from '@vercel/functions';
 
+import {
+  PUBLIC_BOOTSTRAP_TIERS,
+  isPublicTierBootstrapRequest,
+} from './_bootstrap-public-tier.js';
 import { getCorsHeaders, getPublicCorsHeaders, isDisallowedOrigin } from './_cors.js';
 import {
   USER_API_KEY_GATEWAY_VALIDATION_ERROR,
@@ -66,9 +70,9 @@ export function isPublicWeatherBootstrapRequest(req) {
   return requested.length === 1 && requested[0] === 'weatherAlerts';
 }
 
-const PUBLIC_BOOTSTRAP_TIERS = new Set(['fast', 'slow']);
 let nextBootstrapR2ShadowProbeIsCold = true;
 let scheduleBootstrapR2Shadow = vercelWaitUntil;
+let readBootstrapR2ShadowTier = readBootstrapTierObject;
 
 function shouldMeasureBootstrapR2Shadow(authKind, tier) {
   return process.env.BOOTSTRAP_R2_SHADOW_MEASURE === '1'
@@ -105,27 +109,25 @@ function finishBootstrapR2ShadowResponse(req, ctx, tier, response, redisDuration
 
   const executionCold = nextBootstrapR2ShadowProbeIsCold;
   nextBootstrapR2ShadowProbeIsCold = false;
-  const probe = readBootstrapTierObject(tier, {
+  const deliverProbeResult = (result) => deliverBootstrapR2Shadow({
+    r2Outcome: result.status === 'ok' ? 'r2' : 'fallback',
+    r2Reason: result.status === 'fallback' ? result.reason : null,
+    bootstrapTier: tier,
+    r2DurationMs: result.durationMs,
+    redisDurationMs,
+    executionRegion: deriveExecutionRegion(req) ?? process.env.VERCEL_REGION ?? 'unknown',
+    executionCold,
+    status: response.status,
+  });
+  const probe = readBootstrapR2ShadowTier(tier, {
     timeoutMs: BOOTSTRAP_R2_PROBE_CEILING_MS,
-  }).then((result) => deliverBootstrapR2Shadow({
-      r2Outcome: result.status === 'ok' ? 'r2' : 'fallback',
-      r2Reason: result.status === 'fallback' ? result.reason : null,
-      bootstrapTier: tier,
-      r2DurationMs: result.durationMs,
-      executionRegion: deriveExecutionRegion(req) ?? process.env.VERCEL_REGION ?? 'unknown',
-      executionCold,
-      status: response.status,
-    })).catch(() => {
+  }).then(deliverProbeResult).catch(() => {
     // readBootstrapTierObject is fail-soft by contract. Preserve that contract
     // if a future implementation accidentally throws before producing a result.
-    return deliverBootstrapR2Shadow({
-      r2Outcome: 'fallback',
-      r2Reason: 'unreadable',
-      bootstrapTier: tier,
-      r2DurationMs: 0,
-      executionRegion: deriveExecutionRegion(req) ?? process.env.VERCEL_REGION ?? 'unknown',
-      executionCold,
-      status: response.status,
+    return deliverProbeResult({
+      status: 'fallback',
+      reason: 'unreadable',
+      durationMs: 0,
     });
   });
   try {
@@ -152,22 +154,7 @@ function finishBootstrapR2ShadowResponse(req, ctx, tier, response, redisDuration
 // GET only: a HEAD here would still run the full registry Redis read to build a
 // body it must not return — the exact unshielded egress this path exists to
 // avoid. HEAD tier reads have no client and fall through to the no-store path.
-export function isPublicTierBootstrapRequest(req) {
-  if (req.method !== 'GET') return false;
-
-  const url = new URL(req.url);
-  const pathname = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, '') : url.pathname;
-  if (pathname !== '/api/bootstrap') return false;
-
-  const params = Array.from(url.searchParams.keys());
-  if (params.some((key) => key !== 'tier' && key !== 'public')) return false;
-
-  const tierParams = url.searchParams.getAll('tier');
-  const publicParams = url.searchParams.getAll('public');
-  if (tierParams.length !== 1 || publicParams.length !== 1 || publicParams[0] !== '1') return false;
-
-  return PUBLIC_BOOTSTRAP_TIERS.has(tierParams[0]);
-}
+export { isPublicTierBootstrapRequest } from './_bootstrap-public-tier.js';
 
 // The on-demand counterpart to the tier URL above: `?keys=<name>&public=1` for a
 // SINGLE on-demand key. Same reasoning — the payload is the shared production
@@ -483,8 +470,12 @@ export const __testing__ = {
   resetBootstrapR2ShadowForTests() {
     nextBootstrapR2ShadowProbeIsCold = true;
     scheduleBootstrapR2Shadow = vercelWaitUntil;
+    readBootstrapR2ShadowTier = readBootstrapTierObject;
   },
   setWaitUntilForTests(waitUntil) {
     scheduleBootstrapR2Shadow = waitUntil;
+  },
+  setBootstrapR2ShadowReaderForTests(reader) {
+    readBootstrapR2ShadowTier = reader;
   },
 };
