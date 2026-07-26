@@ -743,6 +743,29 @@ export function summarizeActivationExit(
   return { completion, verified, pending, failed, total };
 }
 
+/** Per-step outcome IDs, bucketed for the durable activation-outcome record (#5582). */
+export interface ActivationOutcomeBuckets {
+  /** Steps that ended verified -- confirmed in-flow or already-done. */
+  readonly confirmedSteps: readonly ActivationStepId[];
+  readonly skippedSteps: readonly ActivationStepId[];
+  readonly failedSteps: readonly ActivationStepId[];
+}
+
+/** Bucket step results by outcome for persistence, independent of the Umami exit event. */
+export function buildActivationOutcomeBuckets(
+  results: readonly ActivationStepResult[],
+): ActivationOutcomeBuckets {
+  const confirmedSteps: ActivationStepId[] = [];
+  const skippedSteps: ActivationStepId[] = [];
+  const failedSteps: ActivationStepId[] = [];
+  for (const r of results) {
+    if (r.outcome === 'confirmed' || r.outcome === 'done') confirmedSteps.push(r.id);
+    else if (r.outcome === 'skipped') skippedSteps.push(r.id);
+    else failedSteps.push(r.id);
+  }
+  return { confirmedSteps, skippedSteps, failedSteps };
+}
+
 /** Versioned localStorage key for the finish-setup chip dismissal. */
 export const FINISH_SETUP_CHIP_DISMISS_KEY = 'wm-pro-activation-chip-dismissed-v1';
 
@@ -870,6 +893,11 @@ export const ACTIVATION_EVENTS = {
   entered: 'pro-activation-entered',
   stepConfirmed: 'pro-activation-step-confirmed',
   stepSkipped: 'pro-activation-step-skipped',
+  // A step the platform refused unrecoverably (a denied notification
+  // permission). It resolves as `skipped` like a step blocked at mount, so
+  // without this event the denial cohort is indistinguishable from users who
+  // chose to skip — the funnel would read a browser block as disinterest.
+  stepBlocked: 'pro-activation-step-blocked',
   exit: 'pro-activation-exit',
 } as const;
 
