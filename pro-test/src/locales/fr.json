@@ -282,7 +282,7 @@
     "q3": "Pour qui est Enterprise ?",
     "a3": "Enterprise est pour les équipes qui ont besoin d'usage partagé, d'APIs, d'intégrations, d'options de déploiement et de support direct.",
     "q4": "Puis-je commencer avec Pro et monter plus tard ?",
-    "a4": "Oui. Pro est pour un usage personnel. Pro Business (69,99 $/mois) ajoute la licence commerciale, l'export de données, 25 tableaux de bord et 250 appels MCP/jour. Les plans API couvrent l'accès programmatique, et Enterprise couvre les déploiements personnalisés. Les mises à niveau se font via le portail de facturation — l'application vous guide à travers les étapes.",
+    "a4": "Oui. Pro est pour un usage personnel. Pro Business (49,99 $/mois) ajoute la licence commerciale, l'export de données, 25 tableaux de bord et 250 appels MCP/jour. Les plans API couvrent l'accès programmatique, et Enterprise couvre les déploiements personnalisés. Les mises à niveau se font via le portail de facturation — l'application vous guide à travers les étapes.",
     "q5": "Est-ce uniquement pour le monitoring de conflits ?",
     "a5": "Non. World Monitor est avant tout une plateforme de renseignement global couvrant marchés boursiers, macroéconomie, analyse géopolitique, énergie, infrastructure et plus. Le suivi de conflits est une capacité parmi d'autres — pas le focus.",
     "q6": "Pourquoi garder la plateforme de base gratuite ?",
@@ -665,7 +665,9 @@
       "q9": "Est-ce open source ?",
       "a9": "Oui — open source sous AGPL-3.0 sur GitHub : lisez le code, auto-hébergez-le, ou construisez dessus. Des applications de bureau natives pour Windows, macOS et Linux sont également disponibles, plus une application Android TV pour les affichages muraux.",
       "q10": "Pourquoi World Monitor n'est-il pas Palantir ?",
-      "a10": "Palantir rend opérationnelles les données propres d'une institution au sein de cette institution. World Monitor part de l'autre côté : il assemble, normalise, met en corrélation et surveille les données du domaine public, puis publie cette couche de renseignement via un tableau de bord gratuit et du code open-source. Missions différentes, produits différents."
+      "a10": "Palantir rend opérationnelles les données propres d'une institution au sein de cette institution. World Monitor part de l'autre côté : il assemble, normalise, met en corrélation et surveille les données du domaine public, puis publie cette couche de renseignement via un tableau de bord gratuit et du code open-source. Missions différentes, produits différents.",
+      "q11": "Which World Monitor license do I need?",
+      "a11": "Choose based on who will use the output. Pro's Personal license is for one person using World Monitor for their own research and decisions. Pro Business lets one licensed user use it for company or client work, internal tools, and reports. API Starter covers API use inside one organization, with no customer redistribution. API Business lets that organization embed World Monitor data in products and services for its customers. Enterprise covers custom seats, white-labeling, and deployments. These subscription licenses are separate from the AGPL/MIT source-code licenses. Full terms: worldmonitor.app/docs/terms."
     },
     "cta": {
       "title": "La carte du monde ne vous attend pas.",
