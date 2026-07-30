@@ -6,6 +6,8 @@ const https = require('node:https');
 const zlib = require('node:zlib');
 
 const DECODO_GATE_HOST = 'gate.decodo.com';
+// Decodo's curl endpoint differs from its CONNECT endpoint.
+const DECODO_CURL_HOST = 'us.decodo.com';
 const DECODO_STICKY_PORT_MIN = 10_001;
 const DECODO_STICKY_PORT_MAX = 49_999;
 
@@ -61,8 +63,12 @@ function parseProxyConfigForAttempt(raw, attempt = 0) {
   const config = parseProxyConfig(raw);
   if (!config) return null;
   const port = Number(config.port);
+  // Normalize for provider detection only: the host:port:user:pass form keeps
+  // whatever casing the operator typed, while the URL form is lowercased by the
+  // URL parser. config.host stays verbatim so the connection is unchanged.
+  const host = String(config.host || '').toLowerCase().replace(/\.$/u, '');
   if (
-    config.host !== DECODO_GATE_HOST
+    host !== DECODO_GATE_HOST
     || !Number.isInteger(port)
     || port < DECODO_STICKY_PORT_MIN
     || port > DECODO_STICKY_PORT_MAX
@@ -102,7 +108,16 @@ function resolveProxyConfigWithFallback() {
 function resolveProxyString(raw = process.env.PROXY_URL || '') {
   const cfg = parseProxyConfig(raw);
   if (!cfg) return '';
-  const host = cfg.host.replace(/^gate\./, 'us.');
+  // Exact provider match, not a `gate.` prefix rewrite. Two reasons:
+  //   - parseProxyConfig's host:port:user:pass branch returns parts[0] verbatim,
+  //     so an operator's casing reaches this compare unchanged; a case-sensitive
+  //     match silently skipped the rewrite and left a curl caller pointed at the
+  //     CONNECT endpoint.
+  //   - a prefix match rewrites ANY `gate.*` host, so an unrelated proxy would be
+  //     redirected to a Decodo endpoint with its credentials attached. Matching
+  //     the one host we actually mean keeps every other provider untouched.
+  const normalizedHost = String(cfg.host || '').toLowerCase().replace(/\.$/u, '');
+  const host = normalizedHost === DECODO_GATE_HOST ? DECODO_CURL_HOST : cfg.host;
   return cfg.auth ? `${cfg.auth}@${host}:${cfg.port}` : `${host}:${cfg.port}`;
 }
 
@@ -170,6 +185,11 @@ function proxyConnectTunnel(targetHostname, proxyConfig, { timeoutMs = 20_000, t
           return rejectOnce(
             Object.assign(new Error(`Proxy CONNECT: ${statusLine}`), {
               status: parseInt(statusLine.split(' ')[1], 10) || 0,
+              // Marks a gateway-layer rejection (auth, quota, policy) as opposed
+              // to a status the target origin returned through the tunnel. The
+              // two are indistinguishable once both collapse to HTTP_<status>,
+              // and only the origin case can be helped by a different exit.
+              proxyConnect: true,
             })
           );
         }
