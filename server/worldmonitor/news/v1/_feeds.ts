@@ -60,6 +60,16 @@ export const VARIANT_FEEDS: Record<string, Record<string, ServerFeed[]>> = {
       { name: 'Index.hr', url: 'https://www.index.hr/rss', lang: 'hr' },
       { name: 'Jutarnji list', url: 'https://www.jutarnji.hr/feed', lang: 'hr' },
       { name: 'Balkan Insight', url: 'https://balkaninsight.com/feed/' },
+      // Ukraine war frontline for EN digests (#5949). Names must match client
+      // DEFAULT_ENABLED_SOURCES.europe. No non-en `lang` tags — buildDigest
+      // filters `!f.lang || f.lang === lang`, so lang:pl/ru would never ship to EN.
+      { name: 'Kyiv Independent', url: gn('site:kyivindependent.com when:3d') },
+      // Google News returned HTTP 200 with no items for these site queries;
+      // use the outlets' live native RSS feeds for the EN digest path too.
+      { name: 'TVN24', url: 'https://tvn24.pl/swiat.xml' },
+      { name: 'Rzeczpospolita', url: 'https://www.rp.pl/rss_main' },
+      { name: 'Meduza', url: 'https://meduza.io/rss/en/all' },
+      { name: 'Moscow Times', url: 'https://www.themoscowtimes.com/rss/news' },
     ],
     middleeast: [
       { name: 'BBC Middle East', url: 'https://feeds.bbci.co.uk/news/world/middle_east/rss.xml' },
@@ -88,6 +98,13 @@ export const VARIANT_FEEDS: Record<string, Record<string, ServerFeed[]>> = {
       { name: 'Yahoo Finance', url: 'https://finance.yahoo.com/news/rssindex' },
       { name: 'Financial Times', url: 'https://www.ft.com/rss/home' },
       { name: 'Reuters Business', url: gn('site:reuters.com business markets when:1d') },
+    ],
+    // MCP digest-backed tools consume `full`, while the finance dashboard
+    // consumes `finance`. Keep this literal array aligned with the finance
+    // bucket below; the static per-variant feed-key guard requires literals.
+    commodities: [
+      { name: 'Oil & Gas', url: gn('(oil price OR OPEC OR "natural gas" OR pipeline OR LNG) when:2d') },
+      { name: 'Gold & Metals', url: gn('("gold price" OR "silver price" OR "precious metals" OR "copper price") when:2d') },
     ],
     gov: [
       // White House: two direct WordPress RSS feeds. Replaces

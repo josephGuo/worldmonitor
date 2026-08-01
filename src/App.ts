@@ -36,6 +36,7 @@ import { getAiFlowSettings, subscribeAiFlowChange, isHeadlineMemoryEnabled } fro
 import { startLearning } from '@/services/country-instability';
 import { loadFromStorage, parseMapUrlState, saveToStorage, isMobileDevice, showToast } from '@/utils';
 import { clearPanelSpans, invalidatePanelStorageCacheForKeys } from '@/utils/panel-storage';
+import { overlayHistory, type OverlayId } from '@/utils/overlay-history';
 import type { ParsedMapUrlState } from '@/utils';
 import { BreakingNewsBanner } from '@/components/BreakingNewsBanner';
 import { initBreakingNewsAlerts, destroyBreakingNewsAlerts } from '@/services/breaking-news-alerts';
@@ -82,8 +83,20 @@ import { preloadCountryGeometry, isCountryGeometryLoaded, getCountryNameByCode }
 import { initI18n, t, I18N_RESOURCES_LOADED_EVENT, type I18nResourcesLoadedDetail } from '@/services/i18n';
 import { initDeferredDashboardFonts } from '@/bootstrap/secondary-startup';
 
-import { computeDefaultDisabledSources, getLocaleBoostedSources, getTotalFeedCount, FEEDS, INTEL_SOURCES } from '@/config/feeds';
-import { selectSourcesUnderCap, findFullyDisabledCategories } from '@/services/source-cap';
+import {
+  computeDefaultDisabledSources,
+  computeLegacyDefaultDisabledSources,
+  FEEDS,
+  FRONTLINE_EUROPE_PROTECTED_SOURCES,
+  getLocaleBoostedSources,
+  getTotalFeedCount,
+  INTEL_SOURCES,
+} from '@/config/feeds';
+import {
+  computeCapDisabledSources,
+  findFullyDisabledCategories,
+  selectSourcesUnderCap,
+} from '@/services/source-cap';
 import {
   cancelBootstrapSlowTier,
   fetchBootstrapData,
@@ -116,6 +129,7 @@ import {
   onSignOut as cloudPrefsSignOut,
   type CloudPrefsAppliedDetail,
 } from '@/utils/cloud-prefs-sync';
+import { migrateFrontlineEuropeDefaultsV3 } from '@/utils/cloud-prefs-migrations';
 import {
   getConvexClient,
   getConvexApi,
@@ -911,6 +925,36 @@ export class App {
         const total = getTotalFeedCount();
         console.log(`[App] Sources reduction: ${defaultDisabled.length} disabled, ${total - defaultDisabled.length} enabled`);
       }
+      // #5949 — re-enable Ukraine/Poland frontline sources for profiles that
+      // still have the untouched pre-#5949 default disabled set. An exact-set
+      // guard is important here: a customized disabledFeeds set is user
+      // intent, and must not be rewritten by the startup migration.
+      const frontlineKey = 'worldmonitor-frontline-europe-enable-v1';
+      if (!localStorage.getItem(frontlineKey)) {
+        const frontline = new Set<string>(FRONTLINE_EUROPE_PROTECTED_SOURCES);
+        const legacyDefaultDisabled = new Set(computeLegacyDefaultDisabledSources());
+        const legacyCapDisabled = computeCapDisabledSources(
+          FEEDS,
+          INTEL_SOURCES,
+          new Set(computeDefaultDisabledSources()),
+          FREE_MAX_SOURCES,
+        );
+        const current = loadFromStorage<string[]>(STORAGE_KEYS.disabledFeeds, []);
+        const migrated = migrateFrontlineEuropeDefaultsV3(
+          { [STORAGE_KEYS.disabledFeeds]: JSON.stringify(current) },
+          legacyDefaultDisabled,
+          frontline,
+          legacyCapDisabled,
+        );
+        const updated = JSON.parse(migrated[STORAGE_KEYS.disabledFeeds] as string) as string[];
+        if (updated.length !== current.length) {
+          saveToStorage(STORAGE_KEYS.disabledFeeds, updated);
+          console.log(
+            `[App] Frontline Europe enable (#5949): re-enabled ${current.length - updated.length} source(s)`,
+          );
+        }
+        localStorage.setItem(frontlineKey, 'done');
+      }
       // Locale boost: additively enable locale-matched sources (runs once per locale).
       // Reads the explicit-choice key (`wm-locale-explicit`, written by Settings →
       // Language) before falling back to navigator. Mirrors the i18n.ts:99
@@ -1137,7 +1181,7 @@ export class App {
     this.searchManager?.updateFlightSource(adsb, military);
   }
 
-  private async openSearch(options: { toggle?: boolean; throwOnFailure?: boolean } = {}): Promise<void> {
+  private async openSearch(options: { toggle?: boolean; throwOnFailure?: boolean; replaceOverlayId?: OverlayId; historyPending?: boolean } = {}): Promise<void> {
     // Concurrency model: each press registers its intent, then claims a
     // monotonic epoch. After the lazy load resolves, only the latest epoch acts
     // — superseded presses bail. This yields one deterministic modal.open() for
@@ -1146,8 +1190,15 @@ export class App {
     // the XOR flip happens BEFORE the epoch claim so every rapid Cmd+K still
     // counts (odd → open, even → cancel), even the ones that get superseded.
     let epoch = this.openSearchEpoch;
+    const pendingId: OverlayId = 'search-pending';
+    const pendingGate = options.historyPending
+      ? overlayHistory.beginPending(pendingId, options.replaceOverlayId, () => {
+          this.searchToggleDesiredOpen = false;
+        })
+      : null;
     try {
       await this.waitForUiReady();
+      if (pendingGate && !pendingGate.isCurrent()) return;
 
       const existingModal = this.state.searchModal;
       if (options.toggle && existingModal?.isOpen()) {
@@ -1163,6 +1214,7 @@ export class App {
       epoch = ++this.openSearchEpoch;
       const manager = await this.ensureSearchManager();
       if (this.openSearchEpoch !== epoch) return;
+      if (pendingGate && !pendingGate.isCurrent()) return;
 
       const wantOpen = togglingBeforeLoad ? this.searchToggleDesiredOpen : true;
       if (!wantOpen) return;
@@ -1170,12 +1222,14 @@ export class App {
       manager.updateSearchIndex();
       const modal = this.state.searchModal;
       if (!modal) throw new Error('Search modal is not initialised');
-      modal.open();
+      modal.open(pendingGate ? pendingId : options.replaceOverlayId);
     } catch (error) {
-      if (!this.state.isDestroyed) {
+      const actionWasCancelled = pendingGate !== null && !pendingGate.isCurrent();
+      if (!this.state.isDestroyed && !actionWasCancelled) {
         console.warn('[search] Failed to load search manager:', error);
         if (!options.throwOnFailure) showToast('Search failed to load. Please try again.');
       }
+      pendingGate?.cancel();
       if (options.throwOnFailure) throw error;
     } finally {
       // Reset the toggle accumulator once the latest press settles.
@@ -1890,7 +1944,10 @@ export class App {
       let explicitLocale = '';
       try { explicitLocale = localStorage.getItem('wm-locale-explicit') || ''; } catch { /* private mode */ }
       const userLang = ((explicitLocale || navigator.language || 'en').split('-')[0] ?? 'en').toLowerCase();
-      const protectedNames = userLang === 'en' ? new Set<string>() : getLocaleBoostedSources(userLang);
+      const protectedNames = new Set<string>(FRONTLINE_EUROPE_PROTECTED_SOURCES);
+      if (userLang !== 'en') {
+        for (const name of getLocaleBoostedSources(userLang)) protectedNames.add(name);
+      }
       const { keep, autoDisabled } = selectSourcesUnderCap(FEEDS, INTEL_SOURCES, disabledSources, FREE_MAX_SOURCES, protectedNames);
       // Defense in depth: feeds.ts has 35+ source names that appear in
       // multiple category buckets. The helper guarantees keep ∩ autoDisabled
