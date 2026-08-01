@@ -166,11 +166,13 @@ const FULL_FEEDS: Record<string, Feed[]> = {
     { name: 'in.gr', url: rss('https://www.in.gr/feed/'), lang: 'el' },
     { name: 'iefimerida', url: rss('https://www.iefimerida.gr/rss.xml'), lang: 'el' },
     { name: 'Proto Thema', url: rss('https://news.google.com/rss/search?q=site:protothema.gr+when:2d&hl=el&gl=GR&ceid=GR:el'), lang: 'el' },
-    // Russia & Ukraine
-    // Independent / exile / UA outlets (Meduza, Novaya Gazeta Europe, Kyiv Independent,
-    // Moscow Times) are eligible for DEFAULT_ENABLED_SOURCES.europe.
-    // TASS / RT / RT Russia stay cataloged for opt-in only — state propaganda
-    // (SOURCE_PROPAGANDA_RISK high, stateAffiliated: Russia); never default-on.
+    // Russia & Ukraine — EN default balance rule (#5950):
+    // For DEFAULT_ENABLED_SOURCES.europe (EN full-variant path), keep at least:
+    //   ≥1 dedicated UA primary (today: Kyiv Independent)
+    //   ≥1 independent RU (today: Meduza and/or Moscow Times)
+    // Never default-enable TASS / RT / RT Russia (state propaganda; catalog opt-in only).
+    // Default EN path must not be “Western wires + RU state media only.”
+    // Independent / exile / UA outlets below are eligible for defaults; state media is not.
     { name: 'BBC Russian', url: rss('https://feeds.bbci.co.uk/russian/rss.xml'), lang: 'ru' },
     // Meduza: multi-URL so EN digests use the English RSS (no lang gate); RU UI keeps Russian.
     { name: 'Meduza', url: {
@@ -183,6 +185,12 @@ const FULL_FEEDS: Record<string, Feed[]> = {
     { name: 'RT Russia', url: rss('https://www.rt.com/rss/russia/') },
     // English-language (no lang tag) — always EN-digest-reachable
     { name: 'Kyiv Independent', url: rss('https://news.google.com/rss/search?q=site:kyivindependent.com+when:3d&hl=en-US&gl=US&ceid=US:en') },
+    // Ukraine depth pack (#5951) — local institutional + independent sources
+    { name: 'Ukrinform', url: rss('https://news.google.com/rss/search?q=site:ukrinform.net+when:3d&hl=en-US&gl=US&ceid=US:en') },
+    { name: 'Suspilne', url: rss('https://news.google.com/rss/search?q=site:suspilne.media+when:2d&hl=en-US&gl=US&ceid=US:en') },
+    { name: 'Ukrainska Pravda EN', url: rss('https://news.google.com/rss/search?q=site:euromaidanpress.com+when:2d&hl=en-US&gl=US&ceid=US:en') },
+    { name: 'NV EN', url: rss('https://news.google.com/rss/search?q=site:english.nv.ua+when:2d&hl=en-US&gl=US&ceid=US:en') },
+    { name: 'Hromadske EN', url: rss('https://news.google.com/rss/search?q=site:hromadske.ua+when:3d&hl=en-US&gl=US&ceid=US:en') },
     { name: 'Moscow Times', url: rss('https://www.themoscowtimes.com/rss/news') },
   ],
   middleeast: [
@@ -265,6 +273,8 @@ const FULL_FEEDS: Record<string, Feed[]> = {
     { name: 'FPRI', url: rss('https://www.fpri.org/feed/') },
     // Jamestown Foundation - Eurasia/China/Terrorism analysis
     { name: 'Jamestown', url: rss('https://jamestown.org/feed/') },
+    // ISW — Institute for the Study of War, daily Ukraine frontline operational assessments
+    { name: 'ISW', url: rss('https://news.google.com/rss/search?q=site:understandingwar.org+when:2d&hl=en-US&gl=US&ceid=US:en') },
   ],
   crisis: [
     { name: 'CrisisWatch', url: rss('https://www.crisisgroup.org/rss') },
@@ -1034,25 +1044,37 @@ export function getFeedProvenanceState(sourceName: string): SourceProvenanceStat
   return getSourceProvenanceState(sourceName);
 }
 
-// Default-enabled sources per panel (Tier 1+2 priority, ≥8 per panel)
+/**
+ * Ukraine-war frontline + UA/RU balance sources that free-tier source-cap
+ * must not strip (#5949, #5950). Passed to `selectSourcesUnderCap` as
+ * `protectedNames` so round-robin late-in-bucket ordering cannot drop the
+ * dedicated UA primary / independent RU / PL frontline set for free EN users.
+ * Keep in sync with DEFAULT_ENABLED_SOURCES.europe frontline additions and
+ * the one-shot migration in App.ts (`worldmonitor-frontline-europe-enable-v1`).
+ */
 export const FRONTLINE_EUROPE_PROTECTED_SOURCES = [
   'Kyiv Independent',
   'TVN24',
   'Rzeczpospolita',
   'Meduza',
   'Moscow Times',
+  'Ukrainska Pravda EN',
+  'NV EN',
 ] as const;
 
 export const DEFAULT_ENABLED_SOURCES: Record<string, string[]> = {
   politics: ['BBC World', 'Guardian World', 'AP News', 'Reuters World', 'CNN World'],
   us: ['Reuters US', 'NPR News', 'PBS NewsHour', 'ABC News', 'CBS News', 'NBC News', 'Wall Street Journal', 'Politico', 'The Hill'],
-  // Europe defaults include Ukraine war frontline coverage for EN users (#5949):
-  // Kyiv Independent (UA), TVN24 + Rzeczpospolita (PL — not all three PL to limit noise),
-  // Meduza + Moscow Times (independent RU). TASS/RT stay off (state propaganda).
+  // Europe defaults — Ukraine war frontline (#5949) + UA/RU balance rule (#5950):
+  // ≥1 dedicated UA primary (Kyiv Independent) + ≥1 independent RU (Meduza, Moscow Times).
+  // PL frontline: TVN24 + Rzeczpospolita (not all three PL; noise control).
+  // TASS/RT never default-on. Extra UA outlets deferred to #5951.
   // HU/EL locale packs remain locale-boosted only, not EN default-on.
   europe: [
     'France 24', 'EuroNews', 'Le Monde', 'DW News', 'Tagesschau', 'ANSA', 'NOS Nieuws', 'SVT Nyheter', 'Balkan Insight',
     ...FRONTLINE_EUROPE_PROTECTED_SOURCES,
+    'Ukrainska Pravda EN',
+    'NV EN',
   ],
 
   middleeast: ['BBC Middle East', 'Al Jazeera', 'Al Arabiya', 'Guardian ME', 'BBC Persian', 'Iran International', 'IRNA', 'Mehr News', 'Haaretz', 'Jerusalem Post', 'Ynetnews', 'Asharq News', 'The National'],
@@ -1064,7 +1086,7 @@ export const DEFAULT_ENABLED_SOURCES: Record<string, string[]> = {
   finance: ['CNBC', 'MarketWatch', 'Yahoo Finance', 'Financial Times', 'Reuters Business'],
   gov: ['White House', 'State Dept', 'Pentagon', 'UN News', 'CISA', 'Treasury', 'DOJ', 'CDC'],
   layoffs: ['Layoffs.fyi', 'TechCrunch Layoffs', 'Layoffs News'],
-  thinktanks: ['Foreign Policy', 'Atlantic Council', 'Foreign Affairs', 'CSIS', 'RAND', 'Brookings', 'Carnegie', 'War on the Rocks'],
+  thinktanks: ['Foreign Policy', 'Atlantic Council', 'Foreign Affairs', 'CSIS', 'RAND', 'Brookings', 'Carnegie', 'War on the Rocks', 'ISW'],
   crisis: ['CrisisWatch', 'IAEA', 'WHO', 'UNHCR'],
   energy: ['Oil & Gas', 'Nuclear Energy', 'Reuters Energy', 'Mining & Resources'],
 };
