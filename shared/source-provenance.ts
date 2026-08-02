@@ -57,6 +57,16 @@ export const SOURCE_TYPES: Record<string, SourceType> = {
   // Croatian (HR)
   'N1 Croatia': 'mainstream', 'Index.hr': 'mainstream', 'Jutarnji list': 'mainstream',
   'Balkan Insight': 'intel',
+  // Romanian (RO) — Eastern flank (#5952)
+  'Digi24': 'mainstream', 'HotNews': 'mainstream', 'G4Media': 'mainstream',
+  // Bulgarian (BG) — Black Sea flank (#5952)
+  'Dnevnik': 'mainstream',
+  // Baltic states — Eastern flank (#5952)
+  'ERR News': 'mainstream', 'LRT English': 'mainstream', 'LSM English': 'mainstream',
+  // Turkey EN path (#5952)
+  'Daily Sabah': 'mainstream',
+  // Czech (CS) — V4 balance (#5952)
+  'Seznam Zprávy': 'mainstream',
   // Hindi (HI)
   'BBC Hindi': 'mainstream', 'Aaj Tak': 'mainstream', 'NDTV India': 'mainstream', 'Amar Ujala': 'mainstream',
   // Hungarian (HU)
@@ -109,6 +119,18 @@ export const SOURCE_TYPES: Record<string, SourceType> = {
   'This Week in Startups': 'tech', 'The Twenty Minute VC': 'tech',
   'Hard Fork (NYT)': 'tech', 'Pivot (Vox)': 'tech', 'Stratechery': 'tech',
   'Benedict Evans': 'tech', 'How I Built This': 'tech', 'Masters of Scale': 'tech',
+// Periphery packs (#5953) — Caucasus
+  'Civil.ge': 'mainstream', 'OC Media': 'mainstream', 'JAMnews': 'mainstream',
+  'Azertag': 'wire', 'Armenpress': 'wire',
+  // Periphery packs (#5953) — Belarus / Moldova
+  'Zerkalo': 'mainstream', 'NewsMaker': 'mainstream', 'Ziarul de Gardă': 'mainstream',
+  // Periphery packs (#5953) — Central Asia
+  'Eurasianet': 'mainstream', 'RFE/RL Central Asia': 'mainstream',
+  'The Astana Times': 'mainstream', 'The Times of Central Asia': 'mainstream',
+  // Indo-Pacific feeds (#5954)
+  'Focus Taiwan': 'wire', 'Taipei Times': 'mainstream', 'Taiwan News': 'mainstream',
+  'Dawn': 'mainstream', 'Geo News': 'mainstream',
+  'Jakarta Post': 'mainstream', 'Rappler': 'mainstream', 'The Star (Malaysia)': 'mainstream', 'Irrawaddy': 'mainstream',
 };
 
 export function getSourceType(sourceName: string): SourceType {
@@ -249,6 +271,15 @@ export const SOURCE_PROPAGANDA_RISK: Record<string, SourceRiskProfile> = {
   // Low risk - Independent with editorial standards (explicit)
   'Jerusalem Post': { risk: 'low', knownBiases: ['Israeli centre-right'], note: 'English-language Israeli daily of record' },
   'Ynetnews': { risk: 'low', knownBiases: ['Israeli mainstream'], note: 'Yedioth Ahronoth English edition' },
+  'Digi24': { risk: 'low', note: 'Romanian independent news channel, member of ERNO' },
+  'HotNews': { risk: 'low', note: 'Romanian independent online news portal' },
+  'G4Media': { risk: 'low', note: 'Romanian independent investigative outlet' },
+  'Dnevnik': { risk: 'low', note: 'Bulgarian independent daily newspaper' },
+  'ERR News': { risk: 'low', note: 'Estonian Public Broadcasting English service' },
+  'LRT English': { risk: 'low', note: 'Lithuanian Public Broadcasting English service' },
+  'LSM English': { risk: 'low', note: 'Latvian Public Broadcasting English service' },
+  'Daily Sabah': { risk: 'medium', stateAffiliated: 'Turkey', note: 'Turkish pro-government daily, English edition' },
+  'Seznam Zprávy': { risk: 'low', note: 'Czech independent online news outlet' },
   'Reuters': { risk: 'low', note: 'Wire service, strict editorial standards' },
   'AP News': { risk: 'low', note: 'Wire service, nonprofit cooperative' },
   'AFP': { risk: 'low', note: 'Wire service, editorially independent' },
@@ -258,6 +289,21 @@ export const SOURCE_PROPAGANDA_RISK: Record<string, SourceRiskProfile> = {
   'Financial Times': { risk: 'low', note: 'Business focus, Nikkei-owned' },
   'Bellingcat': { risk: 'low', note: 'Open-source investigations, methodology transparent' },
   'Brasil Paralelo': { risk: 'low', note: 'Independent media company: no political ties, no public funding, 100% subscriber-funded.' },
+  // Periphery packs (#5953) — Caucasus
+  'Civil.ge': { risk: 'low', note: 'Independent Georgian English-language news outlet' },
+  'OC Media': { risk: 'low', note: 'Independent South Caucasus regional news outlet' },
+  'JAMnews': { risk: 'medium', note: 'Regional Caucasus news platform, limited editorial transparency' },
+  'Azertag': { risk: 'high', stateAffiliated: 'Azerbaijan', note: 'Azerbaijani state news agency (AZERTAC)' },
+  'Armenpress': { risk: 'high', stateAffiliated: 'Armenia', note: 'Armenian state news agency' },
+  // Periphery packs (#5953) — Belarus / Moldova
+  'Zerkalo': { risk: 'low', note: 'Independent Belarusian exile news outlet (formerly TUT.BY)' },
+  'NewsMaker': { risk: 'medium', note: 'Moldovan independent news outlet, English/Romanian' },
+  'Ziarul de Gardă': { risk: 'medium', note: 'Moldovan investigative journalism outlet, Romanian-language' },
+  // Periphery packs (#5953) — Central Asia
+  'Eurasianet': { risk: 'medium', note: 'Nonprofit regional news covering Eurasia, Carnegie-funded' },
+  'RFE/RL Central Asia': { risk: 'medium', stateAffiliated: 'USA', note: 'US government-funded Central Asia desk (Radio Free Europe)' },
+  'The Astana Times': { risk: 'medium', stateAffiliated: 'Kazakhstan', note: 'Kazakhstan government-funded English-language news' },
+  'The Times of Central Asia': { risk: 'medium', note: 'Independent English-language Central Asia news outlet' },
 };
 
 export function getSourcePropagandaRisk(sourceName: string): SourceRiskProfile {

@@ -786,6 +786,7 @@ const {
   isRetryableIdentityFailure,
   isAlertWorthyCollectorFailure,
   getCollectorHealthForTesting,
+  _setCollectorHealthReporterForTesting,
 } = await import('../src/services/analytics-collector-transport.ts');
 
 /**
@@ -833,9 +834,22 @@ describe('bot-filtered collector writes (#5964 alert-noise regression)', () => {
     assert.equal(isAlertWorthyCollectorFailure(bot, { writes: 500, failures: 500 }), false);
   });
 
-  it('still alerts on an unexplained receiptless 200', () => {
+  it('gates an unexplained receiptless 200 behind the aggregate floors', () => {
+    // 2026-08-01 (WORLDMONITOR-Y3): receiptless-200 reports arrived at ~16/hour
+    // from diverse real browsers while the Umami DB was ingesting 15-23k
+    // events/hour and every probe shape returned a full receipt. From inside
+    // one page, privacy middleware faking a 200 — or a body that cannot be
+    // read — is indistinguishable from a discarding collector: the same
+    // epistemics as a blocked request, so it gets the same aggregate gate.
     const plain = { kind: 'missing-receipt' as const, status: 200 };
-    assert.equal(isAlertWorthyCollectorFailure(plain, { writes: 1, failures: 1 }), true);
+    assert.equal(isAlertWorthyCollectorFailure(plain, { writes: 1, failures: 1 }), false);
+    assert.equal(isAlertWorthyCollectorFailure(plain, { writes: 100, failures: 20 }), false);
+    assert.equal(isAlertWorthyCollectorFailure(plain, { writes: 5, failures: 5 }), true);
+    assert.equal(
+      isAlertWorthyCollectorFailure(plain, { writes: 5, failures: 5, noiseReported: true }),
+      false,
+      'shares the once-per-window cap with the other environment kinds',
+    );
   });
 });
 
@@ -892,13 +906,13 @@ describe('collector alert policy suppresses expected background conditions', () 
     );
   });
 
-  it('stays silent for the known umami#4183 session_data race', () => {
+  it('reports the known umami#4183 session_data race until the server is upgraded', () => {
     assert.equal(
       isAlertWorthyCollectorFailure(
         { kind: 'http', status: 500, prismaCode: 'P2002', constraint: 'session_data_pkey' },
         { writes: 1, failures: 1 },
       ),
-      false,
+      true,
     );
   });
 });
@@ -912,10 +926,73 @@ describe('collector alert policy is wired into the reporting path', () => {
     delete (globalThis.window as WinWithUmami).umami;
   });
 
+  it('sends low-volume environment failures to the cross-user aggregate', async () => {
+    const reports: unknown[] = [];
+    _setCollectorHealthReporterForTesting(async (report) => {
+      reports.push(report);
+      return true;
+    });
+    window.fetch = (() => Promise.resolve(collectorResponse(true, 200, '{}'))) as typeof window.fetch;
+    stubFailingUmami();
+
+    for (let i = 0; i < 4; i += 1) {
+      track('panel-open' as Parameters<typeof track>[0], { i });
+      await drainPromiseHandlers();
+    }
+
+    assert.equal(reports.length, 4, 'every environment failure contributes its delta before the local floor');
+    assert.deepEqual(reports[0], {
+      cohort: 'event',
+      writes: 1,
+      failures: 1,
+      failureKind: 'missing-receipt',
+    });
+    assert.equal(
+      getCollectorHealthForTesting().noiseReported,
+      false,
+      'an accepted aggregate report does not duplicate the server-side Sentry event locally',
+    );
+  });
+
+  it('keeps critical-event health separate from successful ordinary writes', async () => {
+    const reports: unknown[] = [];
+    _setCollectorHealthReporterForTesting(async (report) => {
+      reports.push(report);
+      return true;
+    });
+    let calls = 0;
+    window.fetch = (() => {
+      calls += 1;
+      return Promise.resolve(calls <= 10 ? collectorResponse(true, 200) : collectorResponse(true, 200, '{}'));
+    }) as typeof window.fetch;
+    (globalThis.window as WinWithUmami).umami = {
+      track: (event: unknown, data?: unknown) => nativeTrackerBeacon('event', {
+        ...(data as Record<string, unknown> | undefined),
+        name: event as string,
+      }),
+      identify: (data: unknown) => nativeTrackerBeacon('identify', data as Record<string, unknown>),
+    };
+
+    for (let i = 0; i < 10; i += 1) {
+      track('panel-open' as Parameters<typeof track>[0], { i });
+      await drainPromiseHandlers();
+    }
+    track('checkout-success');
+    await drainPromiseHandlers();
+
+    assert.deepEqual(reports.at(-1), {
+      cohort: 'critical-event',
+      writes: 1,
+      failures: 1,
+      failureKind: 'missing-receipt',
+    });
+  });
+
   it('flips the once-per-window latch only after the sample floor is crossed', async () => {
     // Drives REAL writes through the gate so this proves recordCollectorOutcome
     // consults the predicate — a policy unit test alone would pass even if the
     // reporting path ignored it entirely.
+    _setCollectorHealthReporterForTesting(async () => false);
     window.fetch = (() => Promise.reject(new TypeError('Failed to fetch'))) as typeof window.fetch;
     stubFailingUmami();
 
@@ -936,11 +1013,13 @@ describe('collector alert policy is wired into the reporting path', () => {
 
     await fire(1);
     assert.equal(getCollectorHealthForTesting().noiseReported, true, 'the fifth crosses the floor');
+    assert.equal(getCollectorHealthForTesting().reportedFailureSignatures, 1, 'the window emits one event per signature');
 
     await fire(10);
     const after = getCollectorHealthForTesting();
     assert.equal(after.writes, 15, 'writes keep accruing');
     assert.equal(after.noiseReported, true, 'the latch stays set — no second event this window');
+    assert.equal(after.reportedFailureSignatures, 1, 'repeated failures stay latched');
   });
 });
 
@@ -963,6 +1042,15 @@ describe('collector alert policy still fires when the collector is dead', () => 
 
   it('alerts on a sustained total network failure once the floor is crossed', () => {
     assert.equal(isAlertWorthyCollectorFailure({ kind: 'network' }, { writes: 5, failures: 5 }), true);
+  });
+
+  it('alerts on a collector that discards every write once the floor is crossed', () => {
+    // The other way an outage can look green: Umami up and answering 200 but
+    // storing nothing (a deleted website row, an isbot update swallowing real
+    // browsers). Each affected page crosses the floor and reports once per
+    // window, so the cross-user step change stays visible in the aggregate.
+    const plain = { kind: 'missing-receipt' as const, status: 200 };
+    assert.equal(isAlertWorthyCollectorFailure(plain, { writes: 10, failures: 10 }), true);
   });
 
   it('cannot be muted by a non-2xx body that mimics the bot sentinel', async () => {
