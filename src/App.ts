@@ -92,6 +92,7 @@ import {
   FREE_CAP_PROTECTED_SOURCES,
   FRONTLINE_EUROPE_PROTECTED_SOURCES,
   getLocaleBoostedSources,
+  getStrategicDefaultSources,
   getTotalFeedCount,
   INTEL_SOURCES,
 } from '@/config/feeds';
@@ -100,6 +101,10 @@ import {
   findFullyDisabledCategories,
   selectSourcesUnderCap,
 } from '@/services/source-cap';
+import {
+  buildPreStrategicDefaultDisabledStates,
+  buildRegionalFeedRolloutMigrationTargets,
+} from '@/services/regional-feed-rollout';
 import {
   cancelBootstrapSlowTier,
   fetchBootstrapData,
@@ -139,7 +144,11 @@ import {
   onSignOut as cloudPrefsSignOut,
   type CloudPrefsAppliedDetail,
 } from '@/utils/cloud-prefs-sync';
-import { migrateFrontlineEuropeDefaultsV3 } from '@/utils/cloud-prefs-migrations';
+import {
+  migrateFrontlineEuropeDefaultsV3,
+  migrateStrategicDefaultsV4,
+  migrateRegionalFeedRolloutDefaultsV5,
+} from '@/utils/cloud-prefs-migrations';
 import {
   getConvexClient,
   getConvexApi,
@@ -277,6 +286,7 @@ export class App {
     if (keys.length === 0) return;
 
     const keySet = new Set(keys);
+    let freeTierLimitsInvoked = false;
     invalidatePanelStorageCacheForKeys(keys);
 
     if (keySet.has(STORAGE_KEYS.panels)) {
@@ -298,6 +308,7 @@ export class App {
       // then just re-renders the snapshot, which is all this handler did
       // before reconciliation moved here.
       const reconciledPanelSettings = this.enforceFreeTierLimits(cloudSyncVersion);
+      freeTierLimitsInvoked = true;
       if (!reconciledPanelSettings) {
         this.panelLayout.applyPanelSettings();
         this.state.unifiedSettings?.refreshPanelToggles();
@@ -330,6 +341,10 @@ export class App {
     }
 
     if (keySet.has(STORAGE_KEYS.disabledFeeds)) {
+      // A cloud generation can contain only source preferences. Re-run the
+      // cap even when no panel snapshot arrived, then reload storage because
+      // enforcement may have persisted additional auto-disabled sources.
+      if (!freeTierLimitsInvoked) this.enforceFreeTierLimits(cloudSyncVersion);
       this.state.disabledSources = new Set(loadFromStorage<string[]>(STORAGE_KEYS.disabledFeeds, []));
     }
 
@@ -955,6 +970,9 @@ export class App {
         const total = getTotalFeedCount();
         console.log(`[App] Sources reduction: ${defaultDisabled.length} disabled, ${total - defaultDisabled.length} enabled`);
       }
+      let explicitLocale = '';
+      try { explicitLocale = localStorage.getItem('wm-locale-explicit') || ''; } catch { /* private mode */ }
+      const userLang = ((explicitLocale || navigator.language || 'en').split('-')[0] ?? 'en').toLowerCase();
       // #5949 — re-enable Ukraine/Poland frontline sources for profiles that
       // still have the untouched pre-#5949 default disabled set. An exact-set
       // guard is important here: a customized disabledFeeds set is user
@@ -985,6 +1003,46 @@ export class App {
         }
         localStorage.setItem(frontlineKey, 'done');
       }
+      // #6000 — re-enable strategic defaults for profiles created before the
+      // flag became part of the canonical default set. An exact-set guard is
+      // required: a customized disabledFeeds set is user intent and must not
+      // be rewritten by a startup migration.
+      const strategicKey = 'worldmonitor-strategic-defaults-enable-v1';
+      if (!localStorage.getItem(strategicKey)) {
+        const current = loadFromStorage<string[]>(STORAGE_KEYS.disabledFeeds, []);
+        const migrated = migrateStrategicDefaultsV4(
+          { [STORAGE_KEYS.disabledFeeds]: JSON.stringify(current) },
+          new Set(),
+          getStrategicDefaultSources(),
+          new Set(),
+          buildPreStrategicDefaultDisabledStates(FREE_MAX_SOURCES, userLang),
+        );
+        const updated = JSON.parse(migrated[STORAGE_KEYS.disabledFeeds] as string) as string[];
+        if (updated.length !== current.length) {
+          saveToStorage(STORAGE_KEYS.disabledFeeds, updated);
+          console.log(
+            `[App] Strategic defaults enable (#6000): re-enabled ${current.length - updated.length} source(s)`,
+          );
+        }
+        localStorage.setItem(strategicKey, 'done');
+      }
+      // #5975/#5976/#5977/#5980 — reconcile the regional feed wave for
+      // returning denylist profiles. Exact historical default/cap states are
+      // the only eligible inputs; any source customization skips the migration.
+      const regionalRolloutKey = 'worldmonitor-regional-feed-rollout-reconcile-v1';
+      if (!localStorage.getItem(regionalRolloutKey)) {
+        const current = loadFromStorage<string[]>(STORAGE_KEYS.disabledFeeds, []);
+        const migrated = migrateRegionalFeedRolloutDefaultsV5(
+          { [STORAGE_KEYS.disabledFeeds]: JSON.stringify(current) },
+          buildRegionalFeedRolloutMigrationTargets(FREE_MAX_SOURCES, userLang),
+        );
+        const updated = JSON.parse(migrated[STORAGE_KEYS.disabledFeeds] as string) as string[];
+        if (JSON.stringify(updated) !== JSON.stringify(current)) {
+          saveToStorage(STORAGE_KEYS.disabledFeeds, updated);
+          console.log('[App] Regional feed rollout: restored declared defaults and opt-in boundaries for an untouched profile');
+        }
+        localStorage.setItem(regionalRolloutKey, 'done');
+      }
       // Locale boost: additively enable locale-matched sources (runs once per locale).
       // Reads the explicit-choice key (`wm-locale-explicit`, written by Settings →
       // Language) before falling back to navigator. Mirrors the i18n.ts:99
@@ -995,9 +1053,6 @@ export class App {
       // for any subsequent locale choice). Direct localStorage read because
       // i18next isn't initialized yet here in the constructor — `initI18n()` is
       // called later inside `init()`.
-      let explicitLocale = '';
-      try { explicitLocale = localStorage.getItem('wm-locale-explicit') || ''; } catch { /* private mode */ }
-      const userLang = ((explicitLocale || navigator.language || 'en').split('-')[0] ?? 'en').toLowerCase();
       const localeKey = `worldmonitor-locale-boost-${userLang}`;
       if (userLang !== 'en' && !localStorage.getItem(localeKey)) {
         const boosted = getLocaleBoostedSources(userLang);
@@ -1325,14 +1380,29 @@ export class App {
       engine.registerAdapter(disasterAdapter);
       this.state.correlationEngine = engine;
 
-      await engine.run(this.state);
-      if (this.state.isDestroyed) return;
-      for (const domain of ['military', 'escalation', 'economic', 'disaster'] as const) {
-        const panel = this.state.panels[`${domain}-correlation`] as CorrelationPanel | undefined;
-        panel?.updateCards(engine.getCards(domain));
-      }
+      await this.runCorrelationEngine();
     } catch (error) {
       console.warn('[CorrelationEngine] Initial lazy load/run failed:', error);
+    }
+  }
+
+  private async runCorrelationEngine(): Promise<void> {
+    const engine = this.state.correlationEngine;
+    if (!engine || this.state.isDestroyed) return;
+
+    const { fetchCorrelationRuntimeMode } = await import('@/services/correlation-runtime-mode');
+    const runtimeMode = await fetchCorrelationRuntimeMode();
+    if (this.state.isDestroyed) return;
+
+    // run() reports false when it skipped because a run was already in flight.
+    // Not reachable today (run() never yields), but this diff put two awaits in
+    // front of it, so honour the contract rather than publishing getCards() —
+    // which on a first-run overlap would write empty cards into live panels.
+    const didRun = await engine.run(this.state, runtimeMode);
+    if (!didRun || this.state.isDestroyed) return;
+    for (const domain of ['military', 'escalation', 'economic', 'disaster'] as const) {
+      const panel = this.state.panels[`${domain}-correlation`] as CorrelationPanel | undefined;
+      panel?.updateCards(engine.getCards(domain));
     }
   }
 
@@ -1396,7 +1466,7 @@ export class App {
     const ogLocaleMap: Record<string, string> = {
       en: 'en_US', bg: 'bg_BG', cs: 'cs_CZ', fr: 'fr_FR', de: 'de_DE', el: 'el_GR',
       es: 'es_ES', hr: 'hr_HR', hu: 'hu_HU', it: 'it_IT', pl: 'pl_PL', pt: 'pt_BR',
-      nl: 'nl_NL', sv: 'sv_SE', ru: 'ru_RU', ar: 'ar_SA', fa: 'fa_IR', zh: 'zh_CN',
+      nl: 'nl_NL', sv: 'sv_SE', ru: 'ru_RU', uk: 'uk_UA', ar: 'ar_SA', fa: 'fa_IR', zh: 'zh_CN',
       ja: 'ja_JP', ko: 'ko_KR', ro: 'ro_RO', tr: 'tr_TR', th: 'th_TH', vi: 'vi_VN',
       hi: 'hi_IN',
     };
@@ -2023,12 +2093,12 @@ export class App {
       return this.restoreProGatedCustomWidgets(cloudSyncVersion);
     }
 
-    // Pro/free is NOT knowable yet on a normal page load. initAuthState()
+    // Pro/free is NOT knowable yet on an auth-enabled page load. initAuthState()
     // deliberately does not await Clerk (2.98 MB, loaded on requestIdleCallback
     // with a 4 s timeout) and the Convex entitlement snapshot lands later
-    // still, so getAuthState() is `{ user: null, isPending: true }` here on
-    // every boot — a signed-in Pro user is indistinguishable from an anonymous
-    // one at this point.
+    // still, so getAuthState() is `{ user: null, isPending: true }` here — a
+    // signed-in Pro user is indistinguishable from an anonymous one at this
+    // point. Builds without Clerk settle anonymous synchronously instead.
     //
     // That matters because the clamp below is a PERSISTED write and
     // enforceFreePanelLimit disables every cw-* custom widget on the free
@@ -2041,9 +2111,9 @@ export class App {
     //
     // Deferring is free: firePremiumLoaders() re-runs this on the Clerk auth
     // event and on every Convex entitlement snapshot. The fallback timer
-    // covers the one case where neither ever arrives — Clerk's script fails
-    // to load or VITE_CLERK_PUBLISHABLE_KEY is unset, where isPending stays
-    // true forever and the free-tier caps would otherwise never be enforced.
+    // covers the one case where neither ever arrives — a configured Clerk
+    // script fails to load and isPending stays true, so the free-tier caps
+    // would otherwise never be enforced.
     //
     // The same blindness recurs after Clerk settles: the auth callback runs
     // firePremiumLoaders() before initEntitlementSubscription() rebinds, so
@@ -2138,11 +2208,14 @@ export class App {
       let explicitLocale = '';
       try { explicitLocale = localStorage.getItem('wm-locale-explicit') || ''; } catch { /* private mode */ }
       const userLang = ((explicitLocale || navigator.language || 'en').split('-')[0] ?? 'en').toLowerCase();
-      // Locale-boosted sources (non-en) + editorially protected EN defaults.
+      // Strategic defaults + locale-boosted sources (non-en) + editorially
+      // protected EN defaults. User-disabled names remain excluded by the cap
+      // helper, so strategic protection does not override explicit intent.
       // Without frontline protection, free EN users lose Kyiv Independent / Meduza /
       // Moscow Times to round-robin late-in-europe-bucket ordering; without the
       // Eastern-flank additions, Daily Sabah / ERR News are also stripped (#5952).
       const protectedNames = new Set<string>(FREE_CAP_PROTECTED_SOURCES);
+      for (const name of getStrategicDefaultSources()) protectedNames.add(name);
       if (userLang !== 'en') {
         for (const name of getLocaleBoostedSources(userLang)) protectedNames.add(name);
       }
@@ -2156,6 +2229,7 @@ export class App {
         if (!keep.has(name)) disabledSources.add(name);
       }
       saveToStorage(STORAGE_KEYS.disabledFeeds, Array.from(disabledSources));
+      this.state.disabledSources = new Set(disabledSources);
       console.log(`[App] Free tier: round-robin disabled ${autoDisabled.size} source(s) to enforce ${FREE_MAX_SOURCES}-source limit (per-category fairness)`);
     }
     return panelsChanged;
@@ -2752,13 +2826,7 @@ export class App {
     this.refreshScheduler.scheduleRefresh(
       'correlation-engine',
       async () => {
-        const engine = this.state.correlationEngine;
-        if (!engine) return;
-        await engine.run(this.state);
-        for (const domain of ['military', 'escalation', 'economic', 'disaster'] as const) {
-          const panel = this.state.panels[`${domain}-correlation`] as CorrelationPanel | undefined;
-          panel?.updateCards(engine.getCards(domain));
-        }
+        await this.runCorrelationEngine();
       },
       REFRESH_INTERVALS.correlationEngine,
       () => this.shouldRefreshCorrelation(),
