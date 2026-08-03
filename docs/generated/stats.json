@@ -16,7 +16,7 @@
     "energy": 18
   },
   "variantCount": 6,
-  "componentTopLevelTsFiles": 180,
+  "componentTopLevelTsFiles": 181,
   "serviceTopLevelEntries": 221,
   "apiEndpointEntries": 91,
   "panelClasses": 107,
@@ -85,7 +85,7 @@
   "workflowCount": 26,
   "freshnessSources": 35,
   "freshnessRequiredForRisk": 2,
-  "feedDefinitions": 620,
+  "feedDefinitions": 628,
   "airportCount": 115,
   "stockExchangeCount": 29,
   "centralBankInstitutionCount": 14,
