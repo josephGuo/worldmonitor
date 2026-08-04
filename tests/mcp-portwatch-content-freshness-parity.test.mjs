@@ -2,7 +2,7 @@
 // the same seed-meta key.
 //
 // #6060 gave health a per-entity content dimension for PortWatch: a 174/174
-// run whose decision-critical country (CN/HK) content is past a 72h budget is
+// run whose decision-critical country (CN/HK) content is past a 144h budget is
 // STALE_CONTENT, not OK. The MCP envelope over that same key kept answering
 // only the transport/cardinality questions, so an MCP consumer read
 // `stale: false` for the exact key the operator surface called content-stale.
@@ -21,49 +21,67 @@ import { executeTool } from '../api/mcp/dispatch.ts';
 import { CACHE_TOOLS } from '../api/mcp/registry/cache-tools.ts';
 import { TOOL_REGISTRY } from '../api/mcp/registry/index.ts';
 
+// The seed-health handler is imported dynamically so the env below is set
+// first. Its credential reads are lazy today, so a static import would also
+// work — this keeps the file independent of that, since a module-scope read
+// added later would fail confusingly against hoisted static imports.
+const SEED_HEALTH_OPERATOR_KEY = 'test-parity-operator-key';
+process.env.UPSTASH_REDIS_REST_URL ??= 'https://redis.test';
+process.env.UPSTASH_REDIS_REST_TOKEN ??= 'token';
+process.env.WORLDMONITOR_VALID_KEYS = SEED_HEALTH_OPERATOR_KEY;
+const { default: seedHealthHandler } = await import('../api/seed-health.js');
+
 const { classifyKey, SEED_META, ACTIVATION_MARKERS } = __testing__;
 
 const NOW = Date.parse('2026-08-02T14:42:58.000Z');
 const MINUTE_MS = 60_000;
 const PORTWATCH_META_KEY = 'seed-meta:supply_chain:portwatch-ports';
 const PORTWATCH_DATA_KEY = 'supply_chain:portwatch-ports:v1:_countries';
+const PORTWATCH_SEED_DOMAIN = 'supply_chain:portwatch-ports';
 const ACTIVATION_KEY = 'seed-activated:supply_chain:portwatch-ports:content-freshness';
 
-// The production observation from the #6060 audit: CN last observed
-// 2026-07-29T12:02:43.475Z, i.e. ~98h before the 14:42:58 health snapshot and
-// therefore past the 72h content budget.
-const CN_OBSERVED_AT = Date.parse('2026-07-29T12:02:43.475Z');
+// Synthetic regression shape from the #6060 audit: CN last observed more than
+// 170h before the health snapshot, therefore past the 144h content budget.
+const CN_OBSERVED_AT = Date.parse('2026-07-26T12:02:43.475Z');
+const PORTWATCH_CONTENT_BUDGET_MINUTES = 2 * 72 * 60;
 
-function contentFreshnessOf(overrides = {}) {
+// Parameterised on the clock because the three surfaces do not share one:
+// classifyKey and evaluateFreshness take `now` as an argument, while the
+// /api/seed-health handler stamps its own `Date.now()`. A fixture frozen at NOW
+// can never reach that third surface, and the joint agreement loop below needs
+// all three answering about the same run.
+function contentFreshnessAt(now, overrides = {}) {
   return {
-    budgetMinutes: 4320,
-    assessedAt: NOW,
+    budgetMinutes: PORTWATCH_CONTENT_BUDGET_MINUTES,
+    assessedAt: now,
     coveredCount: 174,
     freshCount: 174,
     staleCount: 0,
     unknownCount: 0,
     staleCountries: [],
     staleCountriesTruncated: 0,
-    oldestObservedAt: NOW - 60 * MINUTE_MS,
+    oldestObservedAt: now - 60 * MINUTE_MS,
     oldestObservedCountry: 'US',
     oldestAgeMinutes: 60,
     criticalCountries: ['CN', 'HK'],
     criticalFreshCount: 2,
     criticalStaleCountries: [],
     criticalMissingCountries: 0,
-    criticalOldestObservedAt: NOW - 60 * MINUTE_MS,
+    criticalOldestObservedAt: now - 60 * MINUTE_MS,
     criticalOldestObservedCountry: 'CN',
     criticalOldestAgeMinutes: 60,
     ...overrides,
   };
 }
 
+const contentFreshnessOf = (overrides = {}) => contentFreshnessAt(NOW, overrides);
+
 // A run exactly like the 12:03 UTC production run: OK, 174 seeded, complete
 // coverage, zero refreshFailures. The transport half is genuinely healthy —
 // which is precisely why only the content dimension can catch this.
-function completeRun(contentFreshness) {
+function completeRunAt(now, contentFreshness) {
   return {
-    fetchedAt: NOW - 159 * MINUTE_MS,
+    fetchedAt: now - 159 * MINUTE_MS,
     recordCount: 174,
     coverage: {
       target: 174,
@@ -77,6 +95,8 @@ function completeRun(contentFreshness) {
     ...(contentFreshness === undefined ? {} : { contentFreshness }),
   };
 }
+
+const completeRun = (contentFreshness) => completeRunAt(NOW, contentFreshness);
 
 // The audit fixture: complete transport, stale China content.
 const STALE_CONTENT_META = completeRun(contentFreshnessOf({
@@ -92,6 +112,9 @@ const STALE_CONTENT_META = completeRun(contentFreshnessOf({
 
 const FRESH_META = completeRun(contentFreshnessOf());
 
+// `activated` is three-valued and matches `mcpStale` below exactly: true =
+// marker read and present, false = marker read and absent, null = the read
+// failed, so the name is missing from the map entirely (#6095).
 function healthVerdict(meta, { activated = true } = {}) {
   return classifyKey(
     'portwatchPortActivity',
@@ -102,7 +125,9 @@ function healthVerdict(meta, { activated = true } = {}) {
       keyErrors: new Map(),
       keyMetaValues: new Map([[PORTWATCH_META_KEY, JSON.stringify(meta)]]),
       keyMetaErrors: new Map(),
-      activatedNames: new Set(activated ? ['portwatchContentFreshness'] : []),
+      activationStates: activated === null
+        ? new Map()
+        : new Map([['portwatchContentFreshness', activated]]),
       now: NOW,
     },
   );
@@ -180,14 +205,14 @@ describe('#6080 — MCP freshness envelope vs /api/health on PortWatch content',
   // re-ages against read time; MCP must too, or it re-opens the divergence
   // between two runs rather than at deploy.
   it('re-ages the producer measurement on both surfaces', () => {
-    // Seeder counted CN fresh at 71h. Both surfaces read that meta 12h later,
-    // by which time the observation is 83h old and past the 72h budget.
+    // Seeder counted CN fresh at 143h. Both surfaces read that meta 2h later,
+    // by which time the observation is 145h old and past the 144h budget.
     const meta = completeRun(contentFreshnessOf({
       criticalFreshCount: 2,
       criticalStaleCountries: [],
-      criticalOldestObservedAt: NOW - 83 * 60 * MINUTE_MS,
+      criticalOldestObservedAt: NOW - 145 * 60 * MINUTE_MS,
       criticalOldestObservedCountry: 'CN',
-      criticalOldestAgeMinutes: 71 * 60, // the producer's own frozen number
+      criticalOldestAgeMinutes: 143 * 60, // the producer's own frozen number
     }));
 
     assert.equal(healthVerdict(meta).status, 'STALE_CONTENT');
@@ -423,7 +448,7 @@ describe('#6080 — executeTool reads the activation marker', () => {
       fetchedAt: liveNow - 60 * MINUTE_MS,
       recordCount: 174,
       contentFreshness: {
-        budgetMinutes: 4320,
+        budgetMinutes: PORTWATCH_CONTENT_BUDGET_MINUTES,
         assessedAt: liveNow,
         coveredCount: 174,
         freshCount: 174,
@@ -473,7 +498,7 @@ describe('#6080 — executeTool reads the activation marker', () => {
 
   it('flags stale content end-to-end through the tool', async () => {
     const result = await runWithRedis(
-      baseKeys(liveMeta({ criticalAgeHours: 98 })),
+      baseKeys(liveMeta({ criticalAgeHours: 170 })),
       { markers: [ACTIVATION_KEY] },
     );
     assert.equal(result.stale, true);
@@ -514,7 +539,7 @@ describe('#6080 — executeTool reads the activation marker', () => {
 
   it('still flags stale content when the marker read fails', async () => {
     const result = await runWithRedis(
-      baseKeys(liveMeta({ criticalAgeHours: 98 })),
+      baseKeys(liveMeta({ criticalAgeHours: 170 })),
       { markers: [ACTIVATION_KEY], failActivationRead: true },
     );
 
@@ -555,50 +580,115 @@ describe('#6080 — executeTool reads the activation marker', () => {
 
 });
 
-// #6080 review: hardening MCP to fail closed on an unreadable marker created a
-// NARROW, DELIBERATE asymmetry with health, which softens the same condition.
-// Health cannot distinguish "marker errored" from "marker absent" — it collapses
-// both into `activatedNames` not containing the name (api/health.js:2026,
-// `if (!r?.error && Number(r?.result) === 1)`) — so a per-command error there
-// still grants the grace.
+// #6095 — the joint agreement loop across ALL THREE surfaces.
 //
-// The disagreement is one input class wide (block absent AND the marker read
-// errors) and runs in the SAFE direction: MCP over-alarms, it never reports
-// fresh for something health calls stale, which is the failure #6080 exists to
-// prevent. Pinned here so the direction cannot silently flip, and tracked for
-// alignment on health's side in #6095.
-describe('#6080 — the one accepted divergence, and its direction', () => {
-  const NO_BLOCK = completeRun(undefined);
+// #6080 shipped with one accepted divergence: hardening MCP to require positive
+// proof of pre-activation left /api/health and /api/seed-health collapsing
+// "marker errored" and "marker absent" into a single bucket, so a per-command
+// Redis error there still granted a grace that never expires. It ran in the
+// safe direction (MCP over-alarmed), so it was pinned rather than blocking.
+// #6095 closed it by making all three surfaces read the marker three-valued.
+//
+// Deliberately ONE loop over every surface rather than three per-surface
+// assertion sets: the #6080 divergence was CREATED by hardening one side of a
+// parity pair, and only a test that asks the agreement question of every
+// surface at once — including the third one, /api/seed-health, which #6080's
+// tests never compared against anything — can catch the next one.
+describe('#6095 — health, seed-health, and MCP agree on every marker outcome', () => {
+  // What a clean EXISTS sweep can return for the marker, paired with the
+  // in-process activation state that models the same outcome.
+  const MARKER_OUTCOMES = {
+    present: { entry: () => ({ result: 1 }), activated: true },
+    absent: { entry: () => ({ result: 0 }), activated: false },
+    // Upstash reports per-command failures inside an otherwise-successful 200,
+    // so this is a production shape, not a synthetic one.
+    unreadable: { entry: () => ({ error: 'ERR max request size exceeded' }), activated: null },
+  };
 
-  it('has MCP fail closed where health softens an unreadable marker', () => {
-    // `activated: false` is health's error bucket as well as its absent bucket.
-    assert.equal(
-      healthVerdict(NO_BLOCK, { activated: false }).status,
-      'OK',
-      'health softens a marker it could not read',
-    );
-    assert.equal(
-      mcpStale(NO_BLOCK, { activated: null }),
-      true,
-      'MCP fails closed on the same input',
-    );
-  });
+  // Only `absent_block` is decided by the marker; the other three shapes must
+  // answer the same way whatever the marker says. Pinning the expected verdict
+  // as well as the agreement keeps a mutation that made all three fail OPEN
+  // from passing a pure equality check.
+  const META_SHAPES = {
+    fresh: { build: (now) => completeRunAt(now, contentFreshnessAt(now)), alarms: () => false },
+    stale_content: {
+      build: (now) => completeRunAt(now, contentFreshnessAt(now, {
+        freshCount: 173,
+        staleCount: 1,
+        staleCountries: ['CN'],
+        criticalFreshCount: 1,
+        criticalStaleCountries: ['CN'],
+        criticalOldestObservedAt: now - 98 * 60 * MINUTE_MS,
+        criticalOldestAgeMinutes: 98 * 60,
+      })),
+      alarms: () => true,
+    },
+    // The producer narrows its own declared scope — a present-but-unusable
+    // block, which no activation state may excuse.
+    unusable_block: {
+      build: (now) => completeRunAt(now, contentFreshnessAt(now, {
+        criticalCountries: ['CN'],
+        criticalFreshCount: 1,
+      })),
+      alarms: () => true,
+    },
+    absent_block: {
+      build: (now) => completeRunAt(now, undefined),
+      alarms: (outcome) => outcome !== 'absent',
+    },
+  };
 
-  it('never diverges in the unsafe direction', () => {
-    // The invariant that actually matters: for every activation state, MCP
-    // must not answer fresh while health answers stale.
-    for (const activated of [true, false, null]) {
-      for (const meta of [STALE_CONTENT_META, FRESH_META, NO_BLOCK]) {
-        const healthStale = healthVerdict(meta, { activated: activated === true }).status !== 'OK';
-        if (!healthStale) continue;
-        assert.equal(
-          mcpStale(meta, { activated }),
-          true,
-          `MCP reported fresh where health alarmed (activated=${activated})`,
-        );
-      }
+  // /api/seed-health has no classifier seam, so the only way to ask it the
+  // question is through the handler — which also proves the pipeline-result
+  // loop that builds its activation map, not just the gate it feeds.
+  async function seedHealthStatus(build, markerEntry) {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (_url, init) => {
+      const liveNow = Date.now();
+      const results = JSON.parse(init.body).map(([op, key]) => {
+        if (op === 'EXISTS') return key === ACTIVATION_KEY ? markerEntry() : { result: 0 };
+        if (key === PORTWATCH_META_KEY) return { result: JSON.stringify(build(liveNow)) };
+        // Every unrelated feed answers fresh and above its floor, so only the
+        // PortWatch content dimension can move this entry.
+        return { result: JSON.stringify({ fetchedAt: liveNow, recordCount: 10_000 }) };
+      });
+      return new Response(JSON.stringify(results), { status: 200 });
+    };
+    try {
+      const res = await seedHealthHandler(new Request('https://api.worldmonitor.app/api/seed-health', {
+        headers: { 'X-WorldMonitor-Key': SEED_HEALTH_OPERATOR_KEY },
+      }));
+      const entry = (await res.json()).seeds?.[PORTWATCH_SEED_DOMAIN];
+      assert.ok(entry, 'seed-health must publish the PortWatch entry');
+      return entry.status;
+    } finally {
+      globalThis.fetch = realFetch;
     }
-  });
+  }
+
+  for (const [shape, { build, alarms }] of Object.entries(META_SHAPES)) {
+    for (const [outcome, { entry, activated }] of Object.entries(MARKER_OUTCOMES)) {
+      it(`${shape} + marker ${outcome}`, async () => {
+        const expected = alarms(outcome);
+        const frozenMeta = build(NOW);
+
+        const healthStatus = healthVerdict(frozenMeta, { activated }).status;
+        assert.equal(healthStatus !== 'OK', expected, '/api/health');
+        assert.equal(mcpStale(frozenMeta, { activated }), expected, 'MCP freshness envelope');
+
+        // Not just "both alarm" — the SAME verdict, by name. The two endpoints
+        // publish the same vocabulary in different case (OK/ok,
+        // COVERAGE_DEGRADED/coverage_degraded, STALE_CONTENT/stale_content),
+        // which docs/health-endpoints.mdx states as a contract; agreement on a
+        // boolean would let them alarm for different reasons and still pass.
+        assert.equal(
+          await seedHealthStatus(build, entry),
+          healthStatus.toLowerCase(),
+          '/api/seed-health must reach the same verdict, not merely also alarm',
+        );
+      });
+    }
+  }
 });
 
 // The assessor's fail-closed rules are shared code, but the two surfaces reach
@@ -671,7 +761,7 @@ describe('#6080 — both surfaces agree across the unusable state space', () => 
   // The assessor compares raw milliseconds inclusively, so exactly-at-budget is
   // stale. Rounded minutes would accept up to 29,999ms over on both surfaces.
   it('agrees at the raw millisecond budget boundary', () => {
-    const budgetMs = 4320 * MINUTE_MS;
+    const budgetMs = PORTWATCH_CONTENT_BUDGET_MINUTES * MINUTE_MS;
     for (const extraMs of [0, 1]) {
       const meta = completeRun(contentFreshnessOf({
         criticalOldestObservedAt: NOW - (budgetMs + extraMs),

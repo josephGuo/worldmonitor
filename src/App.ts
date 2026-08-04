@@ -1,4 +1,6 @@
 import type { Monitor, PanelConfig, MapLayers } from '@/types';
+import { WEB_APP_ORIGIN } from '@/config/web-origin';
+import { openExternalUrl } from '@/services/external-navigation';
 import { normalizeExclusiveChoropleths } from '@/components/resilience-choropleth-utils';
 import type { AppContext } from '@/app/app-context';
 import {
@@ -118,7 +120,8 @@ import {
   waitForBootstrapSlowTier,
   type BootstrapHydrationState,
 } from '@/services/bootstrap';
-import { ensureWmSession, installWmSessionFetchInterceptor, WM_SESSION_DEGRADED_EVENT } from '@/services/wm-session';
+import { ensureWmSession, installWmSessionFetchInterceptor, WM_SESSION_DEGRADED_EVENT, type WmSessionDegradedDetail } from '@/services/wm-session';
+import { describeWmSessionDegradation, WM_SESSION_DEGRADED_FALLBACK_COPY } from '@/services/wm-session-copy';
 import { describeFreshness } from '@/services/persistent-cache';
 import { DesktopUpdater } from '@/app/desktop-updater';
 import { CountryIntelManager } from '@/app/country-intel';
@@ -248,9 +251,16 @@ export class App {
   private bootstrapHydrationState: BootstrapHydrationState = getBootstrapHydrationState();
   private cachedModeBannerEl: HTMLElement | null = null;
   private pendingCloudRecoverySyncVersion: number | undefined;
-  private readonly handleWmSessionDegraded = (): void => {
+  private readonly handleWmSessionDegraded = (event?: Event): void => {
     if (!this.state.isDestroyed) {
-      showToast('Anonymous data is temporarily unavailable. Check your cookie settings, then reload.');
+      // Pre-#5674 bundles in long-lived tabs can still dispatch a plain Event
+      // with no detail; fall back to the cookie wording those users used to get.
+      const reason = (event as CustomEvent<WmSessionDegradedDetail> | undefined)?.detail?.reason;
+      showToast(
+        reason
+          ? describeWmSessionDegradation(reason)
+          : WM_SESSION_DEGRADED_FALLBACK_COPY,
+      );
     }
   };
   private readonly handleViewportPrime = (event?: Event): void => {
@@ -2484,7 +2494,9 @@ export class App {
         .closest<HTMLElement>('[data-action]')
         ?.dataset.action;
       if (clickedAction === 'upgrade') {
-        window.open('/pro#pricing', '_blank', 'noopener,noreferrer');
+        // Absolute + routed: the relative form resolved against
+        // tauri://localhost in the desktop WebView (#5911).
+        void openExternalUrl(`${WEB_APP_ORIGIN}/pro#pricing`);
         if (this.followedCountriesCapDropToastTimer !== null) {
           window.clearTimeout(this.followedCountriesCapDropToastTimer);
           this.followedCountriesCapDropToastTimer = null;
