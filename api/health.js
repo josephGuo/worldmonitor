@@ -462,6 +462,11 @@ const SEED_META = {
       warnAfterConsecutive: 2,
       warnAfterAgeMin: 20,
       warnWithoutSuccess: true,
+      // Declared explicitly rather than relying on readSeedMeta's fallback:
+      // an omitted pattern silently DROPS every code the producer writes, so
+      // the contract is only safe if each key names its own vocabulary. A test
+      // asserts every synthesisFailure entry declares one.
+      failureCodePattern: /^INSIGHTS_SYNTHESIS_(PARSE|GATE|MISSING_CLUSTER|PROVIDER)$/,
     },
   },
   // #4920: daily GH Actions cadence; 2880 = 2x — one fully missed day alarms
@@ -732,7 +737,26 @@ const SEED_META = {
   cryptoSectors:        { key: 'seed-meta:market:crypto-sectors',             maxStaleMin: 120 }, // relay loop every ~30min; 120min = 2h = 4x interval
   ddosAttacks:          { key: 'seed-meta:cf:radar:ddos',                    maxStaleMin: 60 }, // written by seed-internet-outages afterPublish; outages cron ~15min; 60 = 4x interval
   economicStress:       { key: 'seed-meta:economic:stress-index',            maxStaleMin: 180 }, // computed in seed-economy afterPublish; cron ~1h; 180min = 3x interval
-  marketImplications:   { key: 'seed-meta:intelligence:market-implications', maxStaleMin: 120 }, // LLM-generated in seed-forecasts; cron ~1h; 120min = 2x interval
+  marketImplications:   {
+    key: 'seed-meta:intelligence:market-implications',
+    maxStaleMin: 120, // LLM-generated in seed-forecasts; cron ~1h; 120min = 2x interval
+    // The tail LLM stage misses regularly — an observed five-attempt window
+    // produced three publications and two provider timeouts — while the cards
+    // it publishes stay useful for hours. seed-forecasts holds `fetchedAt` at
+    // the served vintage on a miss (so the 120min gate above still governs)
+    // and records the streak here. Thresholds are sized to the SAME hourly
+    // cadence as maxStaleMin: two consecutive misses is ~2h without a fresh
+    // generation, and a failure with no follow-up attempt for 120min means
+    // the stage stopped running at all. `warnWithoutSuccess` is deliberately
+    // absent: the producer only records a streak when it has a served payload
+    // to point at, which is itself proof of an earlier success, so the flag
+    // could never fire here.
+    synthesisFailure: {
+      warnAfterConsecutive: 2,
+      warnAfterAgeMin: 120,
+      failureCodePattern: /^MARKET_IMPLICATIONS_(LLM_NO_RESPONSE|NO_PARSEABLE_CARDS|VALIDATION|UNKNOWN)$/,
+    },
+  },
   trafficAnomalies:     { key: 'seed-meta:cf:radar:traffic-anomalies',       maxStaleMin: 60 }, // written by seed-internet-outages afterPublish; outages cron ~15min; 60 = 4x interval
   chokepointExposure:   { key: 'seed-meta:supply_chain:chokepoint-exposure', maxStaleMin: 2880 }, // daily cron; 2880min = 48h = 2x interval
   recoveryFiscalSpace:     { key: 'seed-meta:resilience:recovery:fiscal-space',     maxStaleMin: 129600 }, // monthly cron; 129600min = 90d = 3x interval (bumped from 86400/60d = 2x in PR #3669 for month-2 hiccup margin)
@@ -1257,8 +1281,13 @@ function readSeedMeta(seedCfg, keyMetaValues, keyMetaErrors, now) {
     const synthesisFailureAgeMin = lastAttemptAt == null
       ? null
       : Math.round((now - lastAttemptAt) / 60_000);
+    // The code vocabulary is per-producer and closed: health echoes this value
+    // back to operators, so anything outside the owning key's pattern is
+    // dropped rather than relayed.
+    const failureCodePattern = seedCfg.synthesisFailure.failureCodePattern
+      ?? /^INSIGHTS_SYNTHESIS_(PARSE|GATE|MISSING_CLUSTER|PROVIDER)$/;
     const lastSynthesisFailureCode = typeof meta?.lastSynthesisFailureCode === 'string'
-      && /^INSIGHTS_SYNTHESIS_(PARSE|GATE|MISSING_CLUSTER|PROVIDER)$/.test(meta.lastSynthesisFailureCode)
+      && failureCodePattern.test(meta.lastSynthesisFailureCode)
       ? meta.lastSynthesisFailureCode
       : null;
     const servedGeneratedAt = typeof meta?.servedGeneratedAt === 'string'
@@ -1429,6 +1458,28 @@ function classifyKey(name, redisKey, opts, ctx) {
   const records = hasData ? (metaCount ?? 1) : 0;
   const cascadeCovered = isCascadeCovered(name, hasData, keyStrens, keyErrors);
 
+  // Producer-fault candidates, in precedence order among themselves. Each says
+  // WHY the producer (or its upstream) is unhappy; none of them says whether
+  // anything is actually being SERVED. Resolved up front rather than as if/else
+  // arms so the missing-data branch below can weigh them against the absence
+  // verdict instead of being pre-empted by them (#6263).
+  //
+  // Skipped entirely for an unconfigured adapter, which by the NOT_CONFIGURED
+  // rule below has nothing to be degraded ABOUT — so it also publishes no cause.
+  let fault = null;
+  if (!sourceUnavailable) {
+    if (sourceBlocked && name !== 'crossStraitActivityJapanMod') {
+      // Keep the fleet-wide escape hatch narrow: only the Japan MOD adapter has
+      // a reviewed-data contract and explicit two-path proof for this state.
+      fault = 'SEED_ERROR';
+    }
+    else if (sourceBlocked && hasData && records > 0 && seedStale !== true) fault = 'SOURCE_BLOCKED';
+    // A producer-failure warning describes degraded-BUT-SERVING — the LKG is
+    // still on the page while generation retries.
+    else if (synthesisFailure?.warning) fault = 'SEED_ERROR';
+    else if (seedError) fault = 'SEED_ERROR';
+  }
+
   let status;
   // Precedes every fault branch: an adapter this deployment never configured has
   // nothing to be stale, empty, or degraded ABOUT. The producer still writes the
@@ -1436,28 +1487,60 @@ function classifyKey(name, redisKey, opts, ctx) {
   // the moment the credential lands the next run reports sourceState 'ok' and this
   // flips to OK on its own — no health-config change needed.
   if (sourceUnavailable) status = 'NOT_CONFIGURED';
-  else if (sourceBlocked && name !== 'crossStraitActivityJapanMod') {
-    // Keep the fleet-wide escape hatch narrow: only the Japan MOD adapter has
-    // a reviewed-data contract and explicit two-path proof for this state.
-    status = 'SEED_ERROR';
-  }
-  else if (sourceBlocked && hasData && records > 0 && seedStale !== true) status = 'SOURCE_BLOCKED';
-  else if (synthesisFailure?.warning) status = 'SEED_ERROR';
-  else if (seedError) status = 'SEED_ERROR';
   else if (!hasData) {
-    if (cascadeCovered) status = 'OK_CASCADE';
-    else if (MISSING_DATA_IS_FAILURE_KEYS.has(name) && hasMeta && seedStale !== true) status = 'EMPTY';
-    else if (EMPTY_DATA_OK_KEYS.has(name)) status = seedStale === true ? 'STALE_SEED' : 'OK';
-    else if (isOnDemand) status = 'EMPTY_ON_DEMAND';
+    // The absence verdict, decided on its own merits and independently of any
+    // fault above. Note the two live SIDE BY SIDE here: seed-meta outlives its
+    // data key (7 days vs. hours), so a producer that failed once and then
+    // stopped is simultaneously "faulting" and "serving nothing".
+    let absent;
+    if (cascadeCovered) absent = 'OK_CASCADE';
+    // `seedStale !== true` buys the pre-first-publish grace: before the
+    // producer's first run the payload is absent through no fault, and every
+    // key in this set is also in EMPTY_DATA_OK_KEYS, so the fallthrough reports
+    // STALE_SEED (warn) instead of a false-critical EMPTY.
+    //
+    // A REPORTED FAULT revokes that grace, because it is proof the producer did
+    // run. Without the `|| fault` clause this arm reads a fault as aging and
+    // hands the key to the EMPTY_DATA_OK arm, whose STALE_SEED merely TIES the
+    // fault — so the tie-break returns SEED_ERROR and the key reports warn.
+    // That is #6263's own headline case surviving the fix: readSeedMeta
+    // SYNTHESIZES `seedStale: true` on the `status:'error'` return as a fault
+    // marker rather than measuring it, so all eight of these keys kept the old
+    // warn on that path while the sibling `sourceState` path (where staleness
+    // IS measured) correctly reported EMPTY. One physical state, two verdicts.
+    else if (MISSING_DATA_IS_FAILURE_KEYS.has(name) && hasMeta && (seedStale !== true || fault)) absent = 'EMPTY';
+    else if (EMPTY_DATA_OK_KEYS.has(name)) absent = seedStale === true ? 'STALE_SEED' : 'OK';
+    else if (isOnDemand) absent = 'EMPTY_ON_DEMAND';
     // Deliberately the ONLY branch rollout softening touches: an absent data
     // key is the one state that "the producer has not run since this schema
     // deployed" actually explains. Once the key exists the producer HAS run,
     // and every downstream verdict (EMPTY_DATA, COVERAGE_DEGRADED,
     // COVERAGE_PARTIAL, STALE_SEED) describes what it produced — softening any
     // of those would hide a real first-run failure behind the rollout window.
-    else if (isRolloutPending) status = 'ROLLOUT_PENDING';
-    else status = 'EMPTY';
-  } else if (records === 0) {
+    else if (isRolloutPending) absent = 'ROLLOUT_PENDING';
+    else absent = 'EMPTY';
+
+    // The stronger of the two verdicts wins; ties go to the fault, which is the
+    // only one of the pair that carries a cause (`errorCode`,
+    // `lastSynthesisFailureCode`).
+    //
+    // Both directions matter, which is why this is NOT the one-word `&& hasData`
+    // guard the fault arms invite:
+    //   - absence is CRIT (plain EMPTY): a warn must never mask a blank panel.
+    //     A producer that errored once and then stopped otherwise reports warn
+    //     for the seed-meta's full 7-day life.
+    //   - absence is SOFTER (OK_CASCADE / OK / STALE_SEED / EMPTY_ON_DEMAND /
+    //     ROLLOUT_PENDING): the fault holds. Four key classes land here, and a
+    //     bare guard would silence or generify every one of them — most sharply
+    //     EMPTY_DATA_OK_KEYS, whose absence resolves to plain OK whenever the
+    //     fault arrived via `sourceState` (which leaves seedStale false). See
+    //     the forecastFunnel entry in that set, which documents its reliance on
+    //     a collapsed funnel surfacing as SEED_ERROR.
+    status = fault && statusSeverityRank(absent) <= statusSeverityRank(fault)
+      ? fault
+      : absent;
+  } else if (fault) status = fault;
+  else if (records === 0) {
     // hasData is true in this branch, so cascade can never apply (isCascadeCovered
     // short-circuits when hasData=true). Cascade only shields wholly absent keys.
     if (ZERO_RECORD_DATA_OK_KEYS.has(name)) status = seedStale === true ? 'STALE_SEED' : 'OK';
@@ -1554,7 +1637,12 @@ function classifyKey(name, redisKey, opts, ctx) {
   if (seedCfg?.minPoolCounts) entry.minPoolCounts = seedCfg.minPoolCounts;
   if (poolCounts) entry.poolCounts = poolCounts;
   if (coverage || seedCfg?.requireCoverage) entry.coverage = coverage;
-  if (status === 'SEED_ERROR' && errorCode) entry.errorCode = errorCode;
+  // Emitted whenever the producer recorded a cause, not only when the fault
+  // verdict WON. When a missing data key outranks the fault (#6263) the status
+  // becomes EMPTY, and gating the code on SEED_ERROR would trade the operator's
+  // "why" for the severity bump — leaving a bare crit whose explanation is
+  // sitting unread in seed-meta.
+  if (fault === 'SEED_ERROR' && errorCode) entry.errorCode = errorCode;
   // Surface content-age fields when seeder opted in (presence of
   // meta.maxContentAgeMin). Operators can distinguish "stale content" from
   // "stale seeder run" at a glance.
@@ -1579,7 +1667,13 @@ function classifyKey(name, redisKey, opts, ctx) {
     if (synthesisFailure.synthesisFailureAgeMin != null && synthesisFailure.consecutiveFailures > 0) {
       entry.synthesisFailureAgeMin = synthesisFailure.synthesisFailureAgeMin;
     }
-    if (status === 'SEED_ERROR' && synthesisFailure.lastSynthesisFailureCode) {
+    // Ungated, unlike `errorCode` above: this one rides with the rest of the
+    // synthesis diagnostics, which are all published whenever the producer
+    // recorded them regardless of the verdict. Gating only the code while
+    // `consecutiveFailures` and `lastAttemptAt` publish freely would be the
+    // odd one out — and the whole point of those fields is to describe the run
+    // even when the status describes a healthy served payload.
+    if (synthesisFailure.lastSynthesisFailureCode) {
       entry.lastSynthesisFailureCode = synthesisFailure.lastSynthesisFailureCode;
     }
   }
@@ -1622,6 +1716,20 @@ const STATUS_COUNTS = {
   EMPTY: 'crit',
   EMPTY_DATA: 'crit',
 };
+
+// Orders the buckets above so classifyKey can compare two candidate verdicts
+// rather than hard-coding which statuses outrank which. Reading severity from
+// STATUS_COUNTS keeps the two in step: a status registered there becomes
+// comparable here for free.
+const STATUS_SEVERITY_RANK = { ok: 0, warn: 1, crit: 2 };
+
+// Unregistered statuses fall back to 'warn', exactly as the summary does with
+// `STATUS_COUNTS[status] ?? 'warn'`. Without the fallback an unregistered
+// status would rank `undefined`, which compares false against every other rank
+// — so it would silently LOSE every comparison rather than fail closed.
+function statusSeverityRank(status) {
+  return STATUS_SEVERITY_RANK[STATUS_COUNTS[status] ?? 'warn'];
+}
 
 function isValidChinaCoverageSummary(candidate) {
   if (
