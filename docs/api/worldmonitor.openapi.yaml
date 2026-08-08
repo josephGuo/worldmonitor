@@ -14750,6 +14750,9 @@ paths:
                                       "symbol": "AAPL"
                                 "rateLimited": true
                                 "skipReason": "example"
+                                "unavailableSymbols":
+                                    - "reason": "MARKET_QUOTE_UNAVAILABLE_REASON_NOT_FOUND"
+                                      "symbol": "AAPL"
                             schema:
                                 $ref: '#/components/schemas/worldmonitor_market_v1_ListMarketQuotesResponse'
                 "400":
@@ -14907,17 +14910,24 @@ paths:
             tags:
                 - MarketService
             summary: ListCommodityQuotes
-            description: ListCommodityQuotes retrieves commodity price quotes from Yahoo Finance.
+            description: |-
+                ListCommodityQuotes retrieves commodity price quotes. Reads the seeded
+                 commodity snapshot; only symbols in the configured commodity set
+                 (shared/commodities.json) are supported.
             operationId: ListCommodityQuotes
             parameters:
                 - name: symbols
                   in: query
-                  description: Commodity symbols to retrieve (Yahoo symbols). Empty returns defaults.
+                  description: |-
+                    Commodity symbols to retrieve (Yahoo symbols). Empty returns the seed
+                     defaults. Only symbols in the configured commodity set
+                     (shared/commodities.json) are supported; requesting an unsupported
+                     symbol returns HTTP 400.
                   required: false
                   style: form
                   explode: true
                   example:
-                      - "AAPL"
+                      - "GC=F"
                   schema:
                     type: array
                     items:
@@ -14943,7 +14953,7 @@ paths:
                                       "price": 75.25
                                       "sparkline":
                                           - 1.5
-                                      "symbol": "AAPL"
+                                      "symbol": "GC=F"
                             schema:
                                 $ref: '#/components/schemas/worldmonitor_market_v1_ListCommodityQuotesResponse'
                 "400":
@@ -15099,7 +15109,18 @@ paths:
             parameters:
                 - name: coins
                   in: query
-                  description: CoinGecko IDs to retrieve (e.g. "tether,usd-coin"). Empty returns defaults.
+                  description: |-
+                    CoinGecko IDs to retrieve (e.g. "tether,usd-coin"). Empty returns defaults.
+
+                     Repeated (`?coins=tether&coins=dai`) and comma-joined
+                     (`?coins=tether,dai`) forms are equivalent. IDs are trimmed, lowercased,
+                     and de-duplicated; the request is capped at 25 IDs. An ID that is not
+                     shaped like a CoinGecko ID, that overflows the cap, or that no provider
+                     can resolve is reported in `unresolved` rather than dropped.
+
+                     The empty (default) request is served from the seeded snapshot alone and
+                     never reaches an upstream provider. Naming IDs explicitly opts into a
+                     bounded, cached provider lookup for any ID the snapshot does not carry.
                   required: false
                   style: form
                   explode: true
@@ -15123,6 +15144,7 @@ paths:
                     content:
                         application/json:
                             example:
+                                "dataStatus": "example"
                                 "stablecoins":
                                     - "change24h": 1.5
                                       "change7d": 1.5
@@ -15138,6 +15160,9 @@ paths:
                                     "totalMarketCap": 1
                                     "totalVolume24h": 1
                                 "timestamp": "2026-01-15T12:00:00Z"
+                                "unresolved":
+                                    - "id": "example-id"
+                                      "reason": "example"
                             schema:
                                 $ref: '#/components/schemas/worldmonitor_market_v1_ListStablecoinMarketsResponse'
                 "400":
@@ -23191,21 +23216,35 @@ paths:
             parameters:
                 - name: reporting_country
                   in: query
-                  description: WTO member code of reporting country.
+                  description: |-
+                    WTO member code of reporting country, as a 3-digit UN M49 code
+                     (for example "840" = United States). Empty selects the "840" default.
                   required: false
                   example: "840"
                   schema:
                     type: string
+                    pattern: '^([0-9]{3})?$'
                 - name: partner_country
                   in: query
-                  description: WTO member code of partner country.
+                  description: |-
+                    WTO member code of partner country, as a 3-digit UN M49 code.
+                     Empty selects "000" = World, which is the only partner currently covered:
+                     the WTO indicators behind these flows (ITS_MTV_AX, ITS_MTV_AM) publish a
+                     World total and answer 204 for every named partner. Any other code is
+                     accepted by validation and answered with unavailable_reason
+                     TRADE_FLOW_UNAVAILABLE_REASON_NOT_COVERED, so coverage can widen without a
+                     contract change.
                   required: false
-                  example: "156"
+                  example: "000"
                   schema:
                     type: string
+                    pattern: '^([0-9]{3})?$'
                 - name: years
                   in: query
-                  description: Number of years to look back (default 10, max 30).
+                  description: |-
+                    Number of years to look back from the newest seeded year, inclusive of
+                     both endpoints (years = 10 returns 11 calendar years). 0 selects the
+                     default of 10; the maximum is 30, which is the full seeded window.
                   required: false
                   example: 1
                   schema:
@@ -23225,12 +23264,14 @@ paths:
                     content:
                         application/json:
                             example:
+                                "coverageEndYear": 1
+                                "coverageStartYear": 1
                                 "fetchedAt": "2026-01-15T12:00:00Z"
                                 "flows":
                                     - "exportValueUsd": 1.5
                                       "importValueUsd": 1.5
-                                      "partnerCountry": "156"
-                                      "productSector": "diesel"
+                                      "partnerCountry": "000"
+                                      "productSector": "Total merchandise"
                                       "reportingCountry": "840"
                                 "upstreamUnavailable": false
                             schema:
@@ -37895,6 +37936,10 @@ components:
                 rateLimited:
                     type: boolean
                     description: True when the upstream API rate-limited the request.
+                unavailableSymbols:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/worldmonitor_market_v1_MarketQuoteUnavailable'
             description: ListMarketQuotesResponse contains stock and index quotes.
         worldmonitor_market_v1_MarketQuote:
             type: object
@@ -37926,6 +37971,35 @@ components:
             required:
                 - symbol
             description: MarketQuote represents a stock or index quote from Finnhub or Yahoo Finance.
+        worldmonitor_market_v1_MarketQuoteUnavailable:
+            type: object
+            properties:
+                symbol:
+                    type: string
+                    minLength: 1
+                    description: The requested ticker symbol, normalized.
+                reason:
+                    type: string
+                    enum:
+                        - MARKET_QUOTE_UNAVAILABLE_REASON_UNSPECIFIED
+                        - MARKET_QUOTE_UNAVAILABLE_REASON_NOT_FOUND
+                        - MARKET_QUOTE_UNAVAILABLE_REASON_PROVIDER_ERROR
+                        - MARKET_QUOTE_UNAVAILABLE_REASON_PROVIDER_RATE_LIMITED
+                        - MARKET_QUOTE_UNAVAILABLE_REASON_PROVIDER_NOT_CONFIGURED
+                        - MARKET_QUOTE_UNAVAILABLE_REASON_REQUEST_LIMIT_EXCEEDED
+                        - MARKET_QUOTE_UNAVAILABLE_REASON_UPSTREAM_BUDGET_EXHAUSTED
+                        - MARKET_QUOTE_UNAVAILABLE_REASON_SEED_UNAVAILABLE
+                    description: |-
+                        MarketQuoteUnavailableReason explains why a requested symbol produced no quote.
+
+                         Requested symbols are resolved seed-first: the fixed Railway seed snapshot
+                         answers without any upstream call, and only the remaining symbols are looked
+                         up through the bounded, Redis-cached quote provider. Every symbol that
+                         survives normalization is accounted for by either a quote or one of these
+                         reasons — a requested symbol is never silently dropped.
+            required:
+                - symbol
+            description: MarketQuoteUnavailable reports a requested symbol that produced no quote.
         worldmonitor_market_v1_ListCryptoQuotesRequest:
             type: object
             properties:
@@ -37981,7 +38055,11 @@ components:
                     type: array
                     items:
                         type: string
-                        description: Commodity symbols to retrieve (Yahoo symbols). Empty returns defaults.
+                        description: |-
+                            Commodity symbols to retrieve (Yahoo symbols). Empty returns the seed
+                             defaults. Only symbols in the configured commodity set
+                             (shared/commodities.json) are supported; requesting an unsupported
+                             symbol returns HTTP 400.
             description: ListCommodityQuotesRequest specifies which commodities to retrieve.
         worldmonitor_market_v1_ListCommodityQuotesResponse:
             type: object
@@ -38062,7 +38140,18 @@ components:
                     type: array
                     items:
                         type: string
-                        description: CoinGecko IDs to retrieve (e.g. "tether,usd-coin"). Empty returns defaults.
+                        description: |-
+                            CoinGecko IDs to retrieve (e.g. "tether,usd-coin"). Empty returns defaults.
+
+                             Repeated (`?coins=tether&coins=dai`) and comma-joined
+                             (`?coins=tether,dai`) forms are equivalent. IDs are trimmed, lowercased,
+                             and de-duplicated; the request is capped at 25 IDs. An ID that is not
+                             shaped like a CoinGecko ID, that overflows the cap, or that no provider
+                             can resolve is reported in `unresolved` rather than dropped.
+
+                             The empty (default) request is served from the seeded snapshot alone and
+                             never reaches an upstream provider. Naming IDs explicitly opts into a
+                             bounded, cached provider lookup for any ID the snapshot does not carry.
             description: ListStablecoinMarketsRequest specifies which stablecoins to retrieve.
         worldmonitor_market_v1_ListStablecoinMarketsResponse:
             type: object
@@ -38076,6 +38165,18 @@ components:
                     type: array
                     items:
                         $ref: '#/components/schemas/worldmonitor_market_v1_Stablecoin'
+                unresolved:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/worldmonitor_market_v1_UnresolvedStablecoin'
+                dataStatus:
+                    type: string
+                    description: |-
+                        Coverage of THIS response, distinct from `summary.health_status` (which
+                         reports peg health, not data availability):
+                           "OK"          — every requested coin was returned.
+                           "PARTIAL"     — at least one coin returned, at least one unresolved.
+                           "UNAVAILABLE" — no coin data available.
             description: ListStablecoinMarketsResponse contains stablecoin market data.
         worldmonitor_market_v1_StablecoinSummary:
             type: object
@@ -38149,6 +38250,23 @@ components:
                 - id
                 - symbol
             description: Stablecoin represents a single stablecoin with peg health data.
+        worldmonitor_market_v1_UnresolvedStablecoin:
+            type: object
+            properties:
+                id:
+                    type: string
+                    description: |-
+                        The requested ID, after trimming and lowercasing. Malformed IDs are
+                         reported as sent (normalized and truncated) so the caller can spot the typo.
+                reason:
+                    type: string
+                    description: |-
+                        Bounded vocabulary — anything outside this list is a contract violation:
+                           "INVALID_ID"     — not shaped like a CoinGecko ID.
+                           "OVER_CAP"       — beyond the per-request ID cap; never looked up.
+                           "NOT_FOUND"      — the provider answered, and has no such coin.
+                           "PROVIDER_ERROR" — the lookup failed, so the ID is unknown, not absent.
+            description: UnresolvedStablecoin explains why a requested ID is absent from the response.
         worldmonitor_market_v1_ListEtfFlowsRequest:
             type: object
             description: ListEtfFlowsRequest is empty; the handler uses a fixed list of BTC spot ETFs.
@@ -44418,15 +44536,38 @@ components:
             properties:
                 reportingCountry:
                     type: string
-                    description: WTO member code of reporting country.
+                    pattern: ^([0-9]{3})?$
+                    description: |-
+                        WTO member code of reporting country, as a 3-digit UN M49 code
+                         (for example "840" = United States). Empty selects the "840" default.
                 partnerCountry:
                     type: string
-                    description: WTO member code of partner country.
+                    pattern: ^([0-9]{3})?$
+                    description: |-
+                        WTO member code of partner country, as a 3-digit UN M49 code.
+                         Empty selects "000" = World, which is the only partner currently covered:
+                         the WTO indicators behind these flows (ITS_MTV_AX, ITS_MTV_AM) publish a
+                         World total and answer 204 for every named partner. Any other code is
+                         accepted by validation and answered with unavailable_reason
+                         TRADE_FLOW_UNAVAILABLE_REASON_NOT_COVERED, so coverage can widen without a
+                         contract change.
                 years:
                     type: integer
+                    maximum: 30
+                    minimum: 0
                     format: int32
-                    description: Number of years to look back (default 10, max 30).
-            description: Request for bilateral trade flow data.
+                    description: |-
+                        Number of years to look back from the newest seeded year, inclusive of
+                         both endpoints (years = 10 returns 11 calendar years). 0 selects the
+                         default of 10; the maximum is 30, which is the full seeded window.
+            description: |-
+                Request for merchandise trade flow data, reporter versus World.
+
+                 Coverage is seed-backed: Railway pre-fetches a fixed set of
+                 reporter/partner pairs from WTO and this API serves slices of that history.
+                 It never calls WTO per request, so a well-formed combination outside the
+                 seeded set is reported as uncovered (see GetTradeFlowsResponse.
+                 unavailable_reason) rather than fetched on demand.
         worldmonitor_trade_v1_GetTradeFlowsResponse:
             type: object
             properties:
@@ -44439,7 +44580,34 @@ components:
                     description: ISO 8601 timestamp when data was fetched from WTO.
                 upstreamUnavailable:
                     type: boolean
-                    description: True if upstream fetch failed and results may be stale/empty.
+                    description: |-
+                        True when flows could not be served because of a fault — a seeded pair
+                         whose cache entry is gone, or a cache read that failed. False when flows
+                         are served AND when the request names a combination that is simply not
+                         part of seeded coverage, which is a contract answer rather than an outage.
+                unavailableReason:
+                    type: string
+                    enum:
+                        - TRADE_FLOW_UNAVAILABLE_REASON_UNSPECIFIED
+                        - TRADE_FLOW_UNAVAILABLE_REASON_INVALID_REQUEST
+                        - TRADE_FLOW_UNAVAILABLE_REASON_NOT_COVERED
+                        - TRADE_FLOW_UNAVAILABLE_REASON_SEED_MISSING
+                        - TRADE_FLOW_UNAVAILABLE_REASON_COVERAGE_UNKNOWN
+                        - TRADE_FLOW_UNAVAILABLE_REASON_CACHE_UNAVAILABLE
+                    description: |-
+                        TradeFlowUnavailableReason says why no rows were returned. The distinction
+                         that matters is NOT_COVERED — a contract answer, nothing is broken and a
+                         retry cannot help — against every other member, which names a fault.
+                coverageStartYear:
+                    type: integer
+                    format: int32
+                    description: |-
+                        First and last calendar year covered by `flows`. Both are 0 when no flows
+                         are returned. This is the effective window after slicing to `years`, which
+                         may be narrower than the requested lookback when the seed starts later.
+                coverageEndYear:
+                    type: integer
+                    format: int32
             description: Response containing trade flow records.
         worldmonitor_trade_v1_TradeFlowRecord:
             type: object

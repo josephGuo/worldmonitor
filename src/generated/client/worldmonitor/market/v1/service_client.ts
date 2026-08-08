@@ -10,6 +10,7 @@ export interface ListMarketQuotesResponse {
   finnhubSkipped: boolean;
   skipReason: string;
   rateLimited: boolean;
+  unavailableSymbols: MarketQuoteUnavailable[];
 }
 
 export interface MarketQuote {
@@ -19,6 +20,11 @@ export interface MarketQuote {
   price: number;
   change: number;
   sparkline: number[];
+}
+
+export interface MarketQuoteUnavailable {
+  symbol: string;
+  reason: MarketQuoteUnavailableReason;
 }
 
 export interface ListCryptoQuotesRequest {
@@ -77,6 +83,8 @@ export interface ListStablecoinMarketsResponse {
   timestamp: string;
   summary?: StablecoinSummary;
   stablecoins: Stablecoin[];
+  unresolved: UnresolvedStablecoin[];
+  dataStatus: string;
 }
 
 export interface StablecoinSummary {
@@ -99,6 +107,11 @@ export interface Stablecoin {
   change24h: number;
   change7d: number;
   image: string;
+}
+
+export interface UnresolvedStablecoin {
+  id: string;
+  reason: string;
 }
 
 export interface ListEtfFlowsRequest {
@@ -683,6 +696,8 @@ export interface HyperliquidAssetFlow {
   missingPolls: number;
   alerts: string[];
 }
+
+export type MarketQuoteUnavailableReason = "MARKET_QUOTE_UNAVAILABLE_REASON_UNSPECIFIED" | "MARKET_QUOTE_UNAVAILABLE_REASON_NOT_FOUND" | "MARKET_QUOTE_UNAVAILABLE_REASON_PROVIDER_ERROR" | "MARKET_QUOTE_UNAVAILABLE_REASON_PROVIDER_RATE_LIMITED" | "MARKET_QUOTE_UNAVAILABLE_REASON_PROVIDER_NOT_CONFIGURED" | "MARKET_QUOTE_UNAVAILABLE_REASON_REQUEST_LIMIT_EXCEEDED" | "MARKET_QUOTE_UNAVAILABLE_REASON_UPSTREAM_BUDGET_EXHAUSTED" | "MARKET_QUOTE_UNAVAILABLE_REASON_SEED_UNAVAILABLE";
 
 export interface FieldViolation {
   field: string;

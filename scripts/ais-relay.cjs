@@ -720,11 +720,36 @@ async function publishNotificationEvent({ eventType, payload, severity, variant,
 let upstreamSocket = null;
 let upstreamReconnectTimer = null;
 let upstreamReconnectFailures = 0;
+let upstreamConsecutiveThrottles = 0;
 let upstreamReconnectAt = 0;
 let upstreamLastPositionAt = 0;
 let relayShuttingDown = false;
-const AIS_RECONNECT_BASE_MS = 5_000;
-const AIS_RECONNECT_MAX_MS = 5 * 60 * 1000;
+// Floors are deliberate: this change exists to stop the relay hammering a
+// provider that is rejecting it, so the tunables must not open a config path to
+// hammer harder. 50ms/100ms stay well below any production value while leaving
+// the ladder compressible under test.
+const AIS_RECONNECT_BASE_MS = safeInt(process.env.AIS_RECONNECT_BASE_MS, 5_000, 50);
+const AIS_RECONNECT_MAX_MS = safeInt(process.env.AIS_RECONNECT_MAX_MS, 5 * 60 * 1000, 100);
+// A 429 on the WebSocket upgrade means the provider is rate-limiting this egress
+// IP, not that the stream failed transiently: the rejection lands before the API
+// key is ever sent. Knocking every AIS_RECONNECT_MAX_MS keeps ~288 refused
+// requests/day inside the provider's sliding window, which can sustain the block
+// we are waiting out. Sustained throttling therefore escalates to a much longer
+// ceiling; any non-throttle outcome clears it so ordinary disconnects keep the
+// responsive schedule.
+//
+// Clamped at or above the ordinary ceiling: a smaller value would make
+// escalation *shorten* the wait and reconnect more aggressively while throttled,
+// which is the exact inverse of the intent.
+const AIS_THROTTLE_RECONNECT_MAX_MS = Math.max(
+  AIS_RECONNECT_MAX_MS,
+  safeInt(process.env.AIS_THROTTLE_RECONNECT_MAX_MS, 30 * 60 * 1000, 100),
+);
+const AIS_THROTTLE_ESCALATE_AFTER = safeInt(
+  process.env.AIS_THROTTLE_ESCALATE_AFTER,
+  5,
+  1,
+);
 const AIS_HANDSHAKE_TIMEOUT_MS = safeInt(
   process.env.AIS_HANDSHAKE_TIMEOUT_MS,
   30_000,
@@ -753,6 +778,10 @@ let messageCount = 0;
 let droppedMessages = 0;
 const requestRateBuckets = new Map(); // key: route:ip -> { count, resetAt }
 const logThrottleState = new Map(); // key: event key -> timestamp
+
+function isAisThrottleEscalated() {
+  return upstreamConsecutiveThrottles >= AIS_THROTTLE_ESCALATE_AFTER;
+}
 
 function getAisPositionFreshness(nowMs = Date.now()) {
   const positionAgeMs = upstreamLastPositionAt
@@ -2746,8 +2775,17 @@ async function seedCryptoQuotes() {
 }
 
 // Stablecoin Markets — CoinGecko → CoinPaprika fallback
-const STABLECOIN_IDS = 'tether,usd-coin,dai,first-digital-usd,ethena-usde';
-const STABLECOIN_PAPRIKA_MAP = { tether: 'usdt-tether', 'usd-coin': 'usdc-usd-coin', dai: 'dai-dai', 'first-digital-usd': 'fdusd-first-digital-usd', 'ethena-usde': 'usde-ethena-usde' };
+//
+// This is the BACKUP writer for market:stablecoins:v1; the standalone
+// scripts/seed-stablecoin-markets.mjs is the primary. Both, plus the RPC
+// handler that fills gaps the snapshot does not carry, now read one shared
+// config — private copies here meant the backup could seed a different coin
+// set, or classify the same price differently, than the primary. (#6308)
+const _stablecoinCfg = requireShared('stablecoins.json');
+const STABLECOIN_IDS = _stablecoinCfg.ids.join(',');
+const STABLECOIN_PAPRIKA_MAP = _stablecoinCfg.coinpaprika;
+const STABLECOIN_ON_PEG_MAX = _stablecoinCfg.pegThresholds.onPegMaxDeviation;
+const STABLECOIN_SLIGHT_DEPEG_MAX = _stablecoinCfg.pegThresholds.slightDepegMaxDeviation;
 const STABLECOIN_SEED_TTL = 7200; // 2h — 1h buffer over 5min cron cadence (was 1h = 55min buffer)
 
 async function fetchStablecoinCoinPaprika() {
@@ -2778,7 +2816,7 @@ async function seedStablecoinMarkets() {
   const stablecoins = data.map((coin) => {
     const price = coin.current_price || 0;
     const deviation = Math.abs(price - 1.0);
-    const pegStatus = deviation <= 0.005 ? 'ON PEG' : deviation <= 0.01 ? 'SLIGHT DEPEG' : 'DEPEGGED';
+    const pegStatus = deviation <= STABLECOIN_ON_PEG_MAX ? 'ON PEG' : deviation <= STABLECOIN_SLIGHT_DEPEG_MAX ? 'SLIGHT DEPEG' : 'DEPEGGED';
     return { id: coin.id, symbol: (coin.symbol || '').toUpperCase(), name: coin.name, price, deviation: +(deviation * 100).toFixed(3), pegStatus, marketCap: coin.market_cap || 0, volume24h: coin.total_volume || 0, change24h: coin.price_change_percentage_24h || 0, change7d: coin.price_change_percentage_7d_in_currency || 0, image: coin.image || '' };
   });
   const totalMarketCap = stablecoins.reduce((s, c) => s + c.marketCap, 0);
@@ -7278,6 +7316,8 @@ function getRelayRollingMetrics() {
       throttlesSinceBoot: aisUpstreamMetrics.throttle,
       terminalFailuresSinceBoot: aisUpstreamMetrics.terminalFailure,
       reconnectFailures: upstreamReconnectFailures,
+      consecutiveThrottles: upstreamConsecutiveThrottles,
+      throttleEscalated: isAisThrottleEscalated(),
       reconnectCooldownRemainingMs: Math.max(0, upstreamReconnectAt - nowMs),
       lastSuccessAt: aisUpstreamMetrics.lastSuccessAt
         ? new Date(aisUpstreamMetrics.lastSuccessAt).toISOString()
@@ -7638,7 +7678,7 @@ function processRawUpstreamMessage(raw) {
   messageCount++;
   if (messageCount % 5000 === 0) {
     const mem = process.memoryUsage();
-    console.log(`[Relay] ${messageCount} msgs, ${clients.size} ws-clients, ${vessels.size} vessels, queue=${getUpstreamQueueSize()}, dropped=${droppedMessages}, rss=${(mem.rss / 1024 / 1024).toFixed(0)}MB heap=${(mem.heapUsed / 1024 / 1024).toFixed(0)}MB, cache: opensky=${openskyResponseCache.size} opensky_neg=${openskyNegativeCache.size} rss_feed=${rssResponseCache.size} rss_backoff=${rssFailureCount.size}`);
+    console.log(`[Relay] ${messageCount} msgs, ${clients.size} ws-clients, ${vessels.size} vessels, queue=${getUpstreamQueueSize()}, dropped=${droppedMessages}, rss=${(mem.rss / 1024 / 1024).toFixed(0)}MB heap=${(mem.heapUsed / 1024 / 1024).toFixed(0)}MB, cache: opensky=${openskyResponseCache.size} opensky_neg=${openskyNegativeCache.size} rss_feed=${rssResponseCache.size} rss_neg=${rssNegativeCache.size} rss_backoff=${rssFailureCount.size}`);
   }
 
   let acceptedType = null;
@@ -8554,7 +8594,8 @@ const OPENSKY_BBOX_DECIMALS = OPENSKY_BBOX_QUANT_STEP > 0
 const OPENSKY_DEDUP_EMPTY_RESPONSE_JSON = JSON.stringify({ states: [], time: 0 });
 const OPENSKY_DEDUP_EMPTY_RESPONSE_GZIP = gzipSyncBuffer(OPENSKY_DEDUP_EMPTY_RESPONSE_JSON);
 const OPENSKY_DEDUP_EMPTY_RESPONSE_BROTLI = brotliSyncBuffer(OPENSKY_DEDUP_EMPTY_RESPONSE_JSON);
-const rssResponseCache = new Map(); // key: feed URL → { data, contentType, timestamp, statusCode }
+const rssResponseCache = new Map(); // key: feed URL → last successful { data, contentType, timestamp, statusCode }
+const rssNegativeCache = new Map(); // key: feed URL → short-lived last non-2xx response
 const rssInFlight = new Map(); // key: feed URL → Promise (dedup concurrent requests)
 const rssFailureCount = new Map(); // key: feed URL → consecutive failure count (for exponential backoff)
 const rssBackoffUntil = new Map(); // key: feed URL → timestamp when backoff expires
@@ -8562,6 +8603,8 @@ const RSS_CACHE_TTL_MS = Math.max(1, Number(process.env.RELAY_TEST_RSS_CACHE_TTL
 const RSS_NEGATIVE_CACHE_TTL_MS = 60 * 1000; // 1 min base — scaled by 2^failures via backoff
 const RSS_MAX_NEGATIVE_CACHE_TTL_MS = 15 * 60 * 1000; // 15 min cap — stop hammering broken feeds
 const RSS_CACHE_MAX_ENTRIES = 200; // hard cap — ~20 allowed domains × ~5 paths max, with headroom
+const RSS_NEGATIVE_CACHE_MAX_ENTRIES = 64; // short-lived failures need less headroom than feed bodies
+const RSS_CACHE_CLEANUP_INTERVAL_MS = Math.max(1, Number(process.env.RELAY_TEST_RSS_CACHE_CLEANUP_INTERVAL_MS) || 60 * 1000);
 
 function rssRecordFailure(feedUrl) {
   const prev = rssFailureCount.get(feedUrl) || 0;
@@ -9554,7 +9597,14 @@ setInterval(() => {
     if (now - entry.timestamp > OPENSKY_NEGATIVE_CACHE_TTL_MS * 2) openskyNegativeCache.delete(key);
   }
   for (const [key, entry] of rssResponseCache) {
-    if (now - entry.timestamp > RSS_CACHE_TTL_MS * 2) rssResponseCache.delete(key);
+    const backoffActive = (rssBackoffUntil.get(key) || 0) > now;
+    const negativeCacheActive = (rssNegativeCache.get(key)?.timestamp || 0) + RSS_NEGATIVE_CACHE_TTL_MS > now;
+    if (now - entry.timestamp > RSS_CACHE_TTL_MS * 2 && !backoffActive && !negativeCacheActive) {
+      rssResponseCache.delete(key);
+    }
+  }
+  for (const [key, entry] of rssNegativeCache) {
+    if (now - entry.timestamp > RSS_NEGATIVE_CACHE_TTL_MS * 2) rssNegativeCache.delete(key);
   }
   for (const [key, expiry] of rssBackoffUntil) {
     // Only clear backoff timer on expiry — preserve failureCount so
@@ -9565,7 +9615,9 @@ setInterval(() => {
   // Edge case: if cache is evicted (FIFO/age) right when backoff expires, failureCount
   // resets — next failure starts at 1min instead of re-escalating. Window is ~60s, acceptable.
   for (const key of rssFailureCount.keys()) {
-    if (!rssBackoffUntil.has(key) && !rssResponseCache.has(key)) rssFailureCount.delete(key);
+    if (!rssBackoffUntil.has(key) && !rssResponseCache.has(key) && !rssNegativeCache.has(key)) {
+      rssFailureCount.delete(key);
+    }
   }
   for (const [key, entry] of worldbankCache) {
     if (now - entry.timestamp > WORLDBANK_CACHE_TTL_MS * 2) worldbankCache.delete(key);
@@ -9582,7 +9634,7 @@ setInterval(() => {
   for (const [key, ts] of logThrottleState) {
     if (now - ts > RELAY_LOG_THROTTLE_MS * 6) logThrottleState.delete(key);
   }
-}, 60 * 1000).unref?.();
+}, RSS_CACHE_CLEANUP_INTERVAL_MS).unref?.();
 
 // ── Yahoo Finance Chart Proxy ──────────────────────────────────────
 const YAHOO_CHART_CACHE_TTL_MS = 300_000; // 5 min
@@ -10192,7 +10244,9 @@ const server = http.createServer(async (req, res) => {
       cache: {
         opensky: openskyResponseCache.size,
         opensky_neg: openskyNegativeCache.size,
-        rss: rssResponseCache.size,
+        rss: rssResponseCache.size + rssNegativeCache.size,
+        rss_positive: rssResponseCache.size,
+        rss_negative: rssNegativeCache.size,
         ucdp: ucdpCache.data ? 'warm' : 'cold',
         worldbank: worldbankCache.size,
         polymarket: polymarketCache.size,
@@ -10411,20 +10465,25 @@ const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({ error: 'Domain not allowed on Railway proxy' }));
       }
 
+      const sendRssStale = (cacheEntry, cacheLabel = 'STALE', extraHeaders = {}) => sendCompressed(req, res, 200, {
+        'Content-Type': cacheEntry.contentType || 'application/xml',
+        'Cache-Control': 'no-store',
+        'CDN-Cache-Control': 'no-store',
+        'X-Cache': cacheLabel,
+        ...extraHeaders,
+        'X-Relay-Stale': '1',
+      }, cacheEntry.data);
+
       // Backoff guard: if feed is in exponential backoff, don't hit upstream
       const backoffExpiry = rssBackoffUntil.get(feedUrl);
       const backoffNow = Date.now();
       if (backoffExpiry && backoffNow < backoffExpiry) {
         const rssCachedForBackoff = rssResponseCache.get(feedUrl);
-        if (rssCachedForBackoff && rssCachedForBackoff.statusCode >= 200 && rssCachedForBackoff.statusCode < 300) {
+        if (rssCachedForBackoff) {
           recordRelayOutcome('rss', 'throttle');
           recordRelayOutcome('rss', 'fallback');
           incrementRelayMetric('rssServed');
-          return sendCompressed(req, res, 200, {
-            'Content-Type': rssCachedForBackoff.contentType || 'application/xml',
-            'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store',
-            'X-Cache': 'BACKOFF-STALE',
-          }, rssCachedForBackoff.data);
+          return sendRssStale(rssCachedForBackoff, 'BACKOFF-STALE');
         }
         const remainSec = Math.max(1, Math.round((backoffExpiry - backoffNow) / 1000));
         recordRelayOutcome('rss', 'throttle');
@@ -10434,26 +10493,36 @@ const server = http.createServer(async (req, res) => {
 
       // Two-layer negative caching:
       // 1. Backoff guard above: exponential (1→15min) for network errors (socket hang up, timeout)
-      // 2. This cache check: flat 1min TTL for non-2xx upstream responses (429, 503, etc.)
-      // Both layers work correctly together — backoff handles persistent failures,
-      // negative cache prevents thundering herd on transient upstream errors.
+      // 2. The negative cache below: flat 1min TTL for non-2xx upstream responses (429, 503, etc.)
+      // Keep negative responses separate from the positive cache so an upstream
+      // rejection cannot erase the last body that can be served stale.
       const rssCached = rssResponseCache.get(feedUrl);
-      if (rssCached) {
-        const ttl = (rssCached.statusCode && rssCached.statusCode >= 200 && rssCached.statusCode < 300)
-          ? RSS_CACHE_TTL_MS : RSS_NEGATIVE_CACHE_TTL_MS;
-        if (Date.now() - rssCached.timestamp < ttl) {
-          if (rssCached.statusCode < 200 || rssCached.statusCode >= 300) {
-            recordRelayOutcome('rss', classifyUpstreamOutcome({ status: rssCached.statusCode }));
-          } else {
+      const rssNegativeCached = rssNegativeCache.get(feedUrl);
+      if (rssCached && Date.now() - rssCached.timestamp < RSS_CACHE_TTL_MS) {
+        incrementRelayMetric('rssServed');
+        return sendCompressed(req, res, 200, {
+          'Content-Type': rssCached.contentType || 'application/xml',
+          'Cache-Control': 'public, max-age=300',
+          'CDN-Cache-Control': 'public, max-age=600, stale-while-revalidate=300',
+          'X-Cache': 'HIT',
+        }, rssCached.data);
+      }
+      if (rssNegativeCached) {
+        if (Date.now() - rssNegativeCached.timestamp < RSS_NEGATIVE_CACHE_TTL_MS) {
+          recordRelayOutcome('rss', classifyUpstreamOutcome({ status: rssNegativeCached.statusCode }));
+          if (rssCached) {
+            recordRelayOutcome('rss', 'fallback');
             incrementRelayMetric('rssServed');
+            return sendRssStale(rssCached, 'NEGATIVE-STALE');
           }
-          return sendCompressed(req, res, rssCached.statusCode || 200, {
-            'Content-Type': rssCached.contentType || 'application/xml',
-            'Cache-Control': rssCached.statusCode >= 200 && rssCached.statusCode < 300 ? 'public, max-age=300' : 'no-cache',
-            'CDN-Cache-Control': rssCached.statusCode >= 200 && rssCached.statusCode < 300 ? 'public, max-age=600, stale-while-revalidate=300' : 'no-store',
+          return sendCompressed(req, res, rssNegativeCached.statusCode || 502, {
+            'Content-Type': rssNegativeCached.contentType || 'application/xml',
+            'Cache-Control': 'no-cache',
+            'CDN-Cache-Control': 'no-store',
             'X-Cache': 'HIT',
-          }, rssCached.data);
+          }, rssNegativeCached.data);
         }
+        rssNegativeCache.delete(feedUrl);
       }
 
       // In-flight dedup: if another request for the same feed is already fetching,
@@ -10461,20 +10530,34 @@ const server = http.createServer(async (req, res) => {
       const existing = rssInFlight.get(feedUrl);
       if (existing) {
         try {
-          await existing;
+          const fetchResult = await existing;
           const deduped = rssResponseCache.get(feedUrl);
           if (deduped) {
-            if (deduped.statusCode < 200 || deduped.statusCode >= 300) {
-              recordRelayOutcome('rss', classifyUpstreamOutcome({ status: deduped.statusCode }));
-            } else {
-              incrementRelayMetric('rssServed');
+            const dedupedNegative = rssNegativeCache.get(feedUrl);
+            incrementRelayMetric('rssServed');
+            if (dedupedNegative || fetchResult?.stale) {
+              recordRelayOutcome('rss', dedupedNegative
+                ? classifyUpstreamOutcome({ status: dedupedNegative.statusCode })
+                : fetchResult.outcome);
+              recordRelayOutcome('rss', 'fallback');
+              return sendRssStale(deduped, 'DEDUP-STALE');
             }
-            return sendCompressed(req, res, deduped.statusCode || 200, {
+            return sendCompressed(req, res, 200, {
               'Content-Type': deduped.contentType || 'application/xml',
-              'Cache-Control': deduped.statusCode >= 200 && deduped.statusCode < 300 ? 'public, max-age=300' : 'no-cache',
-              'CDN-Cache-Control': deduped.statusCode >= 200 && deduped.statusCode < 300 ? 'public, max-age=600, stale-while-revalidate=300' : 'no-store',
+              'Cache-Control': 'public, max-age=300',
+              'CDN-Cache-Control': 'public, max-age=600, stale-while-revalidate=300',
               'X-Cache': 'DEDUP',
             }, deduped.data);
+          }
+          const dedupedNegative = rssNegativeCache.get(feedUrl);
+          if (dedupedNegative) {
+            recordRelayOutcome('rss', classifyUpstreamOutcome({ status: dedupedNegative.statusCode }));
+            return sendCompressed(req, res, dedupedNegative.statusCode || 502, {
+              'Content-Type': dedupedNegative.contentType || 'application/xml',
+              'Cache-Control': 'no-cache',
+              'CDN-Cache-Control': 'no-store',
+              'X-Cache': 'DEDUP',
+            }, dedupedNegative.data);
           }
           // In-flight completed but nothing cached — serve 502 instead of cascading
           recordRelayOutcome('rss', 'terminalFailure');
@@ -10498,7 +10581,9 @@ const server = http.createServer(async (req, res) => {
       const recordAttemptOutcome = (status, error) => {
         if (outcomeRecorded) return;
         outcomeRecorded = true;
-        recordRelayOutcome('rss', classifyUpstreamOutcome({ status, error }));
+        const outcome = classifyUpstreamOutcome({ status, error });
+        recordRelayOutcome('rss', outcome);
+        return outcome;
       };
 
       const recordFailure = () => {
@@ -10566,11 +10651,11 @@ const server = http.createServer(async (req, res) => {
 
           if (response.statusCode === 304 && rssCached) {
             responseHandled = true;
-            recordAttemptOutcome(200);
+            const outcome = recordAttemptOutcome(200);
             incrementRelayMetric('rssServed');
             rssCached.timestamp = Date.now();
             rssResetFailure(feedUrl);
-            resolveInFlight();
+            resolveInFlight({ outcome });
             logThrottled('log', `rss-revalidated:${feedUrl}`, '[Relay] RSS 304 revalidated:', feedUrl);
             sendCompressed(req, res, 200, {
               'Content-Type': rssCached.contentType || 'application/xml',
@@ -10593,34 +10678,43 @@ const server = http.createServer(async (req, res) => {
             if (responseHandled || res.headersSent) return;
             responseHandled = true;
             const data = Buffer.concat(chunks);
-            // Cache all responses: 2xx with full TTL, non-2xx with short TTL (negative cache)
-            // FIFO eviction: drop oldest-inserted entry if at capacity
-            if (rssResponseCache.size >= RSS_CACHE_MAX_ENTRIES && !rssResponseCache.has(feedUrl)) {
-              const oldest = rssResponseCache.keys().next().value;
-              if (oldest) rssResponseCache.delete(oldest);
-            }
-            rssResponseCache.set(feedUrl, {
+            const isSuccess = response.statusCode >= 200 && response.statusCode < 300;
+            const cacheEntry = {
               data, contentType: 'application/xml', statusCode: response.statusCode, timestamp: Date.now(),
-              etag: response.headers.etag || null,
-              lastModified: response.headers['last-modified'] || null,
-            });
+            };
+            if (isSuccess) {
+              cacheEntry.etag = response.headers.etag || null;
+              cacheEntry.lastModified = response.headers['last-modified'] || null;
+              setBoundedCacheEntry(rssResponseCache, feedUrl, cacheEntry, RSS_CACHE_MAX_ENTRIES);
+              rssNegativeCache.delete(feedUrl);
+            } else {
+              setBoundedCacheEntry(rssNegativeCache, feedUrl, cacheEntry, RSS_NEGATIVE_CACHE_MAX_ENTRIES);
+            }
             const responseHeaders = {
               'Content-Type': 'application/xml',
-              'Cache-Control': response.statusCode >= 200 && response.statusCode < 300 ? 'public, max-age=300' : 'no-cache',
-              'CDN-Cache-Control': response.statusCode >= 200 && response.statusCode < 300 ? 'public, max-age=600, stale-while-revalidate=300' : 'no-store',
+              'Cache-Control': isSuccess ? 'public, max-age=300' : 'no-cache',
+              'CDN-Cache-Control': isSuccess ? 'public, max-age=600, stale-while-revalidate=300' : 'no-store',
               'X-Cache': 'MISS',
             };
-            if (response.statusCode >= 200 && response.statusCode < 300) {
-              recordAttemptOutcome(response.statusCode);
+            let outcome;
+            if (isSuccess) {
+              outcome = recordAttemptOutcome(response.statusCode);
               incrementRelayMetric('rssServed');
               rssResetFailure(feedUrl);
             } else {
-              recordAttemptOutcome(response.statusCode);
+              outcome = recordAttemptOutcome(response.statusCode);
               const { failures, backoffSec } = recordFailure();
               logThrottled('warn', `rss-upstream:${feedUrl}:${response.statusCode}`, `[Relay] RSS upstream ${response.statusCode} for ${feedUrl} (backoff ${backoffSec}s, failures=${failures})`);
               responseHeaders['Retry-After'] = String(backoffSec);
+              if (rssCached) {
+                incrementRelayMetric('rssServed');
+                recordRelayOutcome('rss', 'fallback');
+                resolveInFlight({ stale: true, outcome });
+                sendRssStale(rssCached, 'STALE', { 'Retry-After': String(backoffSec) });
+                return;
+              }
             }
-            resolveInFlight();
+            resolveInFlight({ outcome });
             sendCompressed(req, res, response.statusCode, responseHeaders, data);
           });
           stream.on('error', (err) => {
@@ -10632,18 +10726,18 @@ const server = http.createServer(async (req, res) => {
         });
 
         request.on('error', (err) => {
-          recordAttemptOutcome(0, err);
+          const outcome = recordAttemptOutcome(0, err);
           const { failures, backoffSec } = recordFailure();
           logThrottled('error', `rss-error:${feedUrl}:${err.code || err.message}`, `[Relay] RSS error: ${err.message} (backoff ${backoffSec}s, failures=${failures})`);
           // Serve stale on error (only if we have previous successful data)
-          if (rssCached && rssCached.statusCode >= 200 && rssCached.statusCode < 300) {
+          if (rssCached) {
             if (!responseHandled && !res.headersSent) {
               responseHandled = true;
               incrementRelayMetric('rssServed');
               recordRelayOutcome('rss', 'fallback');
-              sendCompressed(req, res, 200, { 'Content-Type': 'application/xml', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'X-Cache': 'STALE' }, rssCached.data);
+              sendRssStale(rssCached);
             }
-            resolveInFlight();
+            resolveInFlight({ stale: true, outcome });
             return;
           }
           sendError(502, err.message);
@@ -10651,15 +10745,15 @@ const server = http.createServer(async (req, res) => {
 
         request.on('timeout', () => {
           request.destroy();
-          recordAttemptOutcome(504, new Error('timeout'));
+          const outcome = recordAttemptOutcome(504, new Error('timeout'));
           const { failures, backoffSec } = recordFailure();
           logThrottled('warn', `rss-timeout:${feedUrl}`, `[Relay] RSS timeout for ${feedUrl} (backoff ${backoffSec}s, failures=${failures})`);
-          if (rssCached && rssCached.statusCode >= 200 && rssCached.statusCode < 300 && !responseHandled && !res.headersSent) {
+          if (rssCached && !responseHandled && !res.headersSent) {
             responseHandled = true;
             incrementRelayMetric('rssServed');
             recordRelayOutcome('rss', 'fallback');
-            sendCompressed(req, res, 200, { 'Content-Type': 'application/xml', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'X-Cache': 'STALE' }, rssCached.data);
-            resolveInFlight();
+            sendRssStale(rssCached);
+            resolveInFlight({ stale: true, outcome });
             return;
           }
           sendError(504, 'Request timeout');
@@ -12157,7 +12251,9 @@ function switchTab(btn, key) {
 
 function scheduleUpstreamReconnect() {
   if (relayShuttingDown || upstreamReconnectTimer || !API_KEY) return;
-  const delayMs = nextBackoffMs(upstreamReconnectFailures, AIS_RECONNECT_BASE_MS, AIS_RECONNECT_MAX_MS);
+  const throttleEscalated = isAisThrottleEscalated();
+  const ceilingMs = throttleEscalated ? AIS_THROTTLE_RECONNECT_MAX_MS : AIS_RECONNECT_MAX_MS;
+  const delayMs = nextBackoffMs(upstreamReconnectFailures, AIS_RECONNECT_BASE_MS, ceilingMs);
   upstreamReconnectFailures++;
   upstreamReconnectAt = Date.now() + delayMs;
   upstreamReconnectTimer = setTimeout(() => {
@@ -12166,7 +12262,10 @@ function scheduleUpstreamReconnect() {
     connectUpstream();
   }, delayMs);
   upstreamReconnectTimer.unref?.();
-  console.log(`[Relay] AIS reconnect scheduled in ${Math.ceil(delayMs / 1000)}s (attempt=${upstreamReconnectFailures})`);
+  const escalationNote = throttleEscalated
+    ? ` [throttle-escalated after ${upstreamConsecutiveThrottles} consecutive 429s]`
+    : '';
+  console.log(`[Relay] AIS reconnect scheduled in ${Math.ceil(delayMs / 1000)}s (attempt=${upstreamReconnectFailures})${escalationNote}`);
 }
 
 function connectUpstream() {
@@ -12257,6 +12356,7 @@ function connectUpstream() {
           aisUpstreamMetrics.lastFailure = null;
         }
         upstreamReconnectFailures = 0;
+        upstreamConsecutiveThrottles = 0;
         if (acceptedType === 'position') {
           const wasCurrentPositionReady = getAisPositionFreshness().currentPositionReady;
           upstreamLastPositionAt = Date.now();
@@ -12332,6 +12432,8 @@ function connectUpstream() {
         aisUpstreamMetrics.lastFailure = socketPositionTimedOut
           ? 'position_timeout'
           : (socketServedData ? 'disconnected' : 'closed_without_data');
+        // A close with no recorded error is by definition not a throttle.
+        upstreamConsecutiveThrottles = 0;
       }
       upstreamSocket = null;
       upstreamLastPositionAt = 0;
@@ -12350,6 +12452,9 @@ function connectUpstream() {
       aisUpstreamMetrics[throttled ? 'throttle' : 'terminalFailure']++;
       aisUpstreamMetrics.lastFailureAt = Date.now();
       aisUpstreamMetrics.lastFailure = throttled ? 'http_429' : 'connection_error';
+      // Only an unbroken run of 429s escalates the ceiling; a different failure
+      // means we are no longer being rate-limited and the ordinary schedule applies.
+      upstreamConsecutiveThrottles = throttled ? upstreamConsecutiveThrottles + 1 : 0;
     }
     console.error('[Relay] Upstream error:', err.message);
   });
@@ -12442,6 +12547,7 @@ setInterval(() => {
     openskyResponseCache.clear();
     openskyNegativeCache.clear();
     rssResponseCache.clear();
+    rssNegativeCache.clear();
     polymarketCache.clear();
     worldbankCache.clear();
     yahooChartCache.clear();

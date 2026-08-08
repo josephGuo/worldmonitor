@@ -5,6 +5,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { load as loadYaml } from 'js-yaml';
+
+import { loadUnifiedOpenApiSpec } from './_lib/openapi-spec-cache.mjs';
 import { normalizeKey } from '../scripts/lib/openapi-codegen.mjs';
 
 // Guards the generated OpenAPI examples injected by
@@ -378,6 +380,20 @@ function collectParamExamples(spec, label, operationId, paramName) {
   return found;
 }
 
+// Like collectParamExamples but tolerates a missing parameter (returns []),
+// for assertions that operate across several specs where one may not define it.
+function collectionForOperation(spec, label, operationId, paramName) {
+  const found = [];
+  for (const { path, method, op } of operationEntries(spec)) {
+    if (op.operationId !== operationId) continue;
+    const param = (op.parameters ?? []).find((p) => p?.name === paramName);
+    if (!param) continue;
+    const values = Array.isArray(param.example) ? param.example : [param.example];
+    for (const value of values) found.push({ value, where: `${label} ${method.toUpperCase()} ${path} param ${paramName}` });
+  }
+  return found;
+}
+
 function assertParamExampleSet(specs, operationId, paramName, acceptedValues) {
   for (const [label, spec] of specs) {
     for (const { value, where } of collectParamExamples(spec, label, operationId, paramName)) {
@@ -673,7 +689,7 @@ describe('OpenAPI examples contract', () => {
         'InfrastructureService.openapi.yaml',
         loadYaml(readFileSync(resolve(apiDir, 'InfrastructureService.openapi.yaml'), 'utf8')),
       ],
-      ['worldmonitor.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'worldmonitor.openapi.yaml'), 'utf8'))],
+      ['worldmonitor.openapi.yaml', loadUnifiedOpenApiSpec()],
     ];
 
     for (const [label, spec] of specs) {
@@ -692,7 +708,7 @@ describe('OpenAPI examples contract', () => {
   });
 
   it('adds request and response examples to the unified OpenAPI bundle', () => {
-    const bundle = loadYaml(readFileSync(resolve(apiDir, 'worldmonitor.openapi.yaml'), 'utf8'));
+    const bundle = loadUnifiedOpenApiSpec();
     const result = assertOperationExamples(bundle, 'worldmonitor.openapi.yaml');
     assert.equal(result.operations, 214);
     assert.equal(result.responseExpected, 214);
@@ -715,7 +731,7 @@ describe('OpenAPI examples contract', () => {
       const yamlSpec = loadYaml(readFileSync(resolve(apiDir, yamlFile), 'utf8'));
       violations.push(...honeypotRequestViolations(yamlSpec, yamlFile));
     }
-    const bundle = loadYaml(readFileSync(resolve(apiDir, 'worldmonitor.openapi.yaml'), 'utf8'));
+    const bundle = loadUnifiedOpenApiSpec();
     violations.push(...honeypotRequestViolations(bundle, 'worldmonitor.openapi.yaml'));
 
     assert.ok(guardedFields >= 2, `expected honeypot-marked schema fields to guard, found ${guardedFields}`);
@@ -796,7 +812,7 @@ describe('OpenAPI curated example values', () => {
     const specs = [
       ['NewsService.openapi.json', JSON.parse(readFileSync(resolve(apiDir, 'NewsService.openapi.json'), 'utf8'))],
       ['NewsService.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'NewsService.openapi.yaml'), 'utf8'))],
-      ['worldmonitor.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'worldmonitor.openapi.yaml'), 'utf8'))],
+      ['worldmonitor.openapi.yaml', loadUnifiedOpenApiSpec()],
     ];
 
     for (const [label, spec] of specs) {
@@ -813,7 +829,7 @@ describe('OpenAPI curated example values', () => {
     const intelligenceSpecs = [
       ['IntelligenceService.openapi.json', JSON.parse(readFileSync(resolve(apiDir, 'IntelligenceService.openapi.json'), 'utf8'))],
       ['IntelligenceService.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'IntelligenceService.openapi.yaml'), 'utf8'))],
-      ['worldmonitor.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'worldmonitor.openapi.yaml'), 'utf8'))],
+      ['worldmonitor.openapi.yaml', loadUnifiedOpenApiSpec()],
     ];
     assertParamExampleSet(intelligenceSpecs, 'GetGdeltTopicTimeline', 'topic', CURATED.gdeltTopics);
     assertParamExampleSet(intelligenceSpecs, 'GetRegionalSnapshot', 'region_id', CURATED.regionIds);
@@ -826,7 +842,7 @@ describe('OpenAPI curated example values', () => {
     const consumerSpecs = [
       ['ConsumerPricesService.openapi.json', JSON.parse(readFileSync(resolve(apiDir, 'ConsumerPricesService.openapi.json'), 'utf8'))],
       ['ConsumerPricesService.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'ConsumerPricesService.openapi.yaml'), 'utf8'))],
-      ['worldmonitor.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'worldmonitor.openapi.yaml'), 'utf8'))],
+      ['worldmonitor.openapi.yaml', loadUnifiedOpenApiSpec()],
     ];
     for (const operationId of ['GetConsumerPriceOverview', 'GetConsumerPriceBasketSeries', 'ListConsumerPriceCategories', 'ListRetailerPriceSpreads']) {
       assertParamExampleSet(consumerSpecs, operationId, 'basket_slug', CURATED.consumerBaskets);
@@ -838,7 +854,7 @@ describe('OpenAPI curated example values', () => {
     const aviationSpecs = [
       ['AviationService.openapi.json', JSON.parse(readFileSync(resolve(apiDir, 'AviationService.openapi.json'), 'utf8'))],
       ['AviationService.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'AviationService.openapi.yaml'), 'utf8'))],
-      ['worldmonitor.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'worldmonitor.openapi.yaml'), 'utf8'))],
+      ['worldmonitor.openapi.yaml', loadUnifiedOpenApiSpec()],
     ];
     const flightOps = ['SearchGoogleFlights', 'SearchGoogleDates'];
     for (const operationId of flightOps) {
@@ -859,7 +875,7 @@ describe('OpenAPI curated example values', () => {
     const newsSpecs = [
       ['NewsService.openapi.json', JSON.parse(readFileSync(resolve(apiDir, 'NewsService.openapi.json'), 'utf8'))],
       ['NewsService.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'NewsService.openapi.yaml'), 'utf8'))],
-      ['worldmonitor.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'worldmonitor.openapi.yaml'), 'utf8'))],
+      ['worldmonitor.openapi.yaml', loadUnifiedOpenApiSpec()],
     ];
     for (const [label, spec] of newsSpecs) {
       const mode = spec.paths?.['/api/news/v1/summarize-article']?.post
@@ -882,7 +898,7 @@ describe('OpenAPI curated example values', () => {
       const yamlSpec = loadYaml(readFileSync(resolve(apiDir, yamlFile), 'utf8'));
       checked += assertClosedValueParamExamples(yamlSpec, yamlFile);
     }
-    const bundle = loadYaml(readFileSync(resolve(apiDir, 'worldmonitor.openapi.yaml'), 'utf8'));
+    const bundle = loadUnifiedOpenApiSpec();
     checked += assertClosedValueParamExamples(bundle, 'worldmonitor.openapi.yaml');
     assert.ok(checked >= 20, `expected at least 20 prose-enumerated parameter examples, checked ${checked}`);
   });
@@ -899,7 +915,7 @@ describe('OpenAPI curated example values', () => {
       ['DisplacementService.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'DisplacementService.openapi.yaml'), 'utf8'))],
       ['MilitaryService.openapi.json', JSON.parse(readFileSync(resolve(apiDir, 'MilitaryService.openapi.json'), 'utf8'))],
       ['MilitaryService.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'MilitaryService.openapi.yaml'), 'utf8'))],
-      ['worldmonitor.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'worldmonitor.openapi.yaml'), 'utf8'))],
+      ['worldmonitor.openapi.yaml', loadUnifiedOpenApiSpec()],
     ];
     assertIssue4827Cluster7ResidueFixed(specs);
   });
@@ -908,7 +924,7 @@ describe('OpenAPI curated example values', () => {
     const specs = [
       ['ScenarioService.openapi.json', JSON.parse(readFileSync(resolve(apiDir, 'ScenarioService.openapi.json'), 'utf8'))],
       ['ScenarioService.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'ScenarioService.openapi.yaml'), 'utf8'))],
-      ['worldmonitor.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'worldmonitor.openapi.yaml'), 'utf8'))],
+      ['worldmonitor.openapi.yaml', loadUnifiedOpenApiSpec()],
     ];
 
     for (const [label, spec] of specs) {
@@ -920,7 +936,7 @@ describe('OpenAPI curated example values', () => {
     const specs = [
       ['GivingService.openapi.json', JSON.parse(readFileSync(resolve(apiDir, 'GivingService.openapi.json'), 'utf8'))],
       ['GivingService.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'GivingService.openapi.yaml'), 'utf8'))],
-      ['worldmonitor.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'worldmonitor.openapi.yaml'), 'utf8'))],
+      ['worldmonitor.openapi.yaml', loadUnifiedOpenApiSpec()],
     ];
 
     for (const [label, spec] of specs) {
@@ -938,11 +954,50 @@ describe('OpenAPI curated example values', () => {
         'ShippingV2Service.openapi.yaml',
         loadYaml(readFileSync(resolve(apiDir, 'ShippingV2Service.openapi.yaml'), 'utf8')),
       ],
-      ['worldmonitor.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'worldmonitor.openapi.yaml'), 'utf8'))],
+      ['worldmonitor.openapi.yaml', loadUnifiedOpenApiSpec()],
     ];
 
     for (const [label, spec] of specs) {
       assertRouteIntelligenceHs2Example(spec, label);
+    }
+  });
+
+  // ListCommodityQuotes only accepts supported commodity symbols (see #6307);
+  // the generic `symbol` heuristic emits `AAPL`, which the handler now rejects
+  // with HTTP 400. The injector must pin the sample to a supported symbol.
+  it('uses only supported commodity symbols in ListCommodityQuotes examples', () => {
+    const supported = new Set(
+      JSON.parse(readFileSync(resolve(root, 'shared/commodities.json'), 'utf8'))
+        .commodities.map((c) => c.symbol),
+    );
+    assert.ok(supported.has('GC=F'), 'expected gold futures GC=F in the configured commodity set');
+
+    const specs = [
+      ['MarketService.openapi.json', JSON.parse(readFileSync(resolve(apiDir, 'MarketService.openapi.json'), 'utf8'))],
+      ['MarketService.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'MarketService.openapi.yaml'), 'utf8'))],
+      ['worldmonitor.openapi.yaml', loadYaml(readFileSync(resolve(apiDir, 'worldmonitor.openapi.yaml'), 'utf8'))],
+    ];
+
+    for (const [label, spec] of specs) {
+      const found = collectionForOperation(spec, label, 'ListCommodityQuotes', 'symbols');
+      assert.ok(found.length > 0, `${label}: expected ListCommodityQuotes symbols parameter examples`);
+      for (const { value, where } of found) {
+        assert.notEqual(value, 'example', `${where}: placeholder commodity symbol`);
+        assert.ok(supported.has(String(value)), `${where}: commodity symbol '${value}' is not in the supported seed set`);
+      }
+
+      // Response examples also used singular `symbol` (generic inject defaulted to AAPL).
+      for (const { path, method, op } of operationEntries(spec)) {
+        if (op.operationId !== 'ListCommodityQuotes') continue;
+        const example = op.responses?.['200']?.content?.['application/json']?.example;
+        const quotes = example?.quotes;
+        if (!Array.isArray(quotes)) continue;
+        for (const [i, q] of quotes.entries()) {
+          const where = `${label} ${method.toUpperCase()} ${path} response.quotes[${i}].symbol`;
+          assert.ok(q && typeof q.symbol === 'string', `${where}: missing symbol`);
+          assert.ok(supported.has(q.symbol), `${where}: commodity symbol '${q.symbol}' is not in the supported seed set`);
+        }
+      }
     }
   });
 });
