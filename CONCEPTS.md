@@ -114,6 +114,12 @@ Every enabled panel beyond the immediate tier's budget. A deferred panel's slot 
 
 The project's rule for any panel that joins the grid asynchronously, in either tier: a footprint-matched placeholder shell must occupy the panel's exact grid slot from the first synchronous layout pass, and the arriving panel replaces the shell in place rather than being inserted as a new grid item. The contract's invariant is that grid geometry never changes when async content arrives — violations register as layout shifts for every panel below the insertion point. Reserving the slot and starting the load early are independent decisions; conflating "loads immediately" with "needs no reservation" is the failure mode that produced the dashboard's dominant desktop layout-shift mechanism. See also: Immediate Tier, Deferred Tier, Shift Mover.
 
+### Viewport Prime
+
+The dashboard's demand-driven data pass: on boot, and again on every scroll and resize, it loads data for exactly the panels near the viewport, so a Deferred Tier panel receives its content only as the user approaches it. It re-runs constantly by design, which makes its safety contract the load-bearing part: the pass dedupes *concurrent* loads but does not remember *completed* ones, so every loader it can reach must be cheap to repeat — served from a real cache, or skipped outright when the panel already renders data. A loader that repeats expensively (an uncached network call, a teardown of already-rendered content) turns every scroll into user-visible churn.
+
+Refresh triggers divide into three classes that must not be conflated: input-driven passes (scroll, resize — arbitrarily frequent, carrying no information about data staleness), the staleness clock (each panel's scheduled refresh cadence), and explicit user requests (a retry affordance). Only the latter two justify refetching data a panel already shows; an input-driven pass exists to fill empty panels, never to refresh full ones. See also: Deferred Tier, Immediate Tier.
+
 ### Shift Victim
 
 An element that browser and RUM layout-shift attribution names because its *position* changed — it was pushed by something else. Both Chrome's largest-shift-target and RUM per-selector rankings report victims; neither reports causes. A fix aimed at a top-ranked victim is a hypothesis about the pusher, not a confirmed target: prominent above-the-fold elements rank as victims whenever anything above them changes the layout. See also: Shift Mover.
@@ -277,6 +283,14 @@ The single client-derived state that decides what a customer sees when premium a
 ### Referral Capture
 
 The bootstrap-time process that turns an inbound URL param into checkout attribution: `?ref=` or `?wm_referral=` on any dashboard landing is read once at app boot, stripped from the URL, persisted locally with a bounded TTL, and forwarded to the payment provider at checkout to credit the referring sharer. Because the param names are generic-looking, any other use of `ref=` on dashboard-bound links (SEO tags, campaign labels) is silently captured as a fake affiliate code — internal source attribution must use `utm_*` params, which this process ignores. See also: Entitlement.
+
+### Signed Checkout Identity
+
+The account identifier the checkout flow stamps into the payment provider's subscription and payment metadata, alongside a server-issued signature. It is the authoritative answer to "which account bought this" — independent of every email address on the payment record, because it captures who was *signed in* at the moment of purchase rather than what the buyer typed. Consumers trust it only when the signature verifies; an unsigned or tampered value falls back to matching on the provider's stored customer record. Support triage of any "paid but no access" report starts here, never from an email comparison. See also: Entitlement, Checkout Email.
+
+### Checkout Email
+
+The address a buyer types into the payment provider's checkout form. It is unauthenticated, need not match any account, and is best read as "an inbox the buyer can see," never as an identity: the same person can present one address at checkout, another as their sign-in, and a third in support threads. Any message addressed to it can therefore land in an inbox whose address owns no account — and a message that invites sign-in steers the buyer toward an address the auth provider has never seen. "Who bought" is resolved by the Signed Checkout Identity; the checkout email resolves only "where the invoice went." See also: Signed Checkout Identity, Entitlement.
 
 ## Activation & Onboarding
 
