@@ -71,6 +71,208 @@ export const companyMonitoringReturnedRangeValidator = v.object({
   endAt: v.number(),
 });
 
+export const companyMonitoringXAuthorityRoleValidator = v.union(
+  v.literal("company"),
+  v.literal("newsroom"),
+  v.literal("investor_relations"),
+  v.literal("support"),
+  v.literal("developer"),
+  v.literal("regional"),
+  v.literal("unknown"),
+);
+
+export const companyMonitoringXDemotionReasonValidator = v.union(
+  v.literal("account_reassigned"),
+  v.literal("account_changed"),
+  v.literal("official_link_lost"),
+  v.literal("name_mismatch"),
+  v.literal("domicile_mismatch"),
+  v.literal("expired"),
+  v.literal("family_conflict"),
+);
+
+export const companyMonitoringXAllowedUseValidator = v.union(
+  v.literal("primary_evidence"),
+  v.literal("recent_search"),
+);
+
+const companyMonitoringXCheckpointValidator = v.object({
+  companyId: v.string(),
+  checkpointBefore: v.optional(v.string()),
+  checkpointAfter: v.string(),
+});
+
+const companyMonitoringXPackingValidator = v.object({
+  packId: v.string(),
+  query: v.string(),
+  companyIds: v.array(v.string()),
+  accountIds: v.array(v.string()),
+  handles: v.array(v.string()),
+});
+
+const companyMonitoringXGapValidator = v.object({
+  startAt: v.number(),
+  endAt: v.number(),
+  reason: v.union(
+    v.literal("provider_retention"),
+    v.literal("pagination_cap"),
+    v.literal("provider_partial"),
+    v.literal("compliance_unavailable"),
+  ),
+});
+
+export const companyMonitoringXPermittedStorageValidator = v.union(
+  v.literal("full_text"),
+  v.literal("metadata_only"),
+);
+
+export const companyMonitoringXIdentityObservationValidator = v.object({
+  companyId: v.string(),
+  domainClaimId: v.string(),
+  xHandleClaimId: v.string(),
+  officialDomain: v.string(),
+  officialPageUrl: v.string(),
+  accountId: v.string(),
+  currentHandle: v.string(),
+  profileName: v.string(),
+  domicileCountry: v.union(v.literal("US"), v.literal("GB")),
+  authorityRole: companyMonitoringXAuthorityRoleValidator,
+  state: v.union(v.literal("authoritative"), v.literal("demoted")),
+  demotionReason: v.optional(companyMonitoringXDemotionReasonValidator),
+  badgeVerified: v.boolean(),
+  allowedUses: v.array(companyMonitoringXAllowedUseValidator),
+  checkedAt: v.number(),
+  expiresAt: v.number(),
+  evidenceHash: v.string(),
+});
+
+export const companyMonitoringXContentStateValidator = v.union(
+  v.literal("active"),
+  v.literal("edited"),
+  v.literal("deleted"),
+  v.literal("protected"),
+  v.literal("withheld"),
+);
+
+export const companyMonitoringXStorageStateValidator = v.union(
+  v.literal("full_text"),
+  v.literal("metadata_only"),
+  v.literal("tombstone"),
+);
+
+export const companyMonitoringEvidenceProviderValidator = v.union(
+  v.literal("exa"),
+  v.literal("x"),
+);
+
+export const companyMonitoringEvidenceAuthorityValidator = v.union(
+  v.literal("verified_first_party"),
+  v.literal("independent_source"),
+  v.literal("low_authority"),
+);
+
+export const companyMonitoringEvidenceIndependenceValidator = v.union(
+  v.literal("first_party"),
+  v.literal("independent"),
+  v.literal("syndicated"),
+  v.literal("unknown"),
+);
+
+export const companyMonitoringEvidenceStateValidator = v.union(
+  v.literal("active"),
+  v.literal("deleted"),
+  v.literal("expired"),
+  v.literal("authority_lost"),
+  v.literal("unavailable"),
+);
+
+export const companyMonitoringCandidateStateValidator = v.union(
+  v.literal("pending_classification"),
+  v.literal("held"),
+  v.literal("terminal"),
+);
+
+export const companyMonitoringCandidateTerminalReasonValidator = v.union(
+  v.literal("admitted"),
+  v.literal("rejected"),
+  v.literal("evidence_deleted"),
+  v.literal("evidence_expired"),
+  v.literal("authority_lost"),
+  v.literal("evidence_unavailable"),
+  v.literal("hold_expired"),
+  v.literal("company_removed"),
+);
+
+export const companyMonitoringProviderEvidenceValidator = v.object({
+  provider: companyMonitoringEvidenceProviderValidator,
+  providerLocator: v.string(),
+  url: v.optional(v.string()),
+  title: v.optional(v.string()),
+  text: v.optional(v.string()),
+  author: v.optional(v.string()),
+  authorAccountId: v.optional(v.string()),
+  publishedAt: v.number(),
+  observedAt: v.number(),
+  expiresAt: v.optional(v.number()),
+  candidateCompanyIds: v.array(v.string()),
+  verifiedCompanyIds: v.optional(v.array(v.string())),
+  sourceAuthority: companyMonitoringEvidenceAuthorityValidator,
+});
+
+export const companyMonitoringXPostObservationValidator = v.object({
+  companyId: v.string(),
+  postId: v.string(),
+  authorAccountId: v.string(),
+  currentHandle: v.string(),
+  createdAt: v.number(),
+  observedAt: v.number(),
+  contentState: companyMonitoringXContentStateValidator,
+  storageState: companyMonitoringXStorageStateValidator,
+  text: v.optional(v.string()),
+  editHistoryPostIds: v.array(v.string()),
+  withheldCountryCodes: v.optional(v.array(v.string())),
+});
+
+const companyMonitoringXAuditFields = {
+  requestedWindow: companyMonitoringReturnedRangeValidator,
+  returnedWindow: companyMonitoringReturnedRangeValidator,
+  checkpoints: v.array(companyMonitoringXCheckpointValidator),
+  packing: v.array(companyMonitoringXPackingValidator),
+  gaps: v.array(companyMonitoringXGapValidator),
+  permittedStorage: companyMonitoringXPermittedStorageValidator,
+  unexpectedAuthorAccountIds: v.array(v.string()),
+  requestCount: v.number(),
+  complianceEventCount: v.number(),
+};
+
+export const companyMonitoringXIngestionValidator = v.object({
+  ...companyMonitoringXAuditFields,
+  identities: v.array(companyMonitoringXIdentityObservationValidator),
+  posts: v.array(companyMonitoringXPostObservationValidator),
+});
+
+export const companyMonitoringXReceiptValidator = v.object({
+  ...companyMonitoringXAuditFields,
+  identityCount: v.number(),
+  postCount: v.number(),
+});
+
+export const companyMonitoringExaCandidateValidator = v.object({
+  providerResultId: v.string(),
+  providerRequestId: v.optional(v.string()),
+  providerRank: v.number(),
+  url: v.string(),
+  title: v.optional(v.string()),
+  author: v.optional(v.string()),
+  publishedAt: v.number(),
+  retrievedAt: v.number(),
+  candidateCompanyIds: v.array(v.string()),
+});
+
+export const companyMonitoringExaIngestionValidator = v.object({
+  candidates: v.array(companyMonitoringExaCandidateValidator),
+});
+
 export const companyMonitoringFinalizeResultValidator = v.union(
   v.object({
     type: v.literal("result"),
@@ -81,6 +283,8 @@ export const companyMonitoringFinalizeResultValidator = v.union(
     checkpoint: v.optional(v.string()),
     emptyValidated: v.boolean(),
     costUsdMicros: v.number(),
+    exaIngestion: v.optional(companyMonitoringExaIngestionValidator),
+    xIngestion: v.optional(companyMonitoringXIngestionValidator),
   }),
   v.object({
     type: v.literal("provider_error"),
@@ -98,6 +302,7 @@ export const companyMonitoringCompleteReceiptValidator = v.object({
   costUsdMicros: v.number(),
   sourceCoverage: v.literal("complete"),
   checkpointAfter: v.string(),
+  xIngestion: v.optional(companyMonitoringXReceiptValidator),
 });
 
 export const companyMonitoringNonReassuringReceiptValidator = v.object({
@@ -113,4 +318,5 @@ export const companyMonitoringNonReassuringReceiptValidator = v.object({
     v.literal("failed"),
     v.literal("unknown"),
   ),
+  xIngestion: v.optional(companyMonitoringXReceiptValidator),
 });

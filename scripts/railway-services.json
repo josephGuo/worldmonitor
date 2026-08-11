@@ -96,15 +96,16 @@
       "scripts/shared/brief-llm-core.js",
       "scripts/shared/diplomacy-keywords.json",
       "scripts/shared/notification-dedup.cjs",
+      "scripts/shared/publisher-families.js",
       "scripts/shared/stocks.json",
-      "server/_shared/brief-render.js",
       "server/_shared/brief-render.d.ts",
-      "server/_shared/feelgood-classifier.js",
+      "server/_shared/brief-render.js",
       "server/_shared/feelgood-classifier.d.ts",
-      "server/_shared/llm-sanitize.js",
+      "server/_shared/feelgood-classifier.js",
       "server/_shared/llm-sanitize.d.ts",
-      "server/_shared/opinion-classifier.js",
+      "server/_shared/llm-sanitize.js",
       "server/_shared/opinion-classifier.d.ts",
+      "server/_shared/opinion-classifier.js",
       "shared/brief-envelope.d.ts",
       "shared/brief-envelope.js",
       "shared/brief-filter.d.ts",
@@ -114,6 +115,8 @@
       "shared/diplomacy-keywords.json",
       "shared/ephemeral-live-classifier.d.ts",
       "shared/ephemeral-live-classifier.js",
+      "shared/publisher-families.d.ts",
+      "shared/publisher-families.js",
       "shared/stocks.json",
       "shared/ticker-extract.d.ts",
       "shared/ticker-extract.js",
@@ -675,6 +678,7 @@
       "scripts/shared/country-names.json",
       "scripts/shared/diplomacy-keywords.json",
       "scripts/shared/geo-extract.mjs",
+      "scripts/shared/publisher-families.js",
       "scripts/shared/source-tiers.json",
       "scripts/shared/story-identity.js"
     ],
@@ -1051,6 +1055,7 @@
       "scripts/seed-china-macro.mjs",
       "scripts/seed-china-policy-events.mjs",
       "scripts/seed-china-release-calendar.mjs",
+      "scripts/seed-education-attainment.mjs",
       "scripts/seed-eurostat-country-data.mjs",
       "scripts/seed-eurostat-gov-debt-q.mjs",
       "scripts/seed-eurostat-house-prices.mjs",
@@ -1193,7 +1198,8 @@
       "CONVEX_URL",
       "COMPANY_MONITORING_WORKER_SECRET",
       "UPSTASH_REDIS_REST_URL",
-      "UPSTASH_REDIS_REST_TOKEN"
+      "UPSTASH_REDIS_REST_TOKEN",
+      "X_BEARER_TOKEN"
     ],
     "watchPatterns": [
       "scripts/_proxy-utils.cjs",
@@ -1202,14 +1208,16 @@
       "scripts/_seed-utils.mjs",
       "scripts/company-monitoring-worker.mjs",
       "scripts/lib/company-monitoring-exa.mjs",
+      "scripts/lib/company-monitoring-x-provider.mjs",
       "scripts/lib/llm-telemetry.cjs",
       "scripts/lib/main-module.mjs",
+      "scripts/lib/notification-webhook-ssrf.cjs",
       "scripts/nixpacks.toml",
       "scripts/package-lock.json",
       "scripts/package.json"
     ],
     "cronSchedule": null,
-    "documentedAt": "scripts/company-monitoring-worker.mjs (header docblock declares rootDirectory: scripts); lifecycle planned 2026-08-10 pending provisioning — see #6402"
+    "documentedAt": "scripts/company-monitoring-worker.mjs (header docblock declares rootDirectory: scripts); lifecycle planned 2026-08-10 pending provisioning \u2014 see #6402"
   },
   {
     "entry": "scripts/scenario-worker.mjs",
