@@ -73,7 +73,7 @@ On the 2026-08-11 production-shaped fixture, Chad moves from **67 at coverage 1.
 
 **Why `not-applicable` and not `unmonitored`**: non-participation in the DRS means there is no reported short-term external commercial debt to roll over. That is a mild positive, not an unknown, so the class that describes it is "the indicator does not apply here".
 
-**Discriminator**: the World Bank country catalog's `lendingType=LNX` classification is the explicit non-borrower signal. A missing DRS row is never enough by itself, because an accepted annual payload can still omit an eligible borrower. The imputation also requires a valid BIS CBS row. Payload schema v1 did not carry `nonDrsCountryCodes`; the scorer remains backward-compatible with that payload but treats eligibility as unknown, so the slot drops instead of receiving a positive imputation until schema v2 is seeded.
+**Discriminator**: the World Bank country catalog's `lendingType=LNX` classification is the explicit non-borrower signal. A missing DRS row is never enough by itself, because an accepted annual payload can still omit an eligible borrower. The imputation also requires a valid BIS CBS row. Payload schema v1 did not carry `nonDrsCountryCodes`; the active scorer now fails closed unless this schema-v2 field contains at least 40 valid unique codes, matching the seeder's producer contract.
 
 This typed LNX/BIS imputation counts as a resolving component for FATF singleton handling. It is explicit `not-applicable` evidence with score 75 and partial certainty, not three-source absence, and therefore cannot produce a perfect 100-point dimension through the imputed-debt path.
 
@@ -132,6 +132,41 @@ Three invariants now hold, and `tests/resilience-financial-system-exposure.test.
 1. The isolation floor (value 0) is ≤ 40 and **strictly below every other reading of the band**, densely sampled from 0.5% to 5000% of GDP.
 2. The over-exposure leg floors at 35 — above the isolation floor, because an over-banked entrepôt still has working correspondent access that a severed state does not.
 3. Every segment boundary is continuous, including the new 80% floor knee (the PR #3407 Greptile P1 lesson: cliffs in piecewise-linear scorers destabilize rankings at band edges).
+
+**Diversity-conditioned premium (the Albania residue).** The table above is the RAW band; what the blend consumes is `normalizeDiversityConditionedBand`, which scales the premium **above the 75 low-integration boundary** by Component 4's own redundancy transform:
+
+```
+conditioned = min(band, 75) + max(0, band − 75) × normalizeHigherBetter(parentCount, 1, 10) / 100
+```
+
+The sweet spot's label is "healthy **diversified** financial system", but the raw band reads only the integration level. After the #6459 retune, 29 of the 77 premium-region countries on the 2026-08-12 production payload held that premium through ≤ 2 reporting parents — Bosnia took a 90 band on ONE parent; Albania took 91 on claims routed almost entirely through one Austrian and one Italian banking group, and out-scored Singapore and the United Kingdom on the full dimension. Moderate integration through two doors is a withdrawal channel (Thailand 1997; the 2011-2015 Greek-bank deleveraging in the western Balkans), not a cushion, and the construct's own Component 4 scores the same fact 11/100. Conditioning the premium on demonstrated parent breadth closes that gap with **no new constants or sources**: the scale is verbatim Component 4's, the same reuse discipline as the #6461 market-access proxy.
+
+Everything at or below 75 is untouched — the isolation floor, the over-exposure floor, and the deep over-exposure legs keep the exact #6459 shape, so all three invariants above survive unchanged. Additional conditioning invariants pinned by the same test file: parents ≥ 10 earns the full raw premium; parents ≤ 1, a non-finite count, or a BIS row whose `parentCount` failed to parse earns none — absence of diversity evidence is not diversity; the conditioned band is monotone in parents and remains continuous in claims at every segment boundary.
+
+**Known conservative edge.** `parentCount` counts only parents holding **more than** 1% of host GDP, so a country integrated through many sub-threshold parents forfeits a premium its true breadth might merit. The forfeit is bounded by the premium itself: ≤ 25 band points, and ≤ 7.5 dimension points **only while all four slots resolve**. `weightedBlend` renormalises the band's 0.30 onto the surviving weight, so the dimension cost grows as siblings drop — 8.8 points at coverage 0.85 (Component 4 absent), 11.5 at 0.65 (debt slot absent), 15 at 0.50. The worst arithmetically reachable case is ~14 band points: all 16 enumerated reporting parents sitting just under the counting threshold sums to ~16% of GDP — a raw band of 89 scored at the 75 floor. No production row currently has premium-region claims with `parentCount` 0, so this is a bound on the transform, not an observed effect. If a future BIS payload does produce one, the fix is a breadth measure over the full parent-share distribution (effective parent count or an HHI over `parents`), not a lower threshold.
+
+**Reproducing the concentration statistic.** The "29 of 77" figure above is the empirical justification for conditioning at all, so it must be re-derivable rather than taken on trust — BIS republishes quarterly and the ratio will move. Against a live payload:
+
+```bash
+# How many premium-region countries hold that premium through <= 2 parents?
+redis-cli GET 'economic:bis-lbs:v1' | jq '
+  (.data // .).countries
+  | to_entries
+  | map(select(.value.totalXborderPctGdp != null and .value.parentCount != null))
+  # Premium region = the band ROUNDS above 75, so raw band >= 75.5 — which the
+  # two legs reach at 5.4% and 40.59% of GDP. Using the unrounded 5%/40.9%
+  # crossings instead pulls in 2 countries whose band rounds to exactly 75 and
+  # earns no premium, which is what makes this read 79/31 rather than 77/29.
+  | map(select(.value.totalXborderPctGdp >= 5.4 and .value.totalXborderPctGdp <= 40.59))
+  | {premium_region: length,
+     concentrated: map(select(.value.parentCount <= 2)) | length,
+     single_parent: map(select(.value.parentCount <= 1)) | length}'
+# 2026-08-12: { "premium_region": 77, "concentrated": 29, "single_parent": 11 }
+```
+
+If `concentrated` ever falls near zero, the conditioning has stopped doing work and the construct is worth re-examining — not because the transform broke, but because the concentration it corrects for would have disappeared from the data.
+
+**What the conditioning does not fix.** A `parentCount` that fails to parse caps the premium here but also nulls the Component 4 slot, and `weightedBlend` renormalises the freed weight onto the surviving legs — which *raises* the score when those legs read high (Albania: 70 → 80). That inflation is a property of the blend and predates this change; the same measurement against the raw band is 75 → 86, so conditioning strictly reduces it (+10 against +11). Tracked as issue #6528; the scorer cannot close it, because a component slot has no way to hold weight the blend has already freed. What the scorer *can* do, and now does, is report the shortfall: when the level resolves but breadth does not, the band slot carries a reduced `certaintyCoverage`, so the published coverage says the band was a substituted floor rather than a redundancy-scaled reading.
 
 A negative or non-finite reading is upstream corruption, not isolation, and falls back to a neutral 50 rather than to the isolation floor — a parser regression must not read as a sanctions verdict.
 
@@ -283,6 +318,10 @@ Production already runs with the flag enabled, as tracked in #6511, so the OFF a
 
 This live measurement was **degraded** by a WGI source-failure state that affected the same governance-related dimensions in both arms. The paired movement result is still a genuine same-run flag comparison, but it is not an undegraded production-health snapshot; do not use it to claim WGI health or final post-deploy acceptance.
 
+**#6519 schema-v1 → schema-v2 activation (2026-08-12, 196 scorable countries):** the fail-closed WB IDS seeder published 119 debt rows and 72 unique `lendingType=LNX` codes. The subsequent production ranking refresh moved **48** of the 71 countries with a missing IDS row and a valid BIS row from coverage 0.65 to 0.76 with `imputedWeight=0.35`. The other 23 are not confirmed `LNX` and correctly remain unknown; row absence alone cannot trigger the imputation. Across the full ranking, Spearman was **0.99997**, **196/196 (100%)** moved by less than 3 points, the maximum absolute movement was **0.35**, no country moved more than 12, and headline eligibility did not change. The committed capture is [`resilience-financial-system-exposure-non-drs-activation-2026-08-12.json`](../snapshots/resilience-financial-system-exposure-non-drs-activation-2026-08-12.json).
+
+The debt slot uses the `not-applicable` imputation class. The published dimension-level `imputationClass` remains `null` because `weightedBlend` reports a class only for a fully imputed dimension; the same result contains observed BIS and FATF inputs. `imputedWeight=0.35` is the published proof that the debt slot activated.
+
 ## Data sources and licensing
 
 | Component | Source | License |
@@ -328,6 +367,8 @@ redis-cli GET 'economic:bis-lbs:v1' | jq '.countries.BR'
 ```
 
 If any of these return null or empty, **do NOT flip the flag** — flipping with absent envelopes throws `ResilienceConfigurationError` on every `/api/resilience/*` request and stamps every country's `financialSystemExposure` as `imputationClass='source-failure'`. The fix is recoverable (flip the flag back OFF, fix the seeder, re-run, retry) but produces user-visible Sentry noise during the gap.
+
+The active non-DRS path also requires the WB debt contract envelope to be schema v2. The scorer preserves this canonical envelope long enough to enforce numeric `_seed.schemaVersion >= 2`, then validates at least 40 valid unique entries in `data.nonDrsCountryCodes`. A schema-v1 payload is now a fail-closed configuration error instead of silently disabling the imputation for every eligible country.
 
 ## Alternatives considered (and rejected)
 
