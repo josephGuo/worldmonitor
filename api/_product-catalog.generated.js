@@ -171,9 +171,9 @@ export const PUBLIC_PRODUCT_FACTS = {
     "mapLayers": 58,
     "panelImplementations": 109,
     "feedDefinitions": 658,
-    "freshnessTrackedSourceGroups": 37,
-    "sourceAttributionHosts": 554,
-    "sourceAttributionProviders": 550
+    "freshnessTrackedSourceGroups": 39,
+    "sourceAttributionHosts": 557,
+    "sourceAttributionProviders": 553
   }
 };
 
