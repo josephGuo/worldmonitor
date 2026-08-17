@@ -2,6 +2,13 @@
 // This stays separate from the shared corpus generator so the large page-specific
 // template does not obscure the corpus orchestration and other page families.
 
+import {
+  catalogCountryOptions,
+  resolveSourceOrigin,
+  sourceOriginFilterValue,
+  sourceOriginLabel,
+} from './source-origin.mjs';
+
 // Hand-authored marketing copy for the /sources/ catalog page. Domains and
 // their docs anchors mirror docs/data-sources.mdx section headings; the
 // aggregate counts are computed from the committed attribution manifest, so
@@ -246,6 +253,53 @@ const SOURCE_NAME_OVERRIDES = new Map([
   ['nasstatus.faa.gov', 'Federal Aviation Administration (FAA)'],
   ['news.crunchbase.com', 'Crunchbase News'],
   ['news.google.com', 'Google News'],
+  ['apnews.com', 'AP News'],
+  ['arabianbusiness.com', 'Arabian Business'],
+  ['arabnews.com', 'Arab News'],
+  ['arctictoday.com', 'Arctic Today'],
+  ['armscontrol.org', 'Arms Control Association'],
+  ['asianews.it', 'AsiaNews'],
+  ['bangkokpost.com', 'Bangkok Post'],
+  ['bihus.info', 'Bihus.Info'],
+  ['citinewsroom.com', 'Citi Newsroom'],
+  ['cp24.com', 'CP24'],
+  ['ctvnews.ca', 'CTV News'],
+  ['dlnews.com', 'DL News'],
+  ['euromaidanpress.com', 'Euromaidan Press'],
+  ['focustaiwan.tw', 'Focus Taiwan'],
+  ['gmfus.org', 'German Marshall Fund'],
+  ['hiiraan.com', 'Hiiraan Online'],
+  ['hirado.hu', 'Híradó'],
+  ['iranintl.com', 'Iran International'],
+  ['iseas.edu.sg', 'ISEAS – Yusof Ishak Institute'],
+  ['iss.europa.eu', 'EU Institute for Security Studies'],
+  ['justice.gov', 'U.S. Department of Justice'],
+  ['kyivindependent.com', 'Kyiv Independent'],
+  ['lowyinstitute.org', 'Lowy Institute'],
+  ['marketwatch.com', 'MarketWatch'],
+  ['miningweekly.com', 'Mining Weekly'],
+  ['montrealgazette.com', 'Montreal Gazette'],
+  ['oglobo.globo.com', 'O Globo'],
+  ['pravda.com.ua', 'Ukrainska Pravda'],
+  ['rferl.org', 'RFE/RL'],
+  ['rieti.go.jp', 'RIETI'],
+  ['spglobal.com', 'S&P Global'],
+  ['state.gov', 'U.S. Department of State'],
+  ['taipeitimes.com', 'Taipei Times'],
+  ['taiwannews.com.tw', 'Taiwan News'],
+  ['theblock.co', 'The Block'],
+  ['thebulletin.org', 'Bulletin of the Atomic Scientists'],
+  ['theinformation.com', 'The Information'],
+  ['thejakartapost.com', 'The Jakarta Post'],
+  ['thenextweb.com', 'The Next Web'],
+  ['thestar.com.my', 'The Star (Malaysia)'],
+  ['understandingwar.org', 'Institute for the Study of War'],
+  ['unhcr.org', 'UNHCR'],
+  ['whitehouse.gov', 'The White House'],
+  ['wilsoncenter.org', 'Wilson Center'],
+  ['wublockchain.com', 'Wu Blockchain'],
+  ['xinhuanet.com', 'Xinhua'],
+  ['zn.ua', 'ZN.UA'],
   ['news.mit.edu', 'MIT News'],
   ['news.un.org', 'UN News'],
   ['news.usni.org', 'USNI News'],
@@ -504,7 +558,9 @@ const MULTI_LABEL_PUBLIC_SUFFIXES = new Set([
 function hostnameBrandToken(host) {
   const labels = host.toLowerCase().split('.');
   const suffix = labels.slice(-2).join('.');
-  const offset = MULTI_LABEL_PUBLIC_SUFFIXES.has(suffix) ? 3 : 2;
+  const countrySecondLevel = labels.at(-1)?.length === 2
+    && /^(?:ac|co|com|edu|gov|net|org)$/.test(labels.at(-2) || '');
+  const offset = MULTI_LABEL_PUBLIC_SUFFIXES.has(suffix) || countrySecondLevel ? 3 : 2;
   return labels.at(-offset) || labels[0] || host;
 }
 
@@ -578,6 +634,7 @@ export function buildSourceCatalog(entries) {
         provider,
         displayName: sourceProviderDisplayName(provider, hosts),
         domainId: sourceDomainIdForEntries(providerEntries),
+        originCountry: resolveSourceOrigin({ provider, hosts }),
         hosts,
         kinds: [...new Set(providerEntries.flatMap((entry) => entry.kind.split('+')))].sort(),
       };
@@ -588,7 +645,7 @@ export function buildSourceCatalog(entries) {
 export function renderSourcesIndex({ sourceStats, sourceCatalog, baseUrl, lastmod, helpers }) {
   const { absoluteUrl, breadcrumbLd, escapeHtml, pageDocument, withUtmSource } = helpers;
   const path = '/sources/';
-  const description = `Explore ${sourceStats.providerCount} active providers and ${sourceStats.activeHosts} upstream hosts across World Monitor's global intelligence, markets, energy, cyber, aviation, climate and news coverage.`;
+  const description = `Explore ${sourceStats.providerCount} active providers and ${sourceStats.activeHosts} source hosts across World Monitor's global intelligence, markets, energy, cyber, aviation, climate and news coverage.`;
   // Query precedes the fragment — withUtmSource() would append after the
   // anchor and push the query into the fragment, so build these by hand.
   const docsHref = (anchor) => `/docs/data-sources?utm_source=seo-sources${anchor ? `#${anchor}` : ''}`;
@@ -612,18 +669,22 @@ export function renderSourcesIndex({ sourceStats, sourceCatalog, baseUrl, lastmo
           </button>
           <a class="domain-docs" href="${docsHref(domain.anchor)}">Methodology &amp; coverage <span aria-hidden="true">↗</span></a>
         </article>`).join('\n');
+  const countryOptions = catalogCountryOptions(sourceCatalog);
   const providerCards = sourceCatalog.map((provider) => {
     const domain = domainById.get(provider.domainId);
+    const countryLabel = sourceOriginLabel(provider.originCountry);
+    const countryFilter = sourceOriginFilterValue(provider.originCountry);
     const hostLinks = provider.hosts.map((host) => (
       `<a href="https://${escapeHtml(host)}/" target="_blank" rel="noreferrer">${escapeHtml(host)}</a>`
     )).join('');
     const kindBadges = provider.kinds.map((kind) => (
       `<span class="kind-badge">${escapeHtml(kindLabels[kind] || kind)}</span>`
     )).join('');
-    return `        <article class="provider-card" data-provider="${escapeHtml(provider.provider)}" data-provider-name="${escapeHtml(provider.displayName)}" data-source-domain="${provider.domainId}" data-source-kind="${provider.kinds.join(' ')}">
+    return `        <article class="provider-card" data-provider="${escapeHtml(provider.provider)}" data-provider-name="${escapeHtml(provider.displayName)}" data-source-domain="${provider.domainId}" data-source-kind="${provider.kinds.join(' ')}" data-source-country="${countryFilter}">
           <div class="provider-heading">
             <span class="provider-domain">${escapeHtml(domain.name)}</span>
             <h3>${escapeHtml(provider.displayName)}</h3>
+            <span class="provider-country">${escapeHtml(countryLabel)}</span>
           </div>
           <div class="kind-badges">${kindBadges}</div>
           <div class="provider-hosts" aria-label="Provider hosts">${hostLinks}</div>
@@ -648,7 +709,7 @@ export function renderSourcesIndex({ sourceStats, sourceCatalog, baseUrl, lastmo
         <div class="hero-copy">
           <p class="eyebrow"><span></span> Live provider inventory</p>
           <h1>See every source behind World Monitor.</h1>
-          <p class="lede">The map is only as useful as the signals behind it. World Monitor combines ${sourceStats.providerCount} active providers across ${sourceStats.activeHosts} observed upstream hosts spanning news, conflict, markets, military, climate, aviation, infrastructure and technology — with every provider listed below.</p>
+          <p class="lede">The map is only as useful as the signals behind it. World Monitor combines ${sourceStats.providerCount} active providers across ${sourceStats.activeHosts} observed source hosts spanning news, conflict, markets, military, climate, aviation, infrastructure and technology — with every provider listed below.</p>
           <div class="hero-actions">
             <a class="cta" href="#catalog">Browse all ${sourceStats.providerCount} providers <span aria-hidden="true">↓</span></a>
             <a class="secondary-cta" href="${withUtmSource('/dashboard', 'sources-hero')}">Open the live dashboard <span aria-hidden="true">→</span></a>
@@ -660,7 +721,7 @@ export function renderSourcesIndex({ sourceStats, sourceCatalog, baseUrl, lastmo
           <div class="console-map" aria-hidden="true"><span class="orbit one"></span><span class="orbit two"></span><span class="pulse p1"></span><span class="pulse p2"></span><span class="pulse p3"></span><span class="pulse p4"></span><span class="pulse p5"></span></div>
           <div class="console-stats">
             <span><strong>${sourceStats.providerCount}</strong><small>active providers</small></span>
-            <span><strong>${sourceStats.activeHosts}</strong><small>upstream hosts</small></span>
+            <span><strong>${sourceStats.activeHosts}</strong><small>source hosts</small></span>
             <span><strong>${SOURCE_DOMAINS.length}</strong><small>signal domains</small></span>
           </div>
           <p><span></span> Inventory reconciled with the URLs used by the codebase</p>
@@ -668,7 +729,7 @@ export function renderSourcesIndex({ sourceStats, sourceCatalog, baseUrl, lastmo
       </section>
       <section class="proof-rail" aria-label="Source types">
         <span><strong>${sourceStats.providerCount}</strong><small>Active providers</small></span>
-        <span><strong>${sourceStats.activeHosts}</strong><small>Upstream hosts</small></span>
+        <span><strong>${sourceStats.activeHosts}</strong><small>Source hosts</small></span>
         <span><strong>${sourceStats.structuredHosts}</strong><small>Structured endpoints</small></span>
         <span><strong>${sourceStats.feedHosts}</strong><small>News &amp; OSINT feeds</small></span>
       </section>
@@ -693,12 +754,13 @@ ${domainCards}
         <div class="section-heading catalog-heading">
           <p class="eyebrow">Complete catalog</p>
           <h2 id="catalog-heading">All ${sourceStats.providerCount} active providers.</h2>
-          <p>Search by provider or host. Filter by signal domain or source type. Every provider remains in the static HTML for people, search engines and no-script browsers.</p>
+          <p>Search by provider or host. Filter by signal domain, source type, or country of origin. Every provider remains in the static HTML for people, search engines and no-script browsers.</p>
         </div>
         <div class="catalog-controls">
           <label class="search-control" for="source-search"><span>Search providers</span><input id="source-search" type="search" placeholder="Reuters, USGS, coingecko…" autocomplete="off"></label>
           <label for="source-domain"><span>Domain</span><select id="source-domain"><option value="all">All domains</option>${SOURCE_DOMAINS.map((domain) => `<option value="${domain.id}">${escapeHtml(domain.name)}</option>`).join('')}</select></label>
           <label for="source-kind"><span>Source type</span><select id="source-kind"><option value="all">All types</option><option value="structured">Structured data</option><option value="feed">News / feed</option><option value="operational-status">Operational status</option></select></label>
+          <label for="source-country"><span>Country</span><select id="source-country"><option value="all">All countries</option>${countryOptions.map((country) => `<option value="${country.code}">${escapeHtml(country.name)}</option>`).join('')}</select></label>
           <button type="button" class="reset-filter" data-source-filter="all">Reset</button>
         </div>
         <div class="catalog-meta"><p id="source-results" aria-live="polite">${sourceStats.providerCount} providers shown</p><a href="${withUtmSource('/docs/source-attribution', 'seo-sources')}">Open the host-by-host ledger <span aria-hidden="true">↗</span></a></div>
@@ -788,7 +850,7 @@ ${providerCards}
       .trust-section p { margin-top: 0; font-size: 15px; line-height: 1.75; }
       .catalog-section { padding-bottom: 100px; }
       .catalog-heading { max-width: 790px; }
-      .catalog-controls { position: sticky; top: 68px; z-index: 10; margin-bottom: 0; padding: 18px; display: grid; grid-template-columns: minmax(260px, 1fr) 220px 210px auto; gap: 12px; align-items: end; border: 1px solid var(--line); background: rgba(6,9,7,.94); backdrop-filter: blur(18px); }
+      .catalog-controls { position: sticky; top: 68px; z-index: 10; margin-bottom: 0; padding: 18px; display: grid; grid-template-columns: minmax(200px, 1.2fr) minmax(150px, .8fr) minmax(140px, .7fr) minmax(160px, .85fr) auto; gap: 12px; align-items: end; border: 1px solid var(--line); background: rgba(6,9,7,.94); backdrop-filter: blur(18px); }
       .catalog-controls label { display: grid; gap: 7px; color: var(--muted); font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .1em; text-transform: uppercase; }
       .catalog-controls input, .catalog-controls select { width: 100%; min-height: 44px; padding: 0 12px; border: 1px solid #2a372f; border-radius: 2px; background: #0b100d; color: var(--text); font: 13px ui-sans-serif, system-ui, sans-serif; }
       .catalog-controls input:focus, .catalog-controls select:focus { outline: 1px solid var(--accent); outline-offset: 1px; }
@@ -802,6 +864,7 @@ ${providerCards}
       .provider-card:hover { background: var(--panel-2); }
       .provider-domain { color: var(--accent); font: 8px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .1em; text-transform: uppercase; }
       .provider-card h3 { margin: 8px 0 0; font-size: 15px; line-height: 1.3; overflow-wrap: anywhere; }
+      .provider-country { margin-top: 6px; color: var(--muted); font: 11px ui-sans-serif, system-ui, sans-serif; }
       .kind-badges { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 5px; }
       .provider-hosts { margin-top: auto; padding-top: 18px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
       .provider-hosts a { color: var(--muted); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
@@ -817,6 +880,7 @@ ${providerCards}
       .source-footer-inner small { margin-top: 3px; color: var(--muted); }
       .source-footer-links { display: flex; flex-wrap: wrap; gap: 18px; }
       .source-footer-links a { color: var(--muted); }
+      @media (max-width: 1100px) { .catalog-controls { grid-template-columns: 1fr 1fr 1fr auto; } .search-control { grid-column: 1 / -1; } }
       @media (max-width: 1000px) { .sources-hero { grid-template-columns: 1fr; gap: 50px; } .signal-console { max-width: 650px; } .source-domains { grid-template-columns: repeat(2, minmax(0, 1fr)); } .catalog-controls { grid-template-columns: 1fr 1fr; } .search-control { grid-column: 1 / -1; } .provider-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
       @media (max-width: 720px) { .source-nav-links { display: none; } .sources-page nav { padding: 0 16px; gap: 10px; } .source-nav-cta { padding: 9px 10px; font-size: 9px; } .sources-hero { min-height: 0; padding: 80px 20px 60px; } .sources-page h1 { font-size: clamp(46px, 15vw, 66px); } .sources-hero .lede { font-size: 16px; } .proof-rail { margin: 0 20px; grid-template-columns: repeat(2, 1fr); } .proof-rail > span:nth-child(2) { border-right: 0; } .proof-rail > span:nth-child(-n+2) { border-bottom: 1px solid var(--line); } .domain-section, .catalog-section { padding: 90px 20px; } .source-domains { grid-template-columns: 1fr; } .source-domain-card button { min-height: 225px; } .trust-section { padding: 80px 20px; grid-template-columns: 1fr; gap: 36px; } .catalog-controls { position: static; grid-template-columns: 1fr; } .search-control { grid-column: auto; } .provider-grid { grid-template-columns: 1fr; } .catalog-meta, .source-footer-inner { align-items: flex-start; flex-direction: column; } .sources-final-cta { padding: 90px 20px; } }
       @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }`;
@@ -824,11 +888,13 @@ ${providerCards}
       const search = document.getElementById('source-search');
       const domain = document.getElementById('source-domain');
       const kind = document.getElementById('source-kind');
+      const country = document.getElementById('source-country');
       const cards = [...document.querySelectorAll('.provider-card')].map((card) => ({
         card,
         searchText: card.textContent.toLowerCase(),
         domain: card.dataset.sourceDomain,
         kinds: new Set(card.dataset.sourceKind.split(' ')),
+        country: card.dataset.sourceCountry,
       }));
       const filterButtons = [...document.querySelectorAll('[data-source-filter]')];
       const results = document.getElementById('source-results');
@@ -841,7 +907,8 @@ ${providerCards}
           const matchesSearch = !query || entry.searchText.includes(query);
           const matchesDomain = domain.value === 'all' || entry.domain === domain.value;
           const matchesKind = kind.value === 'all' || entry.kinds.has(kind.value);
-          card.hidden = !(matchesSearch && matchesDomain && matchesKind);
+          const matchesCountry = country.value === 'all' || entry.country === country.value;
+          card.hidden = !(matchesSearch && matchesDomain && matchesKind && matchesCountry);
           if (!card.hidden) visible += 1;
         }
         results.textContent = visible + (visible === 1 ? ' provider shown' : ' providers shown');
@@ -854,9 +921,11 @@ ${providerCards}
       search.addEventListener('input', applyFilters);
       domain.addEventListener('change', applyFilters);
       kind.addEventListener('change', applyFilters);
+      country.addEventListener('change', applyFilters);
       for (const button of filterButtons) button.addEventListener('click', () => {
         search.value = '';
         kind.value = 'all';
+        country.value = 'all';
         domain.value = button.dataset.sourceFilter;
         applyFilters();
         if (button.dataset.sourceFilter !== 'all') {
