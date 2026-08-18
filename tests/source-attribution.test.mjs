@@ -87,6 +87,15 @@ test('source inventory has complete metadata and matches the generated catalog',
   const generated = renderAttributionSection(inventory, manifest);
   const actual = matchGeneratedAttributionSection(docs);
   assert.equal(actual, generated, 'docs/source-attribution.mdx must contain exactly the generated attribution section');
+  assert.match(generated, /\| Provider \| Observed surface \|/);
+  for (const forbidden of [
+    /\blicen[cs]\w*/i,
+    /\bterms-review\b/i,
+    /\bredistribut\w*/i,
+    /\bcommercial(?:-|\s+)use\b/i,
+  ]) {
+    assert.doesNotMatch(docs, forbidden, `public source attribution docs must omit ${forbidden}`);
+  }
 
   // Mintlify parses these pages as MDX v3, which rejects `<!--` with
   // "Unexpected character `!` (U+0021) before name" and fails the whole
@@ -118,7 +127,7 @@ test('source inventory has complete metadata and matches the generated catalog',
     'production stats must match the independent provider oracle',
   );
   assert.equal(stats.observedHosts, inventory.length, 'observed stats must derive from the source scan');
-  assert.ok(stats.reviewNeeded > 0, 'terms-review rows must remain visible until a license audit is complete');
+  assert.ok(stats.reviewNeeded > 0, 'the internal source-policy review backlog must remain tracked');
 
   const byHost = new Map(manifest.entries.map((entry) => [entry.host, entry]));
   assert.equal(byHost.get('auth.opensky-network.org')?.provider, 'opensky-network.org');
@@ -144,6 +153,37 @@ test('Google News site feeds account for both the editorial host and Google News
     lorientToday.references.some((reference) => reference.path === 'server/worldmonitor/news/v1/_feeds.ts'),
     "L'Orient Today must retain its server feed reference",
   );
+
+  const annahar = byHost.get('annahar.com');
+  assert.ok(annahar, 'Annahar must be accounted under annahar.com');
+  assert.ok(
+    annahar.references.some((reference) => reference.path === 'src/config/feeds.ts'),
+    'Annahar must retain its client feed reference',
+  );
+  assert.ok(
+    annahar.references.some((reference) => reference.path === 'server/worldmonitor/news/v1/_feeds.ts'),
+    'Annahar must retain its server feed reference',
+  );
+
+  for (const [host, provider] of [
+    ['pap.pl', 'PAP'],
+    ['wyborcza.pl', 'Gazeta Wyborcza'],
+    ['polityka.pl', 'Polityka'],
+    ['wiadomosci.onet.pl', 'Onet'],
+    ['oko.press', 'OKO.press'],
+    ['tvp.info', 'TVP Info'],
+  ]) {
+    const entry = byHost.get(host);
+    assert.ok(entry, `${provider} must be accounted under ${host}`);
+    assert.ok(
+      entry.references.some((reference) => reference.path === 'src/config/feeds.ts'),
+      `${provider} must retain its client feed reference`,
+    );
+    assert.ok(
+      entry.references.some((reference) => reference.path === 'server/worldmonitor/news/v1/_feeds.ts'),
+      `${provider} must retain its server feed reference`,
+    );
+  }
 
   const serverFeeds = readFileSync(
     join(rootDir, 'server/worldmonitor/news/v1/_feeds.ts'),
