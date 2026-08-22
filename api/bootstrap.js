@@ -106,6 +106,18 @@ const TIER_CDN_CACHE = {
 // budget guarantees the shield outlives a complete seed cycle.
 // tests/bootstrap-on-demand-cache-budget.test.mts enforces the ceiling.
 const ON_DEMAND_CACHE_PROFILES = {
+  // Correlation cards publish every 5 minutes and have a 30-minute health
+  // budget. The conservative complete CDN window is 11m.
+  correlationCards: {
+    browser: 'max-age=60, stale-while-revalidate=60, stale-if-error=300',
+    cdn: 'public, s-maxage=300, stale-while-revalidate=60, stale-if-error=300',
+  },
+  // Hourly publisher, 90-minute health budget. The conservative full CDN
+  // serving window is 80m, so one failed refresh cannot be hidden past health.
+  forecasts: {
+    browser: 'max-age=300, stale-while-revalidate=300, stale-if-error=1800',
+    cdn: 'public, s-maxage=3600, stale-while-revalidate=300, stale-if-error=900',
+  },
   // Seeded every 15 minutes. Keep the caller-invariant public URL from
   // outliving a complete seed interval; per-group stale/unavailable states
   // remain part of the payload contract.
@@ -141,6 +153,12 @@ const ON_DEMAND_CACHE_PROFILES = {
   marketCorrelationSeries: {
     browser: 'max-age=60, stale-while-revalidate=120, stale-if-error=900',
     cdn: 'public, s-maxage=900, stale-while-revalidate=120, stale-if-error=900',
+  },
+  // seed-aviation aggregate, 90min health budget. Default 2h on-demand
+  // shield would outlive the budget after #7046 moved this key off FAST.
+  flightDelays: {
+    browser: 'max-age=60, stale-while-revalidate=120, stale-if-error=1800',
+    cdn: 'public, s-maxage=1800, stale-while-revalidate=300, stale-if-error=1800',
   },
 };
 
@@ -504,6 +522,13 @@ function isSharedCacheableBootstrapKind(authKind) {
   return authKind === 'public-weather' || authKind === 'public-tier' || authKind === 'public-on-demand';
 }
 
+function getPublicBootstrapHeaders() {
+  return {
+    ...getPublicCorsHeaders(),
+    'Timing-Allow-Origin': '*',
+  };
+}
+
 // `tier` is the requested tier, or null for a single-key read. The on-demand
 // default lives here rather than at the call site so there is ONE resolution
 // path: a test that re-derived "on-demand falls back to slow" would be checking
@@ -527,7 +552,7 @@ function successCacheHeaders(requestedTier, authKind, cors, onDemandKey = null) 
   // pin an echoed ACAO onto a cached response. Safe because isDisallowedOrigin()
   // already rejected unauthorized origins at the handler entry (this is exactly
   // the contract getPublicCorsHeaders documents).
-  const publicCors = getPublicCorsHeaders();
+  const publicCors = getPublicBootstrapHeaders();
   if (!isSharedCacheableBootstrapKind(authKind)) {
     return {
       ...publicCors,
@@ -600,7 +625,7 @@ export default async function handler(req, ctx) {
         { error: 'Bootstrap service temporarily unavailable' },
         503,
         {
-          ...getPublicCorsHeaders(),
+          ...getPublicBootstrapHeaders(),
           'Cache-Control': 'no-store',
           'Retry-After': '5',
         },
@@ -666,7 +691,7 @@ export default async function handler(req, ctx) {
   // (#6784): health probes Redis, so nothing pages, and the client stamps the
   // empty hit as a fresh read.
   const cacheHeaders = onDemandKey && missing.includes(onDemandKey)
-    ? { ...getPublicCorsHeaders(), 'Cache-Control': 'no-store' }
+    ? { ...getPublicBootstrapHeaders(), 'Cache-Control': 'no-store' }
     : successCacheHeaders(tier, auth.kind, cors, onDemandKey);
   const response = jsonResponse(
     { data, missing },
