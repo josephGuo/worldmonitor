@@ -31,7 +31,7 @@ function makeRequest(method, url, headers = {}) {
 const CANONICAL_FALLBACK = 'https://worldmonitor.app';
 const KNOWN_GOOD = 'https://www.worldmonitor.app';
 const ACAH_EXPECTED = 'Content-Type, Authorization, X-WorldMonitor-Key, X-Api-Key, X-Widget-Key, X-Pro-Key, X-WorldMonitor-Desktop-Timestamp, X-WorldMonitor-Desktop-Signature, Idempotency-Key, Mcp-Session-Id, MCP-Protocol-Version, Last-Event-ID';
-const ACEH_EXPECTED = 'Mcp-Session-Id, WWW-Authenticate, Retry-After, Idempotency-Key, Idempotent-Replayed, X-Billing-Verification, RateLimit, RateLimit-Policy, RateLimit-Limit, RateLimit-Remaining, RateLimit-Reset, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-WorldMonitor-Bbox, X-WorldMonitor-Bbox-Missing, X-WorldMonitor-Bbox-Invalid, X-Military-Bbox';
+const ACEH_EXPECTED = 'Mcp-Session-Id, WWW-Authenticate, Retry-After, Idempotency-Key, Idempotent-Replayed, X-Billing-Verification, RateLimit, RateLimit-Policy, RateLimit-Limit, RateLimit-Remaining, RateLimit-Reset, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-RateLimit-Mode, X-WorldMonitor-Bbox, X-WorldMonitor-Bbox-Missing, X-WorldMonitor-Bbox-Invalid, X-Military-Bbox';
 // Must be a superset of every method any api/* route advertises. Notably
 // includes DELETE for api/product-catalog.js — pinning this prevents the
 // regression that PR review caught (Worker omitted DELETE → product-catalog
@@ -45,6 +45,22 @@ test('isAllowedOrigin accepts apex worldmonitor.app and subdomains', () => {
   assert.equal(isAllowedOrigin('https://www.worldmonitor.app'), true);
   assert.equal(isAllowedOrigin('https://tech.worldmonitor.app'), true);
   assert.equal(isAllowedOrigin('https://commodity.worldmonitor.app'), true);
+});
+
+test('isAllowedOrigin accepts trailing-dot FQDN first-party origins (#6411)', () => {
+  assert.equal(isAllowedOrigin('https://worldmonitor.app.'), true);
+  assert.equal(isAllowedOrigin('https://tech.worldmonitor.app.'), true);
+  assert.equal(isAllowedOrigin('https://www.worldmonitor.app.'), true);
+});
+
+test('isAllowedOrigin accepts Google Translate proxy origins of worldmonitor.app (#6411)', () => {
+  assert.equal(isAllowedOrigin('https://www-worldmonitor-app.translate.goog'), true);
+  assert.equal(isAllowedOrigin('https://worldmonitor-app.translate.goog'), true);
+  assert.equal(isAllowedOrigin('https://tech-worldmonitor-app.translate.goog'), true);
+  assert.equal(isAllowedOrigin('https://evil-example-com.translate.goog'), false);
+  // `--` is Google's encoding of a literal hyphen — must not suffix-match.
+  assert.equal(isAllowedOrigin('https://evil--worldmonitor-app.translate.goog'), false);
+  assert.equal(isAllowedOrigin('https://notworldmonitor-app.translate.goog'), false);
 });
 
 test('isAllowedOrigin accepts Vercel preview deploys under the eliewm team scope (mirrors api/_cors.js)', () => {
@@ -156,15 +172,17 @@ test('OPTIONS preflight to /api/product-catalog preserves the endpoint-owned DEL
   }
 });
 
-test('OPTIONS preflight from disallowed origin still sets ACAC but echoes fallback origin', async () => {
+test('OPTIONS preflight from disallowed origin echoes the request Origin (#6411)', async () => {
+  const evil = 'https://evil.com';
   const req = makeRequest('OPTIONS', 'https://api.worldmonitor.app/api/bootstrap', {
-    Origin: 'https://evil.com',
+    Origin: evil,
   });
   const resp = await worker.fetch(req);
   assert.equal(resp.status, 204);
-  assert.equal(resp.headers.get('access-control-allow-origin'), CANONICAL_FALLBACK);
-  // Browser sees fallback origin != evil.com → rejects. ACAC: true is still
-  // set because it must be a paired invariant with origin-specific ACAO.
+  // Preflight must echo the caller so the browser will send the actual request;
+  // the POST/GET response still uses the allowlist (canonical fallback) except
+  // on explicit 401/403 refusals.
+  assert.equal(resp.headers.get('access-control-allow-origin'), evil);
   assert.equal(resp.headers.get('access-control-allow-credentials'), 'true');
 });
 
