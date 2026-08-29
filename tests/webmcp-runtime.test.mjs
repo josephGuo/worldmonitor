@@ -43,6 +43,62 @@ function createBindings(overrides = {}) {
       },
       panels: { mounted: ['map'], enabled: ['map'] },
     }),
+    switchMonitor: async (monitor) => ({
+      ok: true,
+      status: 'applied',
+      destination: monitor,
+      navigation: 'none',
+      message: 'Already on that monitor.',
+      context: {
+        variant: monitor,
+        map: {
+          view: 'global',
+          center: { lat: 0, lon: 0 },
+          zoom: 2,
+          timeRange: '7d',
+          enabledLayers: [],
+        },
+        panels: { mounted: ['map'], enabled: ['map'] },
+      },
+    }),
+    openSettings: async () => ({
+      ok: true,
+      status: 'applied',
+      destination: 'settings',
+      overlay: 'open',
+      tab: 'settings',
+      message: 'Opened settings.',
+      context: {
+        variant: 'full',
+        map: {
+          view: 'global',
+          center: { lat: 0, lon: 0 },
+          zoom: 2,
+          timeRange: '7d',
+          enabledLayers: [],
+        },
+        panels: { mounted: ['map'], enabled: ['map'] },
+      },
+    }),
+    openAlerts: async () => ({
+      ok: true,
+      status: 'applied',
+      destination: 'alerts',
+      overlay: 'open',
+      tab: 'notifications',
+      message: 'Opened alerts.',
+      context: {
+        variant: 'full',
+        map: {
+          view: 'global',
+          center: { lat: 0, lon: 0 },
+          zoom: 2,
+          timeRange: '7d',
+          enabledLayers: [],
+        },
+        panels: { mounted: ['map'], enabled: ['map'] },
+      },
+    }),
     applyDashboardAction: async (action) => ({
       ok: true,
       status: 'applied',
@@ -57,6 +113,22 @@ function createBindings(overrides = {}) {
       truncated: false,
     }),
     openSearchResult: async () => ({ ok: true, status: 'opened' }),
+    getAccessContext: async () => ({
+      accountState: 'signed_out',
+      clerk: 'unavailable',
+      productTier: 'anonymous',
+      capabilities: {
+        premiumAccess: false,
+        apiAccess: false,
+        mcpAccess: false,
+        dataExport: false,
+      },
+      limits: {
+        enabledPanels: { used: 1, cap: 40 },
+        dashboardTabs: { used: 1, cap: 3, canCreate: true },
+      },
+    }),
+    openSignIn: async () => ({ ok: false, status: 'denied', reason: 'clerk_unavailable' }),
     ...overrides,
   };
 }
@@ -131,7 +203,7 @@ describe('WebMCP registry behavioral contract', () => {
     assert.deepEqual(harness.events, [
       {
         event: 'webmcp-registered',
-        data: { toolCount: 8, pageSurface: 'dashboard', api: 'document-current' },
+        data: { toolCount: WEBMCP_SPA_TOOL_NAMES.length, pageSurface: 'dashboard', api: 'document-current' },
       },
       {
         event: 'webmcp-tool-invoked',
@@ -266,21 +338,23 @@ describe('WebMCP registry behavioral contract', () => {
     );
     assert.deepEqual(
       Object.values(WEBMCP_TOOL_CANCELLATION_POLICY)
-        .filter((policy) => !['read-only', 'view-state', 'cancellation-required'].includes(policy)),
+        .filter((policy) => !['read-only', 'view-state', 'cancellation-required', 'result-dependent'].includes(policy)),
       [],
-      'policy values are limited to the three documented classifications',
+      'policy values are limited to the documented classifications',
     );
   });
 
   it('denies tools whose effects can outlive cancellation when the host omits the target signal', async () => {
     // set_map_layers writes STORAGE_KEYS.mapLayers (and can open the AIS
-    // stream); open_search_result reaches the same write through a layer
-    // command. An uncancellable invocation of either outlives the session, so
-    // both stay fail-closed while the browser cannot deliver a signal.
+    // stream). switch_monitor persists and reloads or leaves the current
+    // origin. An uncancellable invocation can outlive the session, so both
+    // stay fail-closed while the browser cannot deliver a signal.
+    // open_search_result is result-dependent and must reach its binding so the
+    // issued effect class can decide.
     assert.deepEqual(
       [...CANCELLATION_REQUIRED_WEBMCP_TOOLS].sort(),
-      ['openCountryBrief', 'open_search_result', 'set_map_layers'],
-      'the gated set includes persistent effects and metered country generation',
+      ['openCountryBrief', 'set_map_layers', 'switch_monitor'],
+      'the gated set includes navigation, persistent layer writes, and metered country generation',
     );
     let mutationCalls = 0;
     let openCalls = 0;
@@ -315,15 +389,19 @@ describe('WebMCP registry behavioral contract', () => {
       denial,
     );
     assert.deepEqual(
+      await executeRegistered(provider, 'switch_monitor', JSON.stringify({ monitor: 'tech' })),
+      denial,
+    );
+    assert.deepEqual(
       await executeRegistered(
         provider,
         'open_search_result',
         JSON.stringify({ resultKey: `sr_${'a'.repeat(32)}` }),
       ),
-      denial,
+      { ok: true, status: 'opened' },
     );
     assert.equal(mutationCalls, 0, 'a gated tool must not reach its binding');
-    assert.equal(openCalls, 0, 'a gated tool must not reach its binding');
+    assert.equal(openCalls, 1, 'result-dependent open_search_result must reach its binding');
   });
 
   it('runs a dashboard-changing tool when the host omits the target execution signal', async () => {
@@ -355,7 +433,7 @@ describe('WebMCP registry behavioral contract', () => {
 
     // Chrome through 151 passes no target-side signal. These tools only move
     // visible, reversible dashboard view state, so they run anyway rather than
-    // costing 6 of 8 tools on every browser that exists.
+    // costing 7 of 10 tools on every browser that exists.
     assert.deepEqual(
       await executeRegistered(provider, 'set_map_view', JSON.stringify({ view: 'eu' })),
       {
@@ -428,7 +506,7 @@ describe('WebMCP registry behavioral contract', () => {
     ]);
     assert.deepEqual(harness.events.at(-1), {
       event: 'webmcp-registered',
-      data: { toolCount: 3, pageSurface: 'dashboard', api: 'document-current' },
+      data: { toolCount: WEBMCP_SPA_TOOL_NAMES.length - failures.size, pageSurface: 'dashboard', api: 'document-current' },
     });
     assert.equal(JSON.stringify(harness.events).includes('detail'), false);
   });

@@ -27,6 +27,7 @@ import {
   shouldDeferFreeTierEnforcement,
   FREE_MAX_PANELS,
   FREE_MAX_SOURCES,
+  countFreePanelCapUsage,
 } from '@/config';
 import {
   sanitizeLayersForVariant,
@@ -168,10 +169,14 @@ import {
   type WebMcpExecutionOptions,
 } from '@/services/webmcp';
 import {
+  applyWebMcpOpenAlerts,
+  applyWebMcpOpenSettings,
+  applyWebMcpSwitchMonitor,
   getWebMcpDashboardContext,
   WEBMCP_UI_READY_TIMEOUT_MS,
   waitForWebMcpUiReady,
 } from '@/app/webmcp-dashboard';
+import { getWebMcpAccessContext, openWebMcpSignIn } from '@/app/webmcp-access';
 import { runDashboardActionBinding } from '@/app/dashboard-action-binding';
 import { refreshDataFreshnessFromHealth } from '@/services/health-freshness';
 import { scheduleAfterFirstPaint } from '@/utils/after-paint';
@@ -1897,6 +1902,26 @@ export class App {
         throwIfWebMcpAborted(execution?.signal);
         return getWebMcpDashboardContext(this.state, SITE_VARIANT);
       },
+      switchMonitor: async (monitor, execution) => {
+        await this.waitForDashboardReady(false, execution?.signal);
+        throwIfWebMcpAborted(execution?.signal);
+        return applyWebMcpSwitchMonitor(
+          this.state,
+          SITE_VARIANT,
+          monitor,
+          (variant) => this.eventHandlers.navigateToVisibleVariant(variant),
+        );
+      },
+      openSettings: async (execution) => {
+        await this.waitForDashboardReady(false, execution?.signal);
+        throwIfWebMcpAborted(execution?.signal);
+        return applyWebMcpOpenSettings(this.state, SITE_VARIANT);
+      },
+      openAlerts: async (execution) => {
+        await this.waitForDashboardReady(false, execution?.signal);
+        throwIfWebMcpAborted(execution?.signal);
+        return applyWebMcpOpenAlerts(this.state, SITE_VARIANT);
+      },
       applyDashboardAction: async (action, execution) => {
         return runDashboardActionBinding(this.state, action, {
           waitForUiReady: () => this.waitForDashboardReady(false, execution?.signal),
@@ -1965,6 +1990,24 @@ export class App {
           () => this.waitForDashboardReady(true, execution?.signal),
           execution?.signal,
         );
+      },
+      getAccessContext: async (execution) => {
+        throwIfWebMcpAborted(execution?.signal);
+        if (this.state.isDestroyed) {
+          throw new DashboardBindingError('app_destroyed', 'Dashboard is no longer available.');
+        }
+        return getWebMcpAccessContext({
+          enabledPanelUsed: countFreePanelCapUsage(this.state.panelSettings),
+          dashboardTabCount: this.panelLayout.getDashboardTabCount(),
+          freeTierFallbackActive: this.freeTierGate.authSettleDeadlineExceeded,
+        });
+      },
+      openSignIn: async (execution) => {
+        throwIfWebMcpAborted(execution?.signal);
+        if (this.state.isDestroyed) {
+          throw new DashboardBindingError('app_destroyed', 'Dashboard is no longer available.');
+        }
+        return openWebMcpSignIn(execution?.signal);
       },
     });
 

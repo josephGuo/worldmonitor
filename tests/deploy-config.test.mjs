@@ -46,7 +46,7 @@ const frontendDockerfileSource = readFileSync(resolve(__dirname, '../docker/Dock
 const dockerignoreSource = readFileSync(resolve(__dirname, '../.dockerignore'), 'utf-8');
 const vercelIgnoreSource = readFileSync(resolve(__dirname, '../scripts/vercel-ignore.sh'), 'utf-8');
 const variantDashboardSource = readFileSync(resolve(__dirname, '../src/config/variant-dashboard-html.ts'), 'utf-8');
-const SPA_HTML_CACHE_SOURCE = '/((?!api|mcp|a2a|ask|oauth|assets|blog|docs|countries|chokepoints|crises|tools|research|reference|changelog|sources|use-cases|src|tmp|server|embed|embed\\.html|favico|map-styles|data|textures|pro|sw\\.js|workbox-[a-f0-9]+\\.js|manifest\\.webmanifest|offline\\.html|robots\\.txt|robots\\.www\\.txt|robots\\.variant\\.txt|robots\\.api\\.txt|sitemap\\.xml|schemamap\\.xml|sandbox|llms\\.txt|llms-full\\.txt|llms\\*\\.txt|openapi\\.yaml|openapi\\.json|auth\\.md|pricing\\.md|support\\.md|ai-search\\.md|agents\\.md|developers\\.md|developers/llms\\.txt|mcp-server\\.md|openapi\\.md|sdks\\.md|agent\\.txt|\\.well-known|wm-widget-sandbox\\.html|mcp-grant\\.html|mcp-grant|.*\\.md$).*)';
+const SPA_HTML_CACHE_SOURCE = '/((?!api|mcp|a2a|ask|oauth|assets|blog|docs|countries|chokepoints|crises|tools|research|reference|changelog|sources|use-cases|src|tmp|server|embed|embed\\.html|favico|map-styles|data|textures|pro|sw\\.js|workbox-[a-f0-9]+\\.js|manifest\\.webmanifest|offline\\.html|robots\\.txt|robots\\.www\\.txt|robots\\.variant\\.txt|robots\\.api\\.txt|sitemap\\.xml|schemamap\\.xml|sandbox|llms\\.txt|llms-full\\.txt|llms\\*\\.txt|openapi\\.yaml|openapi\\.json|plugin\\.json|auth\\.md|pricing\\.md|support\\.md|ai-search\\.md|agents\\.md|developers\\.md|developers/llms\\.txt|mcp-server\\.md|openapi\\.md|sdks\\.md|world-monitor\\.md|api-versioning\\.md|agent\\.txt|\\.well-known|wm-widget-sandbox\\.html|mcp-grant\\.html|mcp-grant|.*\\.md$).*)';
 const GLOBAL_SECURITY_HEADER_SOURCE = '/((?!docs|embed|embed\\.html|wm-widget-sandbox\\.html).*)';
 const APP_ROOT_HOST_PATTERN = '^(?:(?:www|tech|finance|commodity|happy|energy)\\.)?worldmonitor\\.app$';
 const WEBMCP_PRODUCTION_HOST_PATTERN = '^(?:www|tech|finance|commodity|happy|energy)\\.worldmonitor\\.app$';
@@ -1884,6 +1884,21 @@ describe('security header guardrails', () => {
     assert.match(webMcpCancellationE2eSource, /window\.addEventListener\('unhandledrejection'/);
     assert.match(webMcpCancellationE2eSource, /lateLeakWindowMs/);
     assert.match(webMcpE2eSource, /headers\['origin-trial'\]/);
+    assert.match(
+      webMcpE2eSource,
+      /const unconfiguredLocalFixture =\s*!productionSmoke && accessSnapshot\.clerk === 'unavailable'/,
+      'clerk_unavailable is only valid on the local unconfigured Clerk fixture',
+    );
+    assert.match(
+      webMcpE2eSource,
+      /production smoke must open the real Clerk sign-in modal/,
+      'production WebMCP smoke must require the real Clerk modal',
+    );
+    assert.match(
+      webMcpE2eSource,
+      /signIn: \{ tool: 'open_sign_in'/,
+      'production smoke must attach open_sign_in modal evidence',
+    );
     assert.match(webMcpE2eSource, /testInfo\.outputPath\(name\)/);
     assert.match(webMcpE2eSource, /writeFile\(path/);
     assert.match(webMcpE2eSource, /testInfo\.attach\(name, \{ path/);
@@ -2858,6 +2873,9 @@ describe('agent readiness: api-catalog + openapi build', () => {
     );
     assert.ok(hrefs.includes('https://worldmonitor.app/support.md'), 'service-meta must advertise support.md');
     assert.ok(hrefs.includes('https://worldmonitor.app/agents.md'), 'service-meta must advertise agents.md (#4952)');
+    assert.ok(hrefs.includes('https://worldmonitor.app/world-monitor.md'), 'service-meta must advertise world-monitor.md');
+    assert.ok(hrefs.includes('https://worldmonitor.app/api-versioning.md'), 'service-meta must advertise api-versioning.md');
+    assert.ok(hrefs.includes('https://worldmonitor.app/plugin.json'), 'service-meta must advertise /plugin.json');
     // The Commerce spec lives outside the root openapi bundle (size budget,
     // #4853) — without this link no advertised descriptor reaches it
     // (post-#4867 review finding); Mintlify serves the raw YAML at this URL.
@@ -2941,6 +2959,20 @@ describe('agent readiness: api-catalog + openapi build', () => {
       SPA_HTML_CACHE_SOURCE.includes('openapi'),
       'HTML cache catch-all must keep excluding openapi.json'
     );
+  });
+
+  it('no dashboard-serving rewrite can shadow the static /plugin.json Agent Plugin manifest', () => {
+    const shadow = vercelConfig.rewrites.find((r) =>
+      r.destination === DASHBOARD_HTML_DESTINATION && sourceToRegExp(r.source).test('/plugin.json')
+    );
+    assert.equal(shadow, undefined, '/plugin.json must serve the static manifest, not the app shell');
+    assert.ok(
+      SPA_HTML_CACHE_SOURCE.includes('plugin\\.json'),
+      'HTML cache catch-all must keep excluding plugin.json'
+    );
+    assert.equal(getHeaderValueForSource('/plugin.json', 'Content-Type'), 'application/json; charset=utf-8');
+    assert.equal(getHeaderValueForSource('/plugin.json', 'Access-Control-Allow-Origin'), '*');
+    assert.equal(effectiveCacheControl('/plugin.json'), 'public, max-age=3600');
   });
 
   it('every web-variant build regenerates inventory facts and OpenAPI', () => {
@@ -3388,7 +3420,7 @@ describe('agent readiness: remaining markdown twins', () => {
   // joined the set with its canonical Link header (#4999): it is
   // sitemap-listed, and without the catch-all exclusion the SPA cache-header
   // catch-all (later in the headers array) overrides its max-age rule.
-  for (const mdPath of ['/pricing.md', '/support.md', '/agents.md', '/ai-search.md']) {
+  for (const mdPath of ['/pricing.md', '/support.md', '/agents.md', '/ai-search.md', '/world-monitor.md', '/api-versioning.md']) {
     it(`serves ${mdPath} as markdown, never the app shell`, () => {
       assert.equal(getHeaderValueForSource(mdPath, 'Content-Type'), 'text/markdown; charset=utf-8');
       assert.equal(getHeaderValueForSource(mdPath, 'Access-Control-Allow-Origin'), '*');
@@ -3480,6 +3512,7 @@ describe('agent readiness: homepage Link headers', () => {
         'rel="http://www.iana.org/assignments/relation/oauth-authorization-server"',
         'rel="mcp-server-card"',
         'rel="agent-skills-index"',
+        'rel="deprecation"',
       ];
       for (const rel of requiredRels) {
         assert.ok(
@@ -3523,6 +3556,11 @@ describe('agent readiness: homepage Link headers', () => {
         linkHeader.value,
         /<\/openapi\.yaml>; rel="service-desc"; type="application\/vnd\.oai\.openapi"/,
         'Link header must still advertise /openapi.yaml as the OpenAPI service-desc'
+      );
+      assert.match(
+        linkHeader.value,
+        /<\/api-versioning\.md>; rel="deprecation"; type="text\/markdown"/,
+        'Link header must advertise the static REST deprecation policy'
       );
 
       // Target URIs must be root-relative (start with /, not http://).
@@ -4015,7 +4053,7 @@ describe('markdown canonical Link headers (#4999)', () => {
   // agents, so they cannot carry a <link rel="canonical">. RFC 6596 allows the
   // HTTP Link header form; without it these are the only indexable URLs with
   // no canonical signal at all.
-  const MD_PAGES = ['/pricing.md', '/support.md', '/ai-search.md', '/developers.md', '/mcp-server.md', '/openapi.md', '/sdks.md', '/auth.md', '/agents.md', '/home.md'];
+  const MD_PAGES = ['/pricing.md', '/support.md', '/ai-search.md', '/developers.md', '/mcp-server.md', '/openapi.md', '/sdks.md', '/auth.md', '/agents.md', '/home.md', '/world-monitor.md', '/api-versioning.md'];
 
   for (const page of MD_PAGES) {
     it(`${page} declares a self-referencing canonical Link header`, () => {
@@ -4031,7 +4069,7 @@ describe('markdown canonical Link headers (#4999)', () => {
     });
   }
 
-  const CORPUS_PAGES = ['/llms.txt', '/llms-full.txt', '/agent.txt', '/openapi.yaml', '/openapi.json', '/schemamap.xml'];
+  const CORPUS_PAGES = ['/llms.txt', '/llms-full.txt', '/agent.txt', '/openapi.yaml', '/openapi.json', '/plugin.json', '/schemamap.xml'];
 
   for (const page of CORPUS_PAGES) {
     it(`${page} declares a www canonical Link header`, () => {

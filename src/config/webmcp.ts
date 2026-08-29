@@ -17,22 +17,32 @@ export const WEBMCP_SPA_TOOL = Object.freeze({
   openCountryBrief: 'openCountryBrief',
   openSearch: 'openSearch',
   getDashboardContext: 'get_dashboard_context',
+  switchMonitor: 'switch_monitor',
+  openSettings: 'open_settings',
+  openAlerts: 'open_alerts',
   openDashboardPanel: 'open_dashboard_panel',
   setMapView: 'set_map_view',
   setMapLayers: 'set_map_layers',
   searchDashboard: 'search_dashboard',
   openSearchResult: 'open_search_result',
+  getAccessContext: 'get_access_context',
+  openSignIn: 'open_sign_in',
 } as const);
 
 export const WEBMCP_SPA_TOOL_NAMES = [
   WEBMCP_SPA_TOOL.openCountryBrief,
   WEBMCP_SPA_TOOL.openSearch,
   WEBMCP_SPA_TOOL.getDashboardContext,
+  WEBMCP_SPA_TOOL.switchMonitor,
+  WEBMCP_SPA_TOOL.openSettings,
+  WEBMCP_SPA_TOOL.openAlerts,
   WEBMCP_SPA_TOOL.openDashboardPanel,
   WEBMCP_SPA_TOOL.setMapView,
   WEBMCP_SPA_TOOL.setMapLayers,
   WEBMCP_SPA_TOOL.searchDashboard,
   WEBMCP_SPA_TOOL.openSearchResult,
+  WEBMCP_SPA_TOOL.getAccessContext,
+  WEBMCP_SPA_TOOL.openSignIn,
 ] as const;
 
 export const WEBMCP_DECLARATIVE_TOOL_NAMES = [

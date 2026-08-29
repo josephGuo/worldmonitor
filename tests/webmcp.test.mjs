@@ -14,6 +14,7 @@ import {
   WEBMCP_HOMEPAGE_TOOL_NAMES,
   WEBMCP_SPA_TOOL_NAMES,
 } from '../src/config/webmcp.ts';
+import { getInitialPanelSettingsForVariant } from '../src/config/panels.ts';
 import {
   DASHBOARD_LAYER_ACTION_TARGET_ID_PATTERN,
   DASHBOARD_MAP_MAX_LATITUDE,
@@ -44,23 +45,50 @@ function buildWebMcpTools(app, track) {
 }
 
 function createBindings(overrides = {}) {
+  const context = {
+    variant: 'full',
+    map: {
+      view: 'global',
+      center: { lat: 1.25, lon: 2.5 },
+      zoom: 3,
+      timeRange: '7d',
+      enabledLayers: ['conflicts'],
+    },
+    panels: {
+      mounted: ['map', 'markets'],
+      enabled: ['map', 'markets'],
+    },
+  };
   return {
     openCountryBriefByCode: async () => true,
     resolveCountryName: (code) => `Country ${code}`,
     openSearch: async () => true,
-    getDashboardContext: async () => ({
-      variant: 'full',
-      map: {
-        view: 'global',
-        center: { lat: 1.25, lon: 2.5 },
-        zoom: 3,
-        timeRange: '7d',
-        enabledLayers: ['conflicts'],
-      },
-      panels: {
-        mounted: ['map', 'markets'],
-        enabled: ['map', 'markets'],
-      },
+    getDashboardContext: async () => context,
+    switchMonitor: async (monitor) => ({
+      ok: true,
+      status: 'applied',
+      destination: monitor,
+      navigation: monitor === context.variant ? 'none' : 'reload',
+      message: monitor === context.variant ? 'Already on that monitor.' : 'Switched monitor.',
+      context: { ...context, variant: monitor },
+    }),
+    openSettings: async () => ({
+      ok: true,
+      status: 'applied',
+      destination: 'settings',
+      overlay: 'open',
+      tab: 'settings',
+      message: 'Opened settings.',
+      context,
+    }),
+    openAlerts: async () => ({
+      ok: true,
+      status: 'applied',
+      destination: 'alerts',
+      overlay: 'open',
+      tab: 'notifications',
+      message: 'Opened alerts.',
+      context,
     }),
     applyDashboardAction: async (action) => ({
       ok: true,
@@ -79,6 +107,22 @@ function createBindings(overrides = {}) {
       ok: true,
       status: 'opened',
     }),
+    getAccessContext: async () => ({
+      accountState: 'signed_out',
+      clerk: 'unavailable',
+      productTier: 'anonymous',
+      capabilities: {
+        premiumAccess: false,
+        apiAccess: false,
+        mcpAccess: false,
+        dataExport: false,
+      },
+      limits: {
+        enabledPanels: { used: 1, cap: 40 },
+        dashboardTabs: { used: 1, cap: 3, canCreate: true },
+      },
+    }),
+    openSignIn: async () => ({ ok: false, status: 'denied', reason: 'clerk_unavailable' }),
     ...overrides,
   };
 }
@@ -135,11 +179,25 @@ describe('webmcp.ts: current API contract', () => {
     assert.match(src, /name:\s*WEBMCP_SPA_TOOL\.openCountryBrief/);
     assert.match(src, /name:\s*WEBMCP_SPA_TOOL\.openSearch/);
     assert.match(src, /name:\s*WEBMCP_SPA_TOOL\.getDashboardContext/);
+    assert.match(src, /name:\s*WEBMCP_SPA_TOOL\.switchMonitor/);
+    assert.match(src, /name:\s*WEBMCP_SPA_TOOL\.openSettings/);
+    assert.match(src, /name:\s*WEBMCP_SPA_TOOL\.openAlerts/);
     assert.match(src, /name:\s*WEBMCP_SPA_TOOL\.openDashboardPanel/);
     assert.match(src, /name:\s*WEBMCP_SPA_TOOL\.setMapView/);
     assert.match(src, /name:\s*WEBMCP_SPA_TOOL\.setMapLayers/);
     assert.match(src, /name:\s*WEBMCP_SPA_TOOL\.searchDashboard/);
     assert.match(src, /name:\s*WEBMCP_SPA_TOOL\.openSearchResult/);
+    assert.match(src, /name:\s*WEBMCP_SPA_TOOL\.getAccessContext/);
+    assert.match(src, /name:\s*WEBMCP_SPA_TOOL\.openSignIn/);
+  });
+
+  it('switches monitors through the visible header variant path', () => {
+    const eventHandlersSrc = readFileSync(resolve(ROOT, 'src/app/event-handlers.ts'), 'utf-8');
+    const appSrc = readFileSync(resolve(ROOT, 'src/App.ts'), 'utf-8');
+    assert.match(eventHandlersSrc, /public async navigateToVisibleVariant\(/);
+    assert.match(eventHandlersSrc, /\.variant-option\[data-variant="\$\{variant\}"\]/);
+    assert.match(appSrc, /navigateToVisibleVariant\(variant\)/);
+    assert.match(appSrc, /waitForDashboardReady\(false,/);
   });
 
   it('classifies structured denials by exact reason codes', () => {
@@ -184,7 +242,7 @@ describe('webmcp.ts: current API contract', () => {
       assert.ok(tool.title.length > 0);
       assert.equal(
         tool.annotations?.readOnlyHint,
-        ['get_dashboard_context', 'search_dashboard'].includes(tool.name),
+        ['get_access_context', 'get_dashboard_context', 'search_dashboard'].includes(tool.name),
       );
       const properties = tool.inputSchema?.properties ?? {};
       for (const property of Object.values(properties)) {
@@ -195,11 +253,275 @@ describe('webmcp.ts: current API contract', () => {
     }
   });
 
+  it('switches every monitor key and rejects unknown or malformed destinations', async () => {
+    const switches = [];
+    const tools = buildWebMcpTools(createBindings({
+      switchMonitor: async (monitor) => {
+        switches.push(monitor);
+        return {
+          ok: true,
+          status: 'applied',
+          destination: monitor,
+          navigation: monitor === 'full' ? 'none' : 'reload',
+          message: monitor === 'full' ? 'Already on that monitor.' : 'Switched monitor.',
+          context: {
+            variant: monitor,
+            map: {
+              view: 'global',
+              center: { lat: 1.25, lon: 2.5 },
+              zoom: 3,
+              timeRange: '7d',
+              enabledLayers: ['conflicts'],
+            },
+            panels: { mounted: ['map', 'markets'], enabled: ['map', 'markets'] },
+          },
+        };
+      },
+    }), () => {});
+    const tool = tools.find((candidate) => candidate.name === 'switch_monitor');
+    assert.ok(tool);
+    assert.deepEqual(tool.inputSchema.properties.monitor.enum, [
+      'full', 'tech', 'finance', 'happy', 'commodity', 'energy',
+    ]);
+    assert.equal(tool.annotations.readOnlyHint, false);
+
+    const signal = new AbortController().signal;
+    for (const monitor of ['full', 'tech', 'finance', 'commodity', 'energy', 'happy']) {
+      const result = await tool.execute({ monitor }, { signal });
+      assert.equal(result.ok, true, monitor);
+      assert.equal(result.destination, monitor, monitor);
+      assert.equal(result.context.variant, monitor, monitor);
+      assert.equal(result.navigation, monitor === 'full' ? 'none' : 'reload', monitor);
+    }
+    assert.deepEqual(switches, ['full', 'tech', 'finance', 'commodity', 'energy', 'happy']);
+
+    const unknown = await tool.execute({ monitor: 'World' }, {});
+    assert.deepEqual(
+      { ok: unknown.ok, status: unknown.status, reason: unknown.reason },
+      { ok: false, status: 'invalid', reason: 'unknown_monitor' },
+    );
+    assert.equal(unknown.context.variant, 'full');
+    assert.equal(switches.length, 6);
+
+    const extra = await tool.execute({ monitor: 'tech', url: 'https://example.invalid' }, {});
+    assert.equal(extra.reason, 'malformed_arguments');
+    assert.equal(switches.length, 6);
+
+    const unsupported = await tool.execute({ monitor: 'tech' }, {});
+    assert.equal(
+      unsupported.reason,
+      'target_cancellation_unsupported',
+      JSON.stringify(unsupported),
+    );
+    assert.equal(switches.length, 6);
+  });
+
+  it('opens settings and alerts without mutating their contents', async () => {
+    const calls = [];
+    const tools = buildWebMcpTools(createBindings({
+      openSettings: async () => {
+        calls.push('settings');
+        return {
+          ok: true,
+          status: 'applied',
+          destination: 'settings',
+          overlay: 'open',
+          tab: 'settings',
+          message: 'Opened settings.',
+          context: {
+            variant: 'full',
+            map: {
+              view: 'global',
+              center: { lat: 1.25, lon: 2.5 },
+              zoom: 3,
+              timeRange: '7d',
+              enabledLayers: ['conflicts'],
+            },
+            panels: { mounted: ['map', 'markets'], enabled: ['map', 'markets'] },
+          },
+        };
+      },
+      openAlerts: async () => {
+        calls.push('alerts');
+        return {
+          ok: true,
+          status: 'applied',
+          destination: 'alerts',
+          overlay: 'open',
+          tab: 'notifications',
+          message: 'Opened alerts.',
+          context: {
+            variant: 'full',
+            map: {
+              view: 'global',
+              center: { lat: 1.25, lon: 2.5 },
+              zoom: 3,
+              timeRange: '7d',
+              enabledLayers: ['conflicts'],
+            },
+            panels: { mounted: ['map', 'markets'], enabled: ['map', 'markets'] },
+          },
+        };
+      },
+    }), () => {});
+
+    const settings = await tools.find((tool) => tool.name === 'open_settings').execute({});
+    const alerts = await tools.find((tool) => tool.name === 'open_alerts').execute({});
+    assert.equal(settings.destination, 'settings');
+    assert.equal(settings.tab, 'settings');
+    assert.equal(settings.overlay, 'open');
+    assert.equal(alerts.destination, 'alerts');
+    assert.equal(alerts.tab, 'notifications');
+    assert.deepEqual(calls, ['settings', 'alerts']);
+
+    const gated = await tools.find((tool) => tool.name === 'open_alerts').execute({ tab: 'billing' });
+    assert.equal(gated.reason, 'malformed_arguments');
+    assert.deepEqual(calls, ['settings', 'alerts']);
+
+    const gatedSettings = await tools.find((tool) => tool.name === 'open_settings').execute({ tab: 'billing' });
+    assert.equal(gatedSettings.reason, 'malformed_arguments');
+    assert.deepEqual(calls, ['settings', 'alerts']);
+  });
+
+  it('reserves navigation envelope space when dashboard context is already near the output target', async () => {
+    const manyIds = Array.from({ length: 200 }, (_, index) => (
+      `panel-${String(index).padStart(3, '0')}-${'x'.repeat(80)}`
+    ));
+    const hostileContext = {
+      variant: 'full',
+      map: {
+        view: 'global',
+        center: { lat: 40.7128, lon: -74.006 },
+        zoom: 4,
+        timeRange: '24h',
+        enabledLayers: manyIds,
+      },
+      panels: { mounted: manyIds, enabled: manyIds },
+    };
+
+    const freshContexts = Object.fromEntries(
+      ['full', 'finance', 'commodity'].map((variant) => {
+        const enabled = Object.entries(getInitialPanelSettingsForVariant(variant))
+          .filter(([, config]) => config.enabled === true)
+          .map(([panelId]) => panelId);
+        return [variant, {
+          variant,
+          map: {
+            view: 'global',
+            center: { lat: 1.25, lon: 2.5 },
+            zoom: 3,
+            timeRange: '7d',
+            enabledLayers: ['conflicts', 'tradeRoutes'],
+          },
+          panels: { mounted: enabled, enabled },
+        }];
+      }),
+    );
+
+    const applied = [];
+    const executeNavigation = async (context, monitor = 'tech') => {
+      const tools = buildWebMcpTools(createBindings({
+        switchMonitor: async (destination) => {
+          applied.push(`switch:${destination}`);
+          return {
+            ok: true,
+            status: 'applied',
+            destination,
+            navigation: 'reload',
+            message: 'Switched monitor.',
+            context: { ...context, variant: destination },
+          };
+        },
+        openSettings: async () => {
+          applied.push('settings');
+          return {
+            ok: true,
+            status: 'applied',
+            destination: 'settings',
+            overlay: 'open',
+            tab: 'settings',
+            message: 'Opened settings.',
+            context,
+          };
+        },
+        openAlerts: async () => {
+          applied.push('alerts');
+          return {
+            ok: true,
+            status: 'applied',
+            destination: 'alerts',
+            overlay: 'open',
+            tab: 'notifications',
+            message: 'Opened alerts.',
+            context,
+          };
+        },
+      }), () => {});
+      return {
+        settings: await tools.find((tool) => tool.name === 'open_settings').execute({}),
+        alerts: await tools.find((tool) => tool.name === 'open_alerts').execute({}),
+        switched: await tools.find((tool) => tool.name === 'switch_monitor').execute({ monitor }),
+      };
+    };
+
+    const contexts = [hostileContext, ...Object.values(freshContexts)];
+    for (const context of contexts) {
+      const { settings, alerts, switched } = await executeNavigation(context);
+      for (const result of [settings, alerts, switched]) {
+        assert.equal(result.ok, true, context.variant);
+        assert.equal(result.status, 'applied', context.variant);
+        assert.ok(JSON.stringify(result).length <= 1_500, context.variant);
+      }
+      assert.equal(switched.destination, 'tech');
+      assert.equal(switched.context.variant, 'tech');
+    }
+    assert.equal(applied.length, contexts.length * 3);
+  });
+
+  it('reports entitlement-style unavailability without account details', async () => {
+    const tools = buildWebMcpTools(createBindings({
+      openAlerts: async () => ({
+        ok: false,
+        status: 'denied',
+        destination: 'alerts',
+        reason: 'unavailable',
+        message: 'Alerts are not available on this dashboard.',
+        context: {
+          variant: 'full',
+          map: {
+            view: 'global',
+            center: { lat: 1.25, lon: 2.5 },
+            zoom: 3,
+            timeRange: '7d',
+            enabledLayers: ['conflicts'],
+          },
+          panels: { mounted: ['map', 'markets'], enabled: ['map', 'markets'] },
+        },
+      }),
+    }), () => {});
+    const result = await tools.find((tool) => tool.name === 'open_alerts').execute({});
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'unavailable');
+    assert.equal(result.message.includes('@'), false);
+    assert.equal(/user|email|plan|account/i.test(result.message), false);
+  });
+
   it('documents that open_dashboard_panel does not enable a disabled panel', () => {
     const tool = buildWebMcpTools(createBindings(), () => {})
       .find((candidate) => candidate.name === 'open_dashboard_panel');
     assert.match(tool.description, /panel_disabled/);
     assert.match(tool.description, /does not enable/i);
+  });
+
+  it('documents per-result cancellation on search_dashboard and open_search_result', () => {
+    const tools = buildWebMcpTools(createBindings(), () => {});
+    const search = tools.find((candidate) => candidate.name === 'search_dashboard');
+    const open = tools.find((candidate) => candidate.name === 'open_search_result');
+    assert.match(search.description, /executable/);
+    assert.match(search.description, /bound effect/);
+    assert.match(open.description, /bound effect class/);
+    assert.match(open.description, /target_cancellation_unsupported/);
+    assert.match(open.description, /View-state/);
   });
 
   it('advertises mutually exclusive named-view and coordinate inputs', () => {
@@ -278,12 +600,125 @@ describe('webmcp.ts: current API contract', () => {
     assert.equal(open.inputSchema.properties.resultKey.pattern, '^sr_[a-f0-9]{32}$');
   });
 
+  it('publishes a PII-free access snapshot and a credential-free sign-in opener', async () => {
+    const tools = buildWebMcpTools(createBindings(), () => {});
+    const access = tools.find((tool) => tool.name === 'get_access_context');
+    const signIn = tools.find((tool) => tool.name === 'open_sign_in');
+
+    assert.deepEqual(access.annotations, { readOnlyHint: true });
+    assert.equal(access.inputSchema.additionalProperties, false);
+    assert.deepEqual(access.inputSchema.properties, {});
+    assert.match(access.description, /no names, emails, account IDs, tokens/i);
+
+    const snapshot = await access.execute({}, { signal: new AbortController().signal });
+    assert.equal(snapshot.accountState, 'signed_out');
+    assert.equal(snapshot.clerk, 'unavailable');
+    assert.equal(snapshot.productTier, 'anonymous');
+    assert.equal(snapshot.targetCancellationSupported, true);
+    assert.equal(Object.prototype.hasOwnProperty.call(snapshot, 'email'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(snapshot, 'userId'), false);
+
+    assert.deepEqual(signIn.annotations, { readOnlyHint: false });
+    assert.equal(signIn.inputSchema.additionalProperties, false);
+    assert.deepEqual(signIn.inputSchema.properties, {});
+    assert.match(signIn.description, /does not accept credentials/i);
+    assert.deepEqual(await signIn.execute({}, { signal: new AbortController().signal }), {
+      ok: false,
+      status: 'denied',
+      reason: 'clerk_unavailable',
+    });
+    await assert.rejects(
+      () => signIn.execute(
+        { password: 'secret', otp: '123456' },
+        { signal: new AbortController().signal },
+      ),
+      (error) => error.name === 'WebMcpToolError'
+        && /does not accept credentials/.test(error.message),
+    );
+  });
+
+  it('passes already_open sign-in results through unchanged', async () => {
+    const tools = buildWebMcpTools(createBindings({
+      openSignIn: async () => ({ ok: true, status: 'already_open', reason: 'already_open' }),
+    }), () => {});
+    const signIn = tools.find((tool) => tool.name === 'open_sign_in');
+    assert.deepEqual(
+      await signIn.execute({}, { signal: new AbortController().signal }),
+      { ok: true, status: 'already_open', reason: 'already_open' },
+    );
+  });
+
   it('runs reversible view-state tools and gates effects that can outlive cancellation', async () => {
     let mutationCalls = 0;
     const events = [];
     const tools = buildProductionWebMcpTools(createBindings({
       openCountryBriefByCode: async () => { mutationCalls += 1; return true; },
       openSearch: async () => { mutationCalls += 1; return true; },
+      switchMonitor: async (monitor) => {
+        mutationCalls += 1;
+        return {
+          ok: true,
+          status: 'applied',
+          destination: monitor,
+          navigation: 'reload',
+          message: 'Switched monitor.',
+          context: {
+            variant: monitor,
+            map: {
+              view: 'global',
+              center: { lat: 1.25, lon: 2.5 },
+              zoom: 3,
+              timeRange: '7d',
+              enabledLayers: ['conflicts'],
+            },
+            panels: { mounted: ['map', 'markets'], enabled: ['map', 'markets'] },
+          },
+        };
+      },
+      openSettings: async () => {
+        mutationCalls += 1;
+        return {
+          ok: true,
+          status: 'applied',
+          destination: 'settings',
+          overlay: 'open',
+          tab: 'settings',
+          message: 'Opened settings.',
+          context: {
+            variant: 'full',
+            map: {
+              view: 'global',
+              center: { lat: 1.25, lon: 2.5 },
+              zoom: 3,
+              timeRange: '7d',
+              enabledLayers: ['conflicts'],
+            },
+            panels: { mounted: ['map', 'markets'], enabled: ['map', 'markets'] },
+          },
+        };
+      },
+      openAlerts: async () => {
+        mutationCalls += 1;
+        return {
+          ok: true,
+          status: 'applied',
+          destination: 'alerts',
+          overlay: 'open',
+          tab: 'notifications',
+          message: 'Opened alerts.',
+          context: {
+            variant: 'full',
+            map: {
+              view: 'global',
+              center: { lat: 1.25, lon: 2.5 },
+              zoom: 3,
+              timeRange: '7d',
+              enabledLayers: ['conflicts'],
+            },
+            panels: { mounted: ['map', 'markets'], enabled: ['map', 'markets'] },
+          },
+        };
+      },
       applyDashboardAction: async (action) => {
         mutationCalls += 1;
         return {
@@ -298,20 +733,31 @@ describe('webmcp.ts: current API contract', () => {
         mutationCalls += 1;
         return { ok: true, status: 'opened' };
       },
+      openSignIn: async () => {
+        mutationCalls += 1;
+        return { ok: true, status: 'opened' };
+      },
     }), (event, data) => events.push({ event, data }));
     const validInputs = {
       openCountryBrief: { iso2: 'DE' },
       openSearch: {},
+      switch_monitor: { monitor: 'tech' },
+      open_settings: {},
+      open_alerts: {},
       open_dashboard_panel: { panelId: 'markets' },
       set_map_view: { view: 'eu' },
       set_map_layers: { layers: { conflicts: true } },
       open_search_result: { resultKey: `sr_${'a'.repeat(32)}` },
+      open_sign_in: {},
     };
 
     assert.equal(
       (await tools.find(({ name }) => name === 'get_dashboard_context').execute({})).variant,
       'full',
     );
+    const accessWithoutSignal = await tools.find(({ name }) => name === 'get_access_context').execute({});
+    assert.equal(accessWithoutSignal.accountState, 'signed_out');
+    assert.equal(accessWithoutSignal.targetCancellationSupported, false);
     assert.equal(
       (await tools.find(({ name }) => name === 'search_dashboard')
         .execute({ query: 'safe' })).resultCount,
@@ -319,17 +765,19 @@ describe('webmcp.ts: current API contract', () => {
     );
 
     // openCountryBrief can consume daily LLM allowance after caller
-    // cancellation. set_map_layers and open_search_result persist
-    // STORAGE_KEYS.mapLayers. All three stay fail-closed without a target
-    // signal; the remaining dashboard-changing tools only move reversible
-    // visible view state.
+    // cancellation. set_map_layers persists STORAGE_KEYS.mapLayers, while
+    // switch_monitor persists and reloads or navigates away. All three stay
+    // fail-closed without a target signal. open_search_result is
+    // result-dependent: the tool wrapper must reach the binding so the issued
+    // effect class can decide. The remaining dashboard-changing tools only
+    // move reversible visible view state.
     //
     // Every tool is pinned to its EXACT return, gated and ungated alike.
     // `notDeepEqual(result, denial)` excluded exactly one literal object, so a
     // swallowed error, a differently shaped failure, a wrong country name, or a
     // dropped actionType all passed it. createBindings() is deterministic, so
     // there is nothing environment-dependent left to hedge against.
-    const gated = ['openCountryBrief', 'set_map_layers', 'open_search_result'];
+    const gated = ['openCountryBrief', 'switch_monitor', 'set_map_layers'];
     const denial = {
       ok: false,
       status: 'denied',
@@ -350,10 +798,68 @@ describe('webmcp.ts: current API contract', () => {
     const expected = {
       openCountryBrief: denial,
       openSearch: 'Opened search palette.',
+      switch_monitor: denial,
+      open_settings: {
+        ok: true,
+        status: 'applied',
+        destination: 'settings',
+        overlay: 'open',
+        tab: 'settings',
+        message: 'Opened settings.',
+        context: {
+          variant: 'full',
+          map: {
+            view: 'global',
+            center: { lat: 1.25, lon: 2.5 },
+            zoom: 3,
+            timeRange: '7d',
+            enabledLayers: ['conflicts'],
+            enabledLayerCount: 1,
+            layersTruncated: false,
+          },
+          panels: {
+            mounted: ['map', 'markets'],
+            enabled: ['map', 'markets'],
+            mountedCount: 2,
+            enabledCount: 2,
+            mountedTruncated: false,
+            enabledTruncated: false,
+          },
+        },
+      },
+      open_alerts: {
+        ok: true,
+        status: 'applied',
+        destination: 'alerts',
+        overlay: 'open',
+        tab: 'notifications',
+        message: 'Opened alerts.',
+        context: {
+          variant: 'full',
+          map: {
+            view: 'global',
+            center: { lat: 1.25, lon: 2.5 },
+            zoom: 3,
+            timeRange: '7d',
+            enabledLayers: ['conflicts'],
+            enabledLayerCount: 1,
+            layersTruncated: false,
+          },
+          panels: {
+            mounted: ['map', 'markets'],
+            enabled: ['map', 'markets'],
+            mountedCount: 2,
+            enabledCount: 2,
+            mountedTruncated: false,
+            enabledTruncated: false,
+          },
+        },
+      },
       open_dashboard_panel: appliedAction('open_panel'),
       set_map_view: appliedAction('set_view'),
       set_map_layers: denial,
-      open_search_result: denial,
+      open_search_result: { ok: true, status: 'opened' },
+      open_sign_in: { ok: true, status: 'opened' },
     };
     assert.deepEqual(
       Object.keys(expected).sort(),
@@ -998,7 +1504,7 @@ describe('webmcp.ts: promise registration lifecycle', () => {
     await settlePromises();
     assert.deepEqual(harness.events, [{
       event: 'webmcp-registered',
-      data: { toolCount: 8, pageSurface: 'dashboard', api: 'document-current' },
+      data: { toolCount: DASHBOARD_TOOL_NAMES.length, pageSurface: 'dashboard', api: 'document-current' },
     }]);
 
     controller.abort();
@@ -1025,7 +1531,7 @@ describe('webmcp.ts: promise registration lifecycle', () => {
       },
       {
         event: 'webmcp-registered',
-        data: { toolCount: 7, pageSurface: 'dashboard', api: 'document-current' },
+        data: { toolCount: DASHBOARD_TOOL_NAMES.length - 1, pageSurface: 'dashboard', api: 'document-current' },
       },
     ]);
     assert.ok(!JSON.stringify(harness.events).includes('raw duplicate detail'));
@@ -1576,6 +2082,43 @@ describe('webmcp App.ts binding invariants', () => {
       callByExpression(openResult.arguments[1], appFile, 'this.waitForDashboardReady'),
       appFile,
       ['true', 'execution?.signal'],
+    );
+  });
+
+  it('reads access context and opens sign-in without waiting for map or UI ready', () => {
+    const accessImport = findNode(
+      appFile,
+      (node) => (
+        ts.isImportDeclaration(node)
+        && ts.isStringLiteral(node.moduleSpecifier)
+        && node.moduleSpecifier.text === '@/app/webmcp-access'
+      ),
+      'static @/app/webmcp-access import',
+    );
+    const importedNames = accessImport.importClause?.namedBindings?.elements
+      .map(({ name }) => name.text) ?? [];
+    assert.ok(importedNames.includes('getWebMcpAccessContext'));
+    assert.ok(importedNames.includes('openWebMcpSignIn'));
+
+    const getAccessContext = objectPropertyInitializer(bindings, appFile, 'getAccessContext');
+    const openSignIn = objectPropertyInitializer(bindings, appFile, 'openSignIn');
+    for (const [name, initializer] of [
+      ['getAccessContext', getAccessContext],
+      ['openSignIn', openSignIn],
+    ]) {
+      const text = initializer.getText(appFile);
+      assert.equal(text.includes('waitForUiReady'), false, `${name} must not wait for UI ready`);
+      assert.equal(text.includes('waitForDashboardReady'), false, `${name} must not wait for the map`);
+    }
+    callByExpression(getAccessContext, appFile, 'getWebMcpAccessContext');
+    assert.match(
+      getAccessContext.getText(appFile),
+      /freeTierFallbackActive:\s*this\.freeTierGate\.authSettleDeadlineExceeded/,
+    );
+    assertCallArguments(
+      callByExpression(openSignIn, appFile, 'openWebMcpSignIn'),
+      appFile,
+      ['execution?.signal'],
     );
   });
 
