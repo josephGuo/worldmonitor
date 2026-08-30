@@ -4,6 +4,7 @@ import type {
   UnifiedSettingsController,
   UnifiedSettingsTabId,
 } from '@/app/app-context';
+import { applyVisibleMapDimension } from '@/app/map-dimension-control';
 import type { UnifiedSettingsConfig } from '@/components/UnifiedSettings';
 import type { AirlineIntelPanel } from '@/components/AirlineIntelPanel';
 import type { CustomWidgetPanel } from '@/components/CustomWidgetPanel';
@@ -18,8 +19,11 @@ import {
   FREE_MAX_SOURCES,
   countFreePanelCapUsage,
   isFreePanelCapCounted,
+  isPanelEntitled,
   userSetPanelEnabled,
 } from '@/config/panels';
+import { applySetPanelEnabled } from '@/app/panel-enablement';
+import type { SetPanelEnabledResult } from '@/config/panel-enablement';
 import type { McpDataPanel } from '@/components/McpDataPanel';
 import { deleteMcpPanel, getMcpPanel, saveMcpPanel } from '@/services/mcp-store';
 import type { PanelConfig, MapLayers, MilitaryFlight } from '@/types';
@@ -368,8 +372,10 @@ export class EventHandlerManager implements AppModule {
   /**
    * Enables a registered panel (undo-restore, CMD+K "Add", etc.). Returns
    * false when the panel is unknown or the free-tier cap blocks it. Already
-   * enabled → true (no-op). Single source of truth for runtime panel-enable
-   * so search-add and undo-restore stay in lockstep.
+   * enabled → true (no-op). Search-add and undo-restore stay in lockstep
+   * here so closing an unentitled or cross-monitor panel can still restore it.
+   * WebMCP catalog toggles use `applySetPanelEnabled`, which also enforces
+   * monitor compatibility and entitlements on enable.
    */
   enablePanelById(panelId: string, options?: { trackAnalytics?: boolean }): boolean {
     const config = this.ctx.panelSettings[panelId];
@@ -397,6 +403,35 @@ export class EventHandlerManager implements AppModule {
       (panel as { fetchData: () => void }).fetchData();
     }
     return true;
+  }
+
+  /**
+   * Enable or disable a catalog panel through the same persist/apply path as
+   * settings and search-add. Runtime widgets (`cw-*` / `mcp-*`) are refused;
+   * closing those panels still uses the dedicated confirm-and-delete handlers.
+   */
+  setPanelEnabledById(panelId: unknown, enabled: unknown): SetPanelEnabledResult {
+    const isPro = hasPremiumAccess(getAuthState());
+    return applySetPanelEnabled(
+      {
+        panelSettings: this.ctx.panelSettings,
+        panels: this.ctx.panels,
+        unifiedSettings: this.ctx.unifiedSettings,
+      },
+      panelId,
+      enabled,
+      {
+        variant: SITE_VARIANT,
+        isPro,
+        persist: (settings) => saveToStorage(STORAGE_KEYS.panels, settings),
+        applyPanelSettings: () => this.applyPanelSettings(),
+        trackToggle: trackPanelToggled,
+        showCapToast: () => showToast(
+          t('modals.settingsWindow.freePanelLimit', { max: String(FREE_MAX_PANELS) }),
+        ),
+        isPanelAllowed: (id, config) => isPanelEntitled(id, config, hasPremiumAccess(getAuthState())),
+      },
+    );
   }
 
   private setupTvMode(): void {
@@ -2638,18 +2673,7 @@ export class EventHandlerManager implements AppModule {
         const isGlobe = mode === 'globe';
         const alreadyGlobe = this.ctx.map?.isGlobeMode() ?? false;
         if (isGlobe === alreadyGlobe) return;
-        toggle.querySelectorAll('.map-dim-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        saveToStorage(STORAGE_KEYS.mapMode, isGlobe ? 'globe' : 'flat');
-        if (isGlobe) {
-          this.ctx.map?.switchToGlobe();
-        } else {
-          this.ctx.map?.switchToFlat();
-        }
-        if (this.ctx.mapLayers.resilienceScore && !this.ctx.map?.isDeckGLActive?.()) {
-          this.ctx.mapLayers = { ...this.ctx.mapLayers, resilienceScore: false };
-          saveToStorage(STORAGE_KEYS.mapLayers, this.ctx.mapLayers);
-        }
+        void applyVisibleMapDimension(this.ctx, isGlobe ? '3d' : '2d');
       });
     });
   }

@@ -173,9 +173,12 @@ import {
   applyWebMcpOpenSettings,
   applyWebMcpSwitchMonitor,
   getWebMcpDashboardContext,
+  getWebMcpMapLayerCatalogSnapshot,
+  listWebMcpDashboardPanels,
   WEBMCP_UI_READY_TIMEOUT_MS,
   waitForWebMcpUiReady,
 } from '@/app/webmcp-dashboard';
+import type { MapLayerRuntimeAvailability } from '@/services/map-layer-runtime-availability';
 import { getWebMcpAccessContext, openWebMcpSignIn } from '@/app/webmcp-access';
 import { runDashboardActionBinding } from '@/app/dashboard-action-binding';
 import { refreshDataFreshnessFromHealth } from '@/services/health-freshness';
@@ -185,6 +188,7 @@ import { RefreshScheduler } from '@/app/refresh-scheduler';
 import { PanelLayoutManager } from '@/app/panel-layout';
 import { DataLoaderManager } from '@/app/data-loader';
 import { EventHandlerManager } from '@/app/event-handlers';
+import { isCatalogPanelLive, waitUntilPanelLive } from '@/app/panel-enablement';
 import {
   FreeTierGate,
   panelGateStateChanged,
@@ -318,6 +322,10 @@ export class App {
   // triggers it so test harnesses / same-document re-inits don't accumulate
   // duplicate registrations.
   private webMcpController: AbortController | null = null;
+  // Cancels App-owned waits that have already entered a callback. Distinct from
+  // the tool-invocation caller signal, and from webMcpController which only
+  // unregisters tools — aborting registration does not stop an in-flight waiter.
+  private readonly lifecycleController = new AbortController();
   private visiblePanelPrimed = new Set<string>();
   /**
    * Per-pass viewport results, or null outside a pass. See
@@ -401,6 +409,11 @@ export class App {
     const detail = (ev as CustomEvent<CloudPrefsAppliedDetail>).detail;
     this.applyCloudSyncedPrefsToRuntime(detail?.keys ?? [], detail?.syncVersion);
   };
+  private readonly getMapLayerRuntimeAvailability = (): MapLayerRuntimeAvailability => ({
+    cyberLayerEnabled: CYBER_LAYER_ENABLED,
+    aisConfigured: isAisConfigured(),
+    outagesAvailable: isOutagesConfigured() !== false,
+  });
   private readonly handleCloudPrefsSignInTerminal = (ev: Event): void => {
     const detail = (ev as CustomEvent<CloudPrefsSignInTerminalDetail>).detail;
     const pendingGeneration = this.pendingPreferenceHandoffGeneration;
@@ -497,8 +510,8 @@ export class App {
 
     if (keySet.has(STORAGE_KEYS.mapMode)) {
       const mode = getStoredMapModePreference();
-      if (mode === 'globe') this.state.map?.switchToGlobe();
-      else this.state.map?.switchToFlat();
+      if (mode === 'globe') void this.state.map?.switchToGlobe();
+      else void this.state.map?.switchToFlat();
     }
 
     if (
@@ -1902,6 +1915,29 @@ export class App {
         throwIfWebMcpAborted(execution?.signal);
         return getWebMcpDashboardContext(this.state, SITE_VARIANT);
       },
+      listMapLayerCatalog: async (execution) => {
+        await this.waitForDashboardReady(true, execution?.signal);
+        throwIfWebMcpAborted(execution?.signal);
+        return getWebMcpMapLayerCatalogSnapshot(
+          this.state,
+          SITE_VARIANT,
+          hasPremiumAccess(getAuthState()),
+          t,
+          this.getMapLayerRuntimeAvailability(),
+        );
+      },
+      listDashboardPanels: async (query, execution) => {
+        await this.waitForDashboardReady(false, execution?.signal);
+        throwIfWebMcpAborted(execution?.signal);
+        if (this.state.isDestroyed) {
+          throw new DashboardBindingError('app_destroyed', 'Dashboard is no longer available.');
+        }
+        return listWebMcpDashboardPanels(this.state, SITE_VARIANT, query, {
+          isPanelAllowed: (panelId, config) => (
+            isPanelEntitled(panelId, config, hasPremiumAccess(getAuthState()))
+          ),
+        });
+      },
       switchMonitor: async (monitor, execution) => {
         await this.waitForDashboardReady(false, execution?.signal);
         throwIfWebMcpAborted(execution?.signal);
@@ -1937,9 +1973,11 @@ export class App {
             applyViewChange: (viewAction) => {
               if (viewAction.view) trackMapViewChange(viewAction.view);
             },
+            getMapLayerRuntimeAvailability: this.getMapLayerRuntimeAvailability,
             applyLayerChange: (layer, enabled, source) => (
               this.eventHandlers.applyMapLayerChange(layer, enabled, source)
             ),
+            requireMapModePersistence: true,
           },
           syncUrlStateNow: () => this.eventHandlers.syncUrlStateNow(),
         });
@@ -1990,6 +2028,47 @@ export class App {
           () => this.waitForDashboardReady(true, execution?.signal),
           execution?.signal,
         );
+      },
+      applyDashboardTabAction: async (action, execution) => {
+        await this.waitForDashboardReady(false, execution?.signal);
+        throwIfWebMcpAborted(execution?.signal);
+        if (this.state.isDestroyed) {
+          throw new DashboardBindingError('app_destroyed', 'Dashboard is no longer available.');
+        }
+        return this.panelLayout.applyWebMcpTabAction(action);
+      },
+      setPanelEnabled: async (panelId, enabled, execution) => {
+        await this.waitForDashboardReady(false, execution?.signal);
+        throwIfWebMcpAborted(execution?.signal);
+        if (this.state.isDestroyed) {
+          throw new DashboardBindingError('app_destroyed', 'Dashboard is no longer available.');
+        }
+        const result = this.eventHandlers.setPanelEnabledById(panelId, enabled);
+        // Map uses #mapSection, not ctx.panels / [data-panel]. After persist,
+        // do not abort on the caller signal: cancellation-required only gates a
+        // missing signal. The App lifecycle signal still cancels this waiter
+        // when destroy() runs, so a same-document re-init cannot wake the
+        // MutationObserver on replacement DOM.
+        if (
+          result.ok
+          && result.changed
+          && result.effectiveEnabled
+          && typeof panelId === 'string'
+          && panelId !== 'map'
+        ) {
+          try {
+            await waitUntilPanelLive({
+              isLive: () => isCatalogPanelLive(panelId, this.state.panels),
+              signal: this.lifecycleController.signal,
+            });
+          } catch (error) {
+            if (this.state.isDestroyed || this.lifecycleController.signal.aborted) {
+              throw new DashboardBindingError('app_destroyed', 'Dashboard is no longer available.');
+            }
+            throw error;
+          }
+        }
+        return result;
       },
       getAccessContext: async (execution) => {
         throwIfWebMcpAborted(execution?.signal);
@@ -3062,6 +3141,9 @@ export class App {
     this.latestSearchMilitary = [];
     this.latestSearchAdsbUpdatedAt = 0;
     this.resolveAppDestroyed();
+    // Cancel in-flight App-owned waits before DOM teardown can mutate the
+    // document and wake a waiter that still closes over this instance.
+    this.lifecycleController.abort();
     // Unregister agent entry points before the rest of teardown. In particular,
     // init-failure cleanup may run on a partially initialised App; even if a
     // later module cleanup throws, no WebMCP tool may retain this dead instance.
