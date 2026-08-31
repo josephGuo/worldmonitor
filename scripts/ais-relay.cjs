@@ -53,6 +53,15 @@ const { createPollGenerationGuard } = require('./lib/poll-generation-guard.cjs')
 const { createXPollCycle } = require('./lib/x-poll-cycle.cjs');
 const { buildClassifyCandidateMap, isStaleDigestReplay } = require('./lib/digest-stale-gate.cjs');
 const {
+  buildClassifyDigestUrl,
+  classifyDigestTransport,
+  buildClassifyDigestHeaders,
+  formatClassifyDigestFetchFailure,
+  shouldWriteClassifySeedMeta,
+  CLASSIFY_DIGEST_RETRY_DELAYS_MS,
+  classifyDigestRetryDecision,
+} = require('./lib/classify-digest-request.cjs');
+const {
   YahooQuoteSummaryClient,
   buildSectorSeedMeta,
   buildSectorValuationCoverage,
@@ -4821,26 +4830,55 @@ async function classifyFetchLlm(titles) {
 let classifyInFlight = false;
 
 async function seedClassifyForVariant(variant, seenTitles) {
-  const digestUrl = `https://api.worldmonitor.app/api/news/v1/list-feed-digest?variant=${variant}&lang=en`;
+  const digestUrl = buildClassifyDigestUrl(variant);
+  const transport = classifyDigestTransport(digestUrl) === 'http' ? http : https;
   let digest;
-  try {
-    const resp = await new Promise((resolve, reject) => {
-      const req = https.get(digestUrl, {
-        headers: { Accept: 'application/json', 'User-Agent': CHROME_UA },
-        timeout: 15000,
-      }, resolve);
-      req.on('error', reject);
-      req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
-    });
-    if (resp.statusCode !== 200) { resp.resume(); return { total: 0, classified: 0, skipped: 0 }; }
-    const body = await new Promise((resolve) => {
-      let d = '';
-      resp.on('data', (c) => { d += c; });
-      resp.on('end', () => resolve(d));
-    });
-    digest = JSON.parse(body);
-  } catch {
-    return { total: 0, classified: 0, skipped: 0 };
+  const maxDigestAttempts = CLASSIFY_DIGEST_RETRY_DELAYS_MS.length + 1;
+  for (let attempt = 0; attempt < maxDigestAttempts; attempt++) {
+    try {
+      const resp = await new Promise((resolve, reject) => {
+        const req = transport.get(digestUrl, {
+          headers: buildClassifyDigestHeaders({
+            userAgent: CHROME_UA,
+            relayKey: RELAY_API_KEY,
+          }),
+          timeout: 15000,
+        }, resolve);
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+      });
+      if (resp.statusCode !== 200) {
+        resp.resume();
+        const retry = classifyDigestRetryDecision({ attempt, status: resp.statusCode });
+        if (retry.retry) {
+          console.warn(`[Classify] digest fetch HTTP ${resp.statusCode}; retrying in ${retry.delayMs}ms`);
+          await new Promise((r) => setTimeout(r, retry.delayMs));
+          continue;
+        }
+        console.warn(formatClassifyDigestFetchFailure(resp.statusCode, RELAY_API_KEY));
+        return { total: 0, classified: 0, skipped: 0, fetchFailed: true };
+      }
+      const body = await new Promise((resolve) => {
+        let d = '';
+        resp.on('data', (c) => { d += c; });
+        resp.on('end', () => resolve(d));
+      });
+      digest = JSON.parse(body);
+      break;
+    } catch (e) {
+      const retry = classifyDigestRetryDecision({ attempt, error: e });
+      if (retry.retry) {
+        console.warn(`[Classify] digest fetch error: ${e?.message || e}; retrying in ${retry.delayMs}ms`);
+        await new Promise((r) => setTimeout(r, retry.delayMs));
+        continue;
+      }
+      console.warn('[Classify] digest fetch error:', e?.message || e);
+      return { total: 0, classified: 0, skipped: 0, fetchFailed: true };
+    }
+  }
+  if (!digest) {
+    console.warn('[Classify] digest fetch error: exhausted retries');
+    return { total: 0, classified: 0, skipped: 0, fetchFailed: true };
   }
 
   // #7084: stale RSS titles already had their alert pass when served fresh.
@@ -5006,12 +5044,16 @@ async function seedClassify() {
 
     let totalClassified = 0;
     let totalSkipped = 0;
+    let fetchOk = 0;
+    let fetchFailed = 0;
     const mergedByCountry = {};
     const seenTitles = new Set();
     for (let v = 0; v < CLASSIFY_VARIANTS.length; v++) {
       if (v > 0) await new Promise((r) => setTimeout(r, CLASSIFY_VARIANT_STAGGER_MS));
       try {
         const stats = await seedClassifyForVariant(CLASSIFY_VARIANTS[v], seenTitles);
+        if (stats.fetchFailed) fetchFailed += 1;
+        else fetchOk += 1;
         totalClassified += stats.classified;
         totalSkipped += stats.skipped;
         console.log(`[Classify] ${CLASSIFY_VARIANTS[v]}: ${stats.total} titles, ${stats.classified} classified, ${stats.skipped} skipped`);
@@ -5024,6 +5066,11 @@ async function seedClassify() {
       } catch (e) {
         console.warn(`[Classify] ${CLASSIFY_VARIANTS[v]} error:`, e?.message || e);
       }
+    }
+
+    if (!shouldWriteClassifySeedMeta({ fetchOk, fetchFailed })) {
+      console.warn('[Classify] Digest fetch failed for every variant — not writing seed-meta:classify');
+      return;
     }
 
     await upstashSet('seed-meta:news:threat-summary', { fetchedAt: Date.now(), recordCount: Object.keys(mergedByCountry).length }, 604800);
@@ -9370,11 +9417,19 @@ async function seedChokepointTransits() {
     const crossings = chokepointCrossings.get(cp.name) || [];
     const recent = crossings.filter(c => now - c.ts < TRANSIT_WINDOW_MS);
     chokepointCrossings.set(cp.name, recent);
+    // `available` is the same signal seedTransitSummaries encodes by leaving
+    // todayTotal null. Both writers read this one in-memory map and both ship
+    // in a single get-chokepoint-status bundle, so without it one response
+    // carried summaries.suez.todayTotal === null next to
+    // transits["Suez Canal"].total === 0 and an agent's answer depended on
+    // which half it read. The counts stay numeric here because the documented
+    // shape of this key is {tanker, cargo, other, total}.
     transits[cp.name] = {
       tanker: recent.filter(c => c.type === 'tanker').length,
       cargo: recent.filter(c => c.type === 'cargo').length,
       other: recent.filter(c => c.type === 'other').length,
       total: recent.length,
+      available: recent.length > 0,
     };
   }
   const payload = { transits, fetchedAt: now };
@@ -9479,15 +9534,15 @@ async function seedTransitSummaries() {
 
     // Compact summary: no history field. Consumed by get-chokepoint-status on
     // every request, so keep it small.
-    // dataAvailable distinguishes genuine zero-traffic (cpData present, 0
-    // crossings) from zero-state fill (upstream missing this cycle). False
-    // here makes the RPC response explicit and lets the client render a
-    // "data unavailable" indicator instead of silently-empty stat rows.
+    // dataAvailable is PortWatch history presence, not AIS today-counts.
+    // todayTotal comes from the in-memory 24h AIS window; an empty window is
+    // unsupplied, not a published zero-traffic measurement (#7457). Leave the
+    // count absent so PortWatch WoW cannot sit next to a fake 0.
     summaries[cpId] = {
-      todayTotal: relayTransit?.total ?? 0,
-      todayTanker: relayTransit?.tanker ?? 0,
-      todayCargo: relayTransit?.cargo ?? 0,
-      todayOther: relayTransit?.other ?? 0,
+      todayTotal: relayTransit?.total ?? null,
+      todayTanker: relayTransit?.tanker ?? null,
+      todayCargo: relayTransit?.cargo ?? null,
+      todayOther: relayTransit?.other ?? null,
       wowChangePct: cpData?.wowChangePct ?? 0,
       riskLevel: cr?.riskLevel ?? '',
       incidentCount7d: cr?.incidentCount7d ?? 0,
