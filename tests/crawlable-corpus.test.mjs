@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -9,6 +9,7 @@ import { describe, it } from 'node:test';
 import { Window } from 'happy-dom';
 
 import {
+  buildCiiRankingEntries,
   buildCorpus,
   CHOKEPOINT_PAGE_LASTMOD_PATHS,
   chokepointMetaDescription,
@@ -21,6 +22,7 @@ import {
   resolveChokepointObservation,
   SOURCE_CATALOG_LASTMOD_PATHS,
   sourcePageLastmod,
+  withSchemaContext,
 } from '../scripts/build-crawlable-corpus.mjs';
 import { buildSitemapEntries } from '../scripts/build-sitemap.mjs';
 import { buildSourceCatalog, sourceProviderDisplayName } from '../scripts/crawlable-sources-page.mjs';
@@ -34,7 +36,10 @@ function read(outDir, path) {
 }
 
 function jsonLdObjects(html) {
-  return [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)]
+  // Tolerate attributes on the open tag (`nonce`, `id`). The corpus emits none
+  // today, but a bare-literal match would silently skip an attributed block
+  // rather than fail -- and skipping blocks is the #7502 defect class.
+  return [...html.matchAll(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g)]
     .map(([, raw]) => JSON.parse(raw));
 }
 
@@ -663,6 +668,65 @@ function assertDataCatalogPresent(html, route) {
   return catalog;
 }
 
+// A root JSON-LD node with no `@context` has no vocabulary binding: `@type`
+// resolves to nothing, and every schema.org consumer discards the block
+// silently rather than erroring. #7491 shipped 62 such blocks across the 31
+// CII-covered country pages (found in #7502), which undid the
+// Dataset/DataCatalog work from #7379 on exactly the highest-intent pages and
+// was invisible to every existing assertion. Nested nodes inherit the root
+// context, so only the top-level block of each script tag is checked.
+const SCHEMA_ORG_CONTEXT_URLS = new Set(['https://schema.org', 'http://schema.org']);
+
+function jsonLdContextIsResolvable(context) {
+  if (typeof context === 'string') {
+    return SCHEMA_ORG_CONTEXT_URLS.has(context.replace(/\/$/, ''));
+  }
+  if (Array.isArray(context)) return context.some((entry) => jsonLdContextIsResolvable(entry));
+  if (context && typeof context === 'object') return jsonLdContextIsResolvable(context['@vocab']);
+  return false;
+}
+
+function assertJsonLdContexts(html, route) {
+  const blocks = jsonLdObjects(html);
+  assert.ok(blocks.length > 0, `${route} must emit at least one JSON-LD block`);
+  for (const [index, block] of blocks.entries()) {
+    const type = Array.isArray(block['@type']) ? block['@type'].join('+') : block['@type'];
+    const label = block['@id'] || type || `block ${index + 1}`;
+    assert.ok(
+      jsonLdContextIsResolvable(block['@context']),
+      `${route} JSON-LD block ${index + 1} (${label}) must declare a schema.org @context; without one @type binds to no vocabulary and consumers discard the block silently`,
+    );
+    // A context binds a vocabulary; a type is what binds an entity. Now that
+    // the context is stamped unconditionally, a typeless node (a bare `@id`
+    // reference, or an array flattened into an object) would sail through the
+    // check above while still describing nothing.
+    assert.ok(
+      typeof type === 'string' && type.length > 0,
+      `${route} JSON-LD block ${index + 1} (${label}) must declare an @type; a context without one binds a vocabulary but no entity`,
+    );
+  }
+  // Returned so the caller can prove the sweep actually ran: a loop that never
+  // executes is indistinguishable from one where every page passed.
+  return blocks.length;
+}
+
+// Walk what the build actually wrote, not the manifest's route list. The two
+// disagree: `manifest.sections.changelog` reports one route for fourteen
+// published pages, so a manifest-driven sweep silently skips the thirteen
+// `/reference/changelog/page/N/` pages (229 of 242 covered). A structured-data
+// guard that skips pages is the defect class it exists to catch.
+function generatedPageRoutes(outDir) {
+  const routes = [];
+  const visit = (relative) => {
+    for (const entry of readdirSync(join(outDir, relative), { withFileTypes: true })) {
+      if (entry.isDirectory()) visit(join(relative, entry.name));
+      else if (entry.name === 'index.html') routes.push(`/${relative === '.' ? '' : `${relative}/`}`);
+    }
+  };
+  visit('.');
+  return routes.sort();
+}
+
 function decodeHtmlAttribute(value) {
   return value
     .replaceAll('&#39;', "'")
@@ -731,7 +795,89 @@ function productionScriptNonce() {
   return nonce;
 }
 
+// The corpus-wide @context sweep is an absence assertion — it stays green if
+// the rule is deleted, weakened, or never sees a block. These controls prove it
+// still rejects each way the defect can present.
+describe('JSON-LD @context guard', () => {
+  const ldBlock = (value) => `<script type="application/ld+json">${JSON.stringify(value)}</script>`;
+  const route = '/countries/taiwan/';
+
+  it('rejects a top-level block with no @context (the #7502 shape)', () => {
+    const html = ldBlock({ '@context': 'https://schema.org', '@type': 'WebPage' })
+      + ldBlock({ '@type': 'Dataset', '@id': 'https://www.worldmonitor.app/countries/taiwan/#cii-dataset' });
+    assert.throws(
+      () => assertJsonLdContexts(html, route),
+      /block 2 \(https:\/\/www\.worldmonitor\.app\/countries\/taiwan\/#cii-dataset\) must declare a schema\.org @context/,
+    );
+  });
+
+  it('rejects a top-level block whose @context resolves to a non-schema.org vocabulary', () => {
+    const html = ldBlock({ '@context': 'https://example.invalid/vocab', '@type': 'Dataset' });
+    assert.throws(() => assertJsonLdContexts(html, route), /must declare a schema\.org @context/);
+  });
+
+  it('rejects a block that binds a vocabulary but no entity', () => {
+    const html = ldBlock({ '@context': 'https://schema.org', '@id': 'https://www.worldmonitor.app/countries/taiwan/#cii-dataset' });
+    assert.throws(() => assertJsonLdContexts(html, route), /must declare an @type/);
+  });
+
+  it('sees a block whose open tag carries attributes', () => {
+    // A bare-literal tag match would return zero blocks here and pass by
+    // vacuity if the "at least one block" floor were ever relaxed.
+    const html = '<script type="application/ld+json" nonce="wm-static-bootstrap">'
+      + JSON.stringify({ '@type': 'Dataset' })
+      + '</script>';
+    assert.throws(() => assertJsonLdContexts(html, route), /must declare a schema\.org @context/);
+  });
+
+  it('rejects a page that emits no JSON-LD at all', () => {
+    assert.throws(() => assertJsonLdContexts('<html><body>no structured data</body></html>', route), /must emit at least one JSON-LD block/);
+  });
+
+  it('stamps a missing or unusable @context and preserves a deliberate one', () => {
+    // The stamp is what makes the defect unreproducible, so both branches are
+    // pinned: forgetting the key gets it back, and choosing a vocabulary keeps
+    // it. `null`/`''` count as forgetting -- they bind no vocabulary either.
+    assert.deepEqual(
+      withSchemaContext({ '@type': 'Dataset', name: 'CII' }),
+      { '@context': 'https://schema.org', '@type': 'Dataset', name: 'CII' },
+    );
+    for (const unusable of [null, '', undefined]) {
+      assert.equal(
+        withSchemaContext({ '@context': unusable, '@type': 'Dataset' })['@context'],
+        'https://schema.org',
+        `a ${JSON.stringify(unusable)} @context binds no vocabulary and must be replaced`,
+      );
+    }
+    const deliberate = { '@context': 'https://example.invalid/vocab', '@type': 'Dataset' };
+    assert.deepEqual(withSchemaContext(deliberate), deliberate);
+    assert.equal(withSchemaContext(null), null);
+  });
+
+  it('accepts schema.org string, array, and @vocab contexts', () => {
+    assert.doesNotThrow(() => assertJsonLdContexts(
+      ldBlock({ '@context': 'https://schema.org', '@type': 'Dataset' })
+      + ldBlock({ '@context': 'https://schema.org/', '@type': 'Dataset' })
+      + ldBlock({ '@context': ['https://schema.org', { wm: 'https://www.worldmonitor.app/#' }], '@type': 'Dataset' })
+      + ldBlock({ '@context': { '@vocab': 'https://schema.org/' }, '@type': 'Dataset' }),
+      route,
+    ));
+  });
+});
+
 describe('crawlable corpus generator', () => {
+  it('requires the exact shared Tier-1 country set for CII publication', async () => {
+    const data = await loadCorpusData({ rootDir: repoRoot });
+    const livePulse = structuredClone(data.livePulse);
+    livePulse.countries.NO = { ...livePulse.countries.US };
+    delete livePulse.countries.US;
+
+    assert.throws(
+      () => buildCiiRankingEntries(data.countries, livePulse),
+      /missing US; unexpected NO/,
+    );
+  });
+
   it('emits temporalCoverage only from a committed observation interval', () => {
     assert.equal(datasetTemporalCoverage('2026-05-28'), '2026-05-28');
     assert.equal(datasetTemporalCoverage('2026-01-01/2026-01-31'), '2026-01-01/2026-01-31');
@@ -945,13 +1091,14 @@ describe('crawlable corpus generator', () => {
       });
 
       assert.equal(manifest.sections.countries.count, 196);
+      assert.equal(manifest.sections.countryInstabilityIndex.count, 1);
       assert.equal(manifest.sections.chokepoints.count, 13);
       assert.equal(manifest.sections.crises.count, 4);
       assert.equal(manifest.sections.tools.count, 3);
       assert.equal(manifest.sections.research.count, 1);
       assert.equal(manifest.sections.useCases.count, 3);
       assert.equal(manifest.sections.sources.count, 1);
-      assert.equal(manifest.generatorContentVersion, '2026-08-31');
+      assert.equal(manifest.generatorContentVersion, '2026-09-01');
       const sitemapEntries = buildSitemapEntries({
         repoRoot,
         publicDir: outDir,
@@ -971,6 +1118,8 @@ describe('crawlable corpus generator', () => {
       const manifestLocations = new Set([
         manifest.sections.countries.index,
         ...manifest.sections.countries.routes,
+        manifest.sections.countryInstabilityIndex.index,
+        ...manifest.sections.countryInstabilityIndex.routes,
         manifest.sections.chokepoints.index,
         ...manifest.sections.chokepoints.routes,
         manifest.sections.crises.index,
@@ -1052,12 +1201,14 @@ describe('crawlable corpus generator', () => {
           .filter(Boolean),
       );
       const datasetRequiredRoutes = new Set([
+        manifest.sections.countryInstabilityIndex.index,
         ...manifest.sections.countries.routes,
         ...manifest.sections.chokepoints.routes,
         ...manifest.sections.crises.routes,
         ...manifest.sections.research.routes,
       ]);
       const catalogLinkedRoutes = new Set([
+        manifest.sections.countryInstabilityIndex.index,
         ...manifest.sections.countries.routes,
         ...manifest.sections.chokepoints.routes,
         ...manifest.sections.crises.routes,
@@ -1066,6 +1217,37 @@ describe('crawlable corpus generator', () => {
       const countryObservationRoutes = new Set(manifest.sections.countries.routes);
       const liveObservationRoutes = new Set(manifest.sections.chokepoints.routes);
       const crisisObservationRoutes = new Set(manifest.sections.crises.routes);
+      // #7502: sweep every page the build wrote, including the paginated
+      // changelog pages the manifest's route list omits.
+      const writtenRoutes = generatedPageRoutes(outDir);
+      // Membership, not count: a walk that returned the right NUMBER of wrong
+      // pages would satisfy a `>=` comparison while leaving real routes unswept.
+      const sweptRoutes = new Set(writtenRoutes);
+      const missedRoutes = [...generatedRoutes].filter((route) => !sweptRoutes.has(route));
+      assert.deepEqual(
+        missedRoutes,
+        [],
+        `the @context sweep skipped manifest routes: ${missedRoutes.join(', ')}`,
+      );
+      let sweptPages = 0;
+      let sweptBlocks = 0;
+      for (const route of writtenRoutes) {
+        sweptBlocks += assertJsonLdContexts(read(outDir, `${route.slice(1)}index.html`), route);
+        sweptPages += 1;
+      }
+      // Without this the sweep is an absence assertion that also passes when it
+      // is unwired: delete the loop above and every per-page check silently
+      // stops running. Tallying makes the wiring itself falsifiable.
+      assert.equal(
+        sweptPages,
+        writtenRoutes.length,
+        `the @context sweep must inspect every written page (swept ${sweptPages} of ${writtenRoutes.length})`,
+      );
+      assert.ok(
+        sweptBlocks >= sweptPages * 3,
+        `every corpus page carries at least a page node, DataCatalog and BreadcrumbList (swept ${sweptBlocks} blocks across ${sweptPages} pages)`,
+      );
+
       for (const route of generatedRoutes) {
         const html = read(outDir, `${route.slice(1)}index.html`);
         assertDatasetGoogleProperties(
@@ -1082,9 +1264,12 @@ describe('crawlable corpus generator', () => {
         if (countryObservationRoutes.has(route)) {
           const datasets = jsonLdObjects(html).flatMap((entry) => collectDatasets(entry));
           for (const [index, dataset] of datasets.entries()) {
+            const isCiiDataset = dataset['@id']?.endsWith('#cii-dataset');
             assertSourceDerivedTemporalCoverage(dataset, {
               route,
-              observationInterval: manifest.sections.countries.sourceCapturedAt,
+              observationInterval: isCiiDataset
+                ? manifest.sections.countryInstabilityIndex.sourceCapturedAt
+                : manifest.sections.countries.sourceCapturedAt,
               lastmod: pageLastmod(html),
               index: index + 1,
             });
@@ -1117,12 +1302,17 @@ describe('crawlable corpus generator', () => {
         assertDatasetDownloadsAreGenerated(html, outDir, route);
       }
       assertDataCatalogPresent(read(outDir, 'countries/index.html'), '/countries/');
+      assertDataCatalogPresent(
+        read(outDir, 'country-instability-index/index.html'),
+        '/country-instability-index/',
+      );
       assertDataCatalogPresent(read(outDir, 'chokepoints/index.html'), '/chokepoints/');
       assertDataCatalogPresent(read(outDir, 'crises/index.html'), '/crises/');
       assertDataCatalogPresent(read(outDir, 'research/index.html'), '/research/');
 
       for (const path of [
         'countries/index.html',
+        'country-instability-index/index.html',
         'countries/norway/index.html',
         'countries/norway/resilience.json',
         'chokepoints/index.html',
@@ -1186,6 +1376,13 @@ describe('crawlable corpus generator', () => {
       assert.match(norway, /data-live-band>No current score/);
       assert.match(norway, /data-live-trend>Unavailable/);
       const ukraine = read(outDir, 'countries/ukraine/index.html');
+      assert.match(ukraine, /<meta name="lastmod" content="2026-09-01">/);
+      assert.match(ukraine, /<title>Ukraine Instability Index &amp; Country Risk \| World Monitor<\/title>/);
+      assert.match(ukraine, /<h1>Ukraine Country Instability Index<\/h1>/);
+      assert.match(ukraine, /Ukraine's Country Instability Index is <strong>\d+\/100 &middot; [^<]+<\/strong>/);
+      assert.match(ukraine, /<summary>What is Ukraine&#39;s Country Instability Index\?<\/summary>/);
+      const ukraineFaq = jsonLdObjects(ukraine).find((entry) => entry['@type'] === 'FAQPage');
+      assert.match(ukraineFaq?.mainEntity?.[0]?.name || '', /Country Instability Index/);
       assert.match(ukraine, /data-live-score>\d/);
       assert.doesNotMatch(ukraine, /data-live-score>—/);
       assert.doesNotMatch(ukraine, /Connecting…/);
@@ -1201,6 +1398,119 @@ describe('crawlable corpus generator', () => {
         scoredCountryPages >= 25,
         `expected at least 25 country pages to publish a numeric instability score, got ${scoredCountryPages}`,
       );
+      const ciiTargetedCountryPages = manifest.sections.countries.routes.filter((route) => (
+        /<h1>[^<]+ Country Instability Index<\/h1>/.test(read(outDir, `${route.slice(1)}index.html`))
+      ));
+      assert.equal(ciiTargetedCountryPages.length, 31);
+      assert.equal(
+        ciiTargetedCountryPages.every((route) => (
+          /data-live-score>\d/.test(read(outDir, `${route.slice(1)}index.html`))
+        )),
+        true,
+        'only country pages with a published CII score may target Country Instability Index',
+      );
+      assert.equal(
+        manifest.sections.countries.routes.filter((route) => (
+          /<meta name="lastmod" content="2026-08-31">/.test(
+            read(outDir, `${route.slice(1)}index.html`),
+          )
+        )).length,
+        165,
+        'the 165 generic country pages must retain the generic content clock',
+      );
+      assert.equal(
+        ciiTargetedCountryPages.every((route) => (
+          /<meta name="lastmod" content="2026-09-01">/.test(
+            read(outDir, `${route.slice(1)}index.html`),
+          )
+        )),
+        true,
+        'only the 31 CII-targeted country pages use the CII content clock',
+      );
+
+      const ciiIndex = read(outDir, 'country-instability-index/index.html');
+      const ciiDocument = htmlDocument(
+        ciiIndex,
+        'https://www.worldmonitor.app/country-instability-index/',
+      );
+      assert.match(ciiIndex, /<title>Country Instability Index: Live Rankings \| World Monitor<\/title>/);
+      assert.match(ciiIndex, /<h1>Country Instability Index<\/h1>/);
+      assert.match(ciiIndex, /<meta name="lastmod" content="2026-09-01">/);
+      assert.match(ciiIndex, /data-cii-methodology-version="v8"/);
+      assert.match(
+        ciiIndex,
+        /CII v8 currently monitors 31 countries and reports approximate 24-hour movement when available\./,
+      );
+      assert.equal(ciiDocument.querySelectorAll('[data-cii-country]').length, 31);
+      assert.equal(
+        ciiDocument.querySelectorAll('[data-cii-country] [data-cii-score]').length,
+        31,
+      );
+      assert.equal(
+        [...ciiDocument.querySelectorAll('[data-cii-country]')].every((row) => (
+          /^\d+(?:\.\d+)?$/.test(row.querySelector('[data-cii-score]')?.textContent || '')
+          && Boolean(row.querySelector('time[data-cii-updated][datetime]'))
+        )),
+        true,
+        'every CII ranking row must publish a numeric score and authoritative timestamp',
+      );
+      const ciiLd = jsonLdObjects(ciiIndex);
+      const ciiCollection = ciiLd.find((entry) => entry['@type'] === 'CollectionPage');
+      const ciiDataset = ciiLd.find((entry) => entry['@type'] === 'Dataset');
+      const ciiItemList = ciiLd.find((entry) => entry['@type'] === 'ItemList');
+      assert.deepEqual(ciiCollection?.mainEntity, {
+        '@id': 'https://www.worldmonitor.app/country-instability-index/#dataset',
+      });
+      assert.equal(ciiDataset?.measurementTechnique, 'World Monitor CII v8');
+      assert.deepEqual(ciiDataset?.mainEntity, {
+        '@id': 'https://www.worldmonitor.app/country-instability-index/#ranking',
+      });
+      assert.equal(ciiItemList?.numberOfItems, 31);
+      assert.equal(ciiItemList?.itemListElement?.length, 31);
+      const aeRankingItem = ciiItemList.itemListElement.find(
+        (entry) => entry.item?.name === 'United Arab Emirates',
+      );
+      const afRankingItem = ciiItemList.itemListElement.find(
+        (entry) => entry.item?.name === 'Afghanistan',
+      );
+      assert.equal(
+        aeRankingItem.item.additionalProperty.find(
+          (property) => property.name === 'Approximate 24-hour movement',
+        ),
+        undefined,
+        'ambiguous stable movement must not publish a numeric JSON-LD value',
+      );
+      assert.equal(
+        afRankingItem.item.additionalProperty.find(
+          (property) => property.name === 'Approximate 24-hour movement',
+        )?.value,
+        2,
+      );
+
+      const unitedArabEmirates = read(outDir, 'countries/united-arab-emirates/index.html');
+      assert.match(unitedArabEmirates, /stable or unavailable over approximately 24 hours/);
+      assert.match(unitedArabEmirates, /data-live-trend>Stable or unavailable<\/strong>/);
+      const aeCiiDataset = jsonLdObjects(unitedArabEmirates)
+        .flatMap((entry) => collectDatasets(entry))
+        .find((entry) => entry['@id']?.endsWith('#cii-dataset'));
+      assert.equal(
+        aeCiiDataset.variableMeasured.find(
+          (property) => property.name === 'Approximate 24-hour movement',
+        ),
+        undefined,
+      );
+
+      const ukraineLd = jsonLdObjects(ukraine);
+      const ukrainePage = ukraineLd.find((entry) => entry['@type'] === 'WebPage');
+      const ukraineDatasets = ukraineLd.flatMap((entry) => collectDatasets(entry));
+      const ukraineCiiDataset = ukraineDatasets.find((entry) => entry['@id']?.endsWith('#cii-dataset'));
+      const ukraineResilienceDataset = ukraineDatasets.find((entry) => entry['@id']?.endsWith('#resilience-dataset'));
+      assert.deepEqual(ukrainePage?.mainEntity, {
+        '@id': 'https://www.worldmonitor.app/countries/ukraine/#cii-dataset',
+      });
+      assert.equal(ukraineCiiDataset?.measurementTechnique, 'World Monitor CII v8');
+      assert.equal(ukraineCiiDataset?.spatialCoverage?.['@type'], 'Place');
+      assert.ok(ukraineResilienceDataset, 'CII country pages must retain the CRI Dataset');
       assert.ok(norway.includes(liveScriptTag), 'country live script must match the production CSP nonce');
       // Deep-link CTA into the live map (opens the maximized country brief). `&` is HTML-escaped.
       // Carries utm_source (NOT ref= — that would be captured as an affiliate referral code).
@@ -1303,7 +1613,7 @@ describe('crawlable corpus generator', () => {
       const countryItemList = countriesLd.find((entry) => entry['@type'] === 'ItemList');
       const countryDataset = countriesLd.find((entry) => entry['@type'] === 'Dataset');
       const countryFaq = countriesLd.find((entry) => entry['@type'] === 'FAQPage');
-      assert.equal(countryCollection?.name, 'Country risk and resilience');
+      assert.equal(countryCollection?.name, 'Country risk, instability and resilience by country');
       assert.equal(countryCollection?.['@id'], 'https://www.worldmonitor.app/countries/#webpage');
       assertDefaultSpeakable(countryCollection, 'countries hub CollectionPage');
       assert.deepEqual(countryCollection?.breadcrumb, {
@@ -1376,11 +1686,21 @@ describe('crawlable corpus generator', () => {
         sampleArticles.push({ route, text: mainText });
 
         const faqEntries = [...document.querySelectorAll('[data-country-faq]')];
-        assert.ok(faqEntries.length >= 2 && faqEntries.length <= 3, `${route} must show 2-3 FAQs`);
+        const ciiTargeted = /<h1>[^<]+ Country Instability Index<\/h1>/.test(html);
+        assert.ok(
+          faqEntries.length >= 2 && faqEntries.length <= (ciiTargeted ? 4 : 3),
+          `${route} must show 2-3 CRI FAQs, plus one CII FAQ when retargeted`,
+        );
+        if (ciiTargeted) {
+          assert.match(faqEntries[0]?.textContent || '', /Country Instability Index/);
+        }
         const pageLd = jsonLdObjects(html);
         const faqPage = pageLd.find((entry) => entry['@type'] === 'FAQPage');
         assert.equal(faqPage?.mainEntity?.length, faqEntries.length);
-        const dataset = pageLd.flatMap((entry) => collectDatasets(entry))[0];
+        const dataset = pageLd
+          .flatMap((entry) => collectDatasets(entry))
+          .find((entry) => entry['@id']?.endsWith('#resilience-dataset'));
+        assert.ok(dataset, `${route} must retain its Country Resilience Index dataset`);
         const measurements = new Map(
           dataset.variableMeasured.map((measurement) => [measurement.name, measurement.value]),
         );
@@ -1411,10 +1731,13 @@ describe('crawlable corpus generator', () => {
       }
 
       const uk = read(outDir, 'countries/united-kingdom/index.html');
-      assert.match(uk, /<h1>United Kingdom country risk and resilience<\/h1>/);
+      assert.match(uk, /<h1>United Kingdom Country Instability Index<\/h1>/);
       assert.doesNotMatch(uk, /<h1>Uk /);
       const dprk = read(outDir, 'countries/north-korea/index.html');
-      assert.match(dprk, /<title>North Korea Country Risk and Resilience \| World Monitor<\/title>/);
+      assert.match(
+        dprk,
+        /<title>North Korea Instability Index &amp; Country Risk \| World Monitor<\/title>/,
+      );
 
       const taiwan = read(outDir, 'countries/taiwan/index.html');
       assert.match(
@@ -1454,7 +1777,7 @@ describe('crawlable corpus generator', () => {
       assert.match(taiwan, /Nearest ranked comparators:/);
       assert.match(taiwan, /Taiwan is included separately in the rankable universe/);
       assert.doesNotMatch(taiwan, /special administrative region/);
-      assert.match(taiwan, /a low-confidence listing/);
+      assert.match(taiwan, /Taiwan instability index scores 48\/100 \(Normal\)/);
       assert.doesNotMatch(taiwan, /\bTW · /);
       assert.doesNotMatch(
         taiwan,
@@ -1463,17 +1786,35 @@ describe('crawlable corpus generator', () => {
       );
       const taiwanWebPage = jsonLdObjects(taiwan)
         .find((entry) => entry['@type'] === 'WebPage');
+      const taiwanResilienceDataset = jsonLdObjects(taiwan)
+        .flatMap((entry) => collectDatasets(entry))
+        .find((entry) => entry['@id']?.endsWith('#resilience-dataset'));
       assertDefaultSpeakable(taiwanWebPage, 'taiwan country WebPage');
+      assert.deepEqual(taiwanWebPage?.mainEntity, {
+        '@id': 'https://www.worldmonitor.app/countries/taiwan/#cii-dataset',
+      });
       assert.equal(taiwanWebPage?.mainEntity?.value, undefined);
       assert.equal(taiwanWebPage?.mainEntity?.overallScore, undefined);
       assert.match(
-        taiwanWebPage?.mainEntity?.description ?? '',
+        taiwanResilienceDataset?.description ?? '',
         /does not meet the published ranking eligibility criteria/,
       );
       assert.doesNotMatch(
-        taiwanWebPage?.mainEntity?.description ?? '',
+        taiwanResilienceDataset?.description ?? '',
         /below the ranking threshold|input coverage is below/i,
       );
+      // #7502: on CII-covered pages both Datasets are siblings of the WebPage
+      // rather than nested under it, so each must bind its own vocabulary or it
+      // parses as nothing at all.
+      for (const fragment of ['#cii-dataset', '#resilience-dataset']) {
+        const block = jsonLdObjects(taiwan).find((entry) => entry['@id']?.endsWith(fragment));
+        assert.ok(block, `taiwan must emit a top-level ${fragment} block`);
+        assert.equal(block['@type'], 'Dataset', `taiwan ${fragment} must be a Dataset`);
+        assert.ok(
+          jsonLdContextIsResolvable(block['@context']),
+          `taiwan ${fragment} must bind schema.org so it parses as a Dataset`,
+        );
+      }
 
       for (const slug of ['taiwan', 'palau', 'san-marino']) {
         const html = read(outDir, `countries/${slug}/index.html`);
@@ -1557,16 +1898,20 @@ describe('crawlable corpus generator', () => {
       }
       const coveredWebPage = jsonLdObjects(coveredHtml)
         .find((entry) => entry['@type'] === 'WebPage');
+      const coveredResilienceDataset = jsonLdObjects(coveredHtml)
+        .flatMap((entry) => collectDatasets(entry))
+        .find((entry) => entry['@id']?.endsWith('#resilience-dataset'));
+      assert.ok(coveredWebPage, `${coveredIneligible.name} must publish a WebPage`);
       assert.match(
-        coveredWebPage?.mainEntity?.description ?? '',
+        coveredResilienceDataset?.description ?? '',
         /does not meet the published ranking eligibility criteria/,
       );
       assert.match(
-        coveredWebPage?.mainEntity?.description ?? '',
+        coveredResilienceDataset?.description ?? '',
         /Ranking requires coverage of at least 65%/,
       );
       assert.doesNotMatch(
-        coveredWebPage?.mainEntity?.description ?? '',
+        coveredResilienceDataset?.description ?? '',
         /below the ranking threshold|input coverage is below/i,
       );
 
@@ -1595,6 +1940,7 @@ describe('crawlable corpus generator', () => {
       assert.match(syria, /Macro-fiscal position/);
       assert.match(syria, /IMF/);
       const andorra = read(outDir, 'countries/andorra/index.html');
+      assert.doesNotMatch(andorra, /<summary>What is Andorra&#39;s Country Instability Index\?<\/summary>/);
       assert.equal(countryByCode.get('AD')?.lowConfidence, false);
       const andorraDataset = JSON.parse(read(outDir, 'countries/andorra/resilience.json'));
       assert.equal(andorraDataset.confidence, 'standard');
@@ -1651,6 +1997,12 @@ describe('crawlable corpus generator', () => {
       const norwayLd = jsonLdObjects(norway);
       const norwayWebPage = norwayLd.find((entry) => entry['@type'] === 'WebPage');
       assert.ok(norwayWebPage?.about?.['@type'] === 'Country' && norwayWebPage.about?.name === 'Norway');
+      assert.equal(norwayWebPage?.mainEntity?.['@type'], 'Dataset');
+      assert.equal(
+        norwayLd.some((entry) => entry['@type'] === 'Dataset'),
+        false,
+        'generic country JSON-LD must keep its resilience Dataset embedded in WebPage.mainEntity',
+      );
       assert.equal(norwayWebPage?.primaryImageOfPage?.['@type'], 'ImageObject');
       assert.equal(
         norwayWebPage?.primaryImageOfPage?.contentUrl,
@@ -1662,7 +2014,9 @@ describe('crawlable corpus generator', () => {
       const switzerlandWebPage = jsonLdObjects(switzerland).find((entry) => entry['@type'] === 'WebPage');
       assert.ok(switzerlandWebPage?.about?.alternateName?.includes('Swiss Confederation'));
       assert.equal(switzerlandWebPage?.about?.sameAs, 'https://www.wikidata.org/wiki/Q39');
-      const norwayDataset = collectDatasets(norwayWebPage)[0];
+      const norwayDataset = norwayLd
+        .flatMap((entry) => collectDatasets(entry))
+        .find((entry) => entry['@id']?.endsWith('#resilience-dataset'));
       assert.ok(norwayDataset, 'country page must expose a Dataset mainEntity');
       assert.equal(
         norwayDataset.dateModified,
