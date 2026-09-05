@@ -796,7 +796,20 @@ describe('crawlable content corpus deployment contracts', () => {
         assert.equal(
           effectiveHeader(route, 'CDN-Cache-Control'),
           HTML_ENTRY_EDGE_CACHE,
-          `${route} must advertise the 600s Cloudflare TTL; without it Cloudflare answers DYNAMIC and never caches the page`,
+          // Necessary but not sufficient — and this suite has now been the green
+          // half of that pair twice in two days, one layer apart:
+          //   #7590 (2026-09-03): the `:param*` source never matched the corpus's
+          //     trailing-slash URLs, so all ~22 rules were inert at Vercel while
+          //     the model here matched both forms and stayed green.
+          //   #7659 (2026-09-04): the header was finally reaching production and
+          //     Cloudflare still answered DYNAMIC, because a zone cache rule had
+          //     already declared the response ineligible — origin headers get no
+          //     vote once that happens.
+          // The lesson both times: no assertion over vercel.json can see whether a
+          // layer downstream honoured it. The live counterpart is the corpus probe
+          // in tests/live-api-cache-auth-regression.test.mjs, and the rule itself is
+          // scripts/cloudflare-cache-rule.mjs (tests/cloudflare-cache-rule.test.mjs).
+          `${route} must advertise the 600s Cloudflare TTL; without it the zone cache rule has no TTL to honour`,
         );
         assert.equal(
           effectiveHeader(route, 'Vercel-CDN-Cache-Control'),
@@ -2076,7 +2089,7 @@ describe('security header guardrails', () => {
     const script = packageJson.scripts?.['test:e2e:webmcp'] ?? '';
     const productionScript = packageJson.scripts?.['test:e2e:webmcp:production'] ?? '';
     const variantSmokeJob = testWorkflowSource.match(
-      /\n  variant-smoke-full:\n[\s\S]*?(?=\n  [a-z][a-z0-9-]+:\n|$)/,
+      /\n {2}variant-smoke-full:\n[\s\S]*?(?=\n {2}[a-z][a-z0-9-]+:\n|$)/,
     )?.[0] ?? '';
     assert.match(script, /WM_REQUIRE_WEBMCP=1/);
     assert.match(script, /e2e\/webmcp\.spec\.ts/);
@@ -2566,12 +2579,12 @@ describe('security header guardrails', () => {
     );
     assert.match(
       viteConfigSource,
-      new RegExp(`cspNonce:\\s*STATIC_SCRIPT_NONCE`),
+      /cspNonce:\s*STATIC_SCRIPT_NONCE/,
       'Vite must stamp emitted HTML entry scripts with the nonce trusted by the header CSP'
     );
     assert.match(
       proViteConfigSource,
-      new RegExp(`cspNonce:\\s*STATIC_SCRIPT_NONCE`),
+      /cspNonce:\s*STATIC_SCRIPT_NONCE/,
       'Pro Vite builds must stamp emitted HTML entry scripts with the nonce trusted by the header CSP'
     );
 
@@ -2853,7 +2866,7 @@ describe('embeddable map route guardrails', () => {
     assert.match(nginxTemplate, /location = \/embed\.js \{[\s\S]*?Access-Control-Allow-Origin "\*"/);
     assert.match(dockerNginxSource, /location = \/embed\.js \{[\s\S]*?Access-Control-Allow-Origin "\*"/);
     assert.doesNotMatch(
-      dockerNginxSource.match(/location = \/embed\.js \{[\s\S]*?\n    \}/)?.[0] ?? '',
+      dockerNginxSource.match(/location = \/embed\.js \{[\s\S]*?\n {4}\}/)?.[0] ?? '',
       /frame-ancestors/,
     );
   });
