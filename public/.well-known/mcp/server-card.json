@@ -3,12 +3,12 @@
   "kind": "product",
   "description": "WorldMonitor's live global-intelligence stack as an MCP server: real-time markets, conflict events, aviation, maritime, energy, climate, health, displacement, supply chain, and AI-generated regional briefs.",
   "icon": "https://www.worldmonitor.app/favico/apple-touch-icon.png",
-  "version": "1.18.0",
+  "version": "1.19.0",
   "url": "https://worldmonitor.app/mcp",
   "serverUrl": "https://worldmonitor.app/mcp",
   "serverInfo": {
     "name": "worldmonitor",
-    "version": "1.18.0",
+    "version": "1.19.0",
     "description": "WorldMonitor's live global-intelligence stack as an MCP server: real-time markets, conflict events, aviation, maritime, energy, climate, health, displacement, supply chain, and AI-generated regional briefs.",
     "vendor": "WorldMonitor",
     "homepage": "https://www.worldmonitor.app"
@@ -174,7 +174,7 @@
     },
     {
       "name": "get_imd_cyclone_marine",
-      "description": "Bounded India Meteorological Department cyclone tracks, forecast wind radii, cones of uncertainty, and official port / sea-area / coastal bulletins. Not merged into weather:alerts:v1. Live fetch requires IMD_API_KEY. Read coverageState on every call: disabled means IMD_API_KEY is missing, degraded is a partial product failure, unavailable means no usable IMD snapshot, and ok is live. Empty lists with disabled, degraded, or unavailable coverage are not an India all-clear.",
+      "description": "Bounded India Meteorological Department cyclone tracks, forecast wind radii, cones of uncertainty, and official port / sea-area / coastal bulletins. Not merged into weather:alerts:v1. Live fetch requires IMD_API_KEY plus IMD_API_EMAIL and IMD_API_PASSWORD to mint a short-lived JWT for each run. Read coverageState on every call: disabled means the IMD credentials are missing or invalid, degraded is a partial product failure, unavailable means no usable IMD snapshot, and ok is live. Empty lists with disabled, degraded, or unavailable coverage are not an India all-clear.",
       "_meta": {
         "worldmonitor/access": "free-account"
       }
@@ -564,7 +564,7 @@
   "authentication": {
     "type": "oauth2",
     "authorization_servers": [
-      "https://api.worldmonitor.app"
+      "https://worldmonitor.app"
     ],
     "resource": "https://worldmonitor.app",
     "scopes": [
@@ -583,7 +583,7 @@
     "toolReference": "https://www.worldmonitor.app/docs/mcp-tools-reference",
     "apiReference": "https://www.worldmonitor.app/docs/api-reference",
     "support": "https://www.worldmonitor.app/docs/support",
-    "pricing": "https://worldmonitor.app/pricing.md",
+    "pricing": "https://www.worldmonitor.app/pricing.md",
     "productCatalog": "https://www.worldmonitor.app/api/product-catalog"
   },
   "rateLimits": {
