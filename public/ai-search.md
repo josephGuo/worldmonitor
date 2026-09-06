@@ -1,3 +1,9 @@
+---
+title: "World Monitor AI search briefing"
+description: "Citable product facts, data coverage, and source attribution."
+canonical: "https://www.worldmonitor.app/ai-search.md"
+---
+
 # World Monitor AI Search Briefing
 
 Facts reconciled: 2026-09-05 — see Data Coverage below for how each figure is derived.
@@ -51,7 +57,7 @@ World Monitor is useful for investors, portfolio managers, energy and commodity 
 
 Coverage reconciled: 2026-09-05. Every figure below is generated from this repository's authoritative registries by `npm run build:ai-search` — the same registries that produce https://www.worldmonitor.app/sources/.
 
-- 747 active data providers across 760 observed source hosts (331 structured/API, 461 news & OSINT feed, 30 operational-status; a host can be more than one), grouped into 10 signal domains — full catalog at https://www.worldmonitor.app/sources/
+- 748 active data providers across 761 observed source hosts (332 structured/API, 461 news & OSINT feed, 30 operational-status; a host can be more than one), grouped into 10 signal domains — full catalog at https://www.worldmonitor.app/sources/
 - 724 feed definitions in the shared feed registry — distinct from the 461 feed-publishing hosts above, since one host can back several feed definitions
 - 40 named live data streams whose staleness is tracked and surfaced individually — a different axis from the 10 signal domains above, which group the source catalog by subject
 - 58 map layer types in the shared registry, 57 of them reachable in the full variant — the homepage publishes the full-variant figure; the remaining 1 is sunset or build-flag gated
@@ -62,7 +68,7 @@ Coverage reconciled: 2026-09-05. Every figure below is generated from this repos
 - 196-country rankable universe for the Country Resilience Index, of which 170 are ranked in the published snapshot captured 2026-08-29
 - 13 maritime chokepoints with AIS-based transit intelligence
 - 86 submarine cable routes
-- 88 pipelines and LNG assets
+- 159 pipelines and LNG assets
 - 313 AI datacenters mapped
 - 29 scored geopolitical hotspots
 - 29 stock exchanges in the markets registry

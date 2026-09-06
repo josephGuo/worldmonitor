@@ -15,6 +15,7 @@ const packageScripts = packageJson.scripts ?? {};
 const read = (p: string) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n');
 
 const deployGateWorkflow = read(resolve(workflowsDir, 'deploy-gate.yml'));
+const deployGateScript = read(resolve(workflowsDir, '../scripts/deploy-gate.sh'));
 const securityAuditWorkflow = read(resolve(workflowsDir, 'security-audit.yml'));
 const securityAuditScript = read(resolve(root, '.github/scripts/audit-production-dependencies.mjs'));
 const testWorkflow = read(resolve(workflowsDir, 'test.yml'));
@@ -101,6 +102,7 @@ const REQUIRED_NON_TEST_GATE_CHECKS = [
 // from becoming a way to quietly drop a job out of the gate.
 const GATE_CHECK_EXEMPTIONS: Record<string, { workflow: string; coveredBy: string }> = {
   'audit-lockfile': { workflow: 'Security Audit', coveredBy: 'security-audit' },
+  'unit-shards': { workflow: 'Test', coveredBy: 'unit' },
 };
 
 const REQUIRED_RESILIENCE_VALIDATION_INPUTS = [
@@ -139,7 +141,7 @@ function workflowRegexNeedle(path: string): string {
 }
 
 function shellAwkAssignmentBlock(variable: string): string {
-  const start = `${variable}=$(echo "$FILES" | awk '`;
+  const start = `${variable}=$(printf '%s\\n' "$FILES" | awk '`;
   const startIndex = testWorkflow.indexOf(start);
   assert.notEqual(startIndex, -1, `test.yml must define ${variable}`);
   const end = "\n          ')";
@@ -325,7 +327,7 @@ function parseJsonArrayLiteral(source: string, regex: RegExp, label: string): st
 }
 
 function deployGateRequiredChecks(): string[] {
-  return parseJsonArrayLiteral(deployGateWorkflow, /\n\s*required='(\[[^\n]+])'/, 'required checks');
+  return parseJsonArrayLiteral(deployGateScript, /\n\s*required='(\[[^\n]+])'/, 'required checks');
 }
 
 function deployGateWorkflowRunNames(): string[] {
@@ -845,17 +847,18 @@ describe('CI workflow coverage', () => {
       );
     }
     for (const job of workflowJobNames(testWorkflow, 'test.yml')) {
+      const coveredBy = GATE_CHECK_EXEMPTIONS[job]?.coveredBy ?? job;
       assert.ok(
-        requiredChecks.includes(job),
-        `deploy-gate.yml must require every test.yml job; missing ${job}`,
+        requiredChecks.includes(coveredBy),
+        `deploy-gate.yml must require every test.yml job; missing ${coveredBy}`,
       );
     }
     for (const check of REQUIRED_NON_TEST_GATE_CHECKS) {
       assert.ok(requiredChecks.includes(check), `deploy-gate.yml must require ${check}`);
     }
     assert.match(
-      deployGateWorkflow,
-      /All required PR gates passed/,
+      deployGateScript,
+      /post_gate_status "success" "All required PR gates passed"/,
       'deploy-gate.yml success status must describe the full gate set',
     );
     assert.doesNotMatch(
@@ -996,12 +999,12 @@ describe('CI workflow coverage', () => {
   });
 
   it('batches pending and stale-contract gate discovery during the scheduled self-healing sweep', () => {
-    const deployGateJob = workflowJobBlock(deployGateWorkflow, 'gate');
+    const deployGateJob = deployGateScript;
 
     assert.match(
       deployGateWorkflow,
-      /^ {2}group: deploy-gate-\$\{\{ github\.event\.workflow_run\.head_sha \|\| github\.event\.inputs\.sha \|\| 'sweep' \}\}$/m,
-      'schedule and empty dispatches share one sweep group; workflow_run and sha-input dispatches stay keyed by SHA',
+      /^ {6}group: deploy-gate-\$\{\{ matrix\.sha \}\}$/m,
+      'all writer jobs use the same SHA-keyed group',
     );
     assert.match(
       deployGateWorkflow,
@@ -1031,6 +1034,49 @@ describe('CI workflow coverage', () => {
       /commits\/\$s\/statuses/,
       'the sweep must not spend one paginated REST request per open PR',
     );
+  });
+
+  it('serializes every deploy-gate writer by SHA behind the sweep phase barriers', () => {
+    const workflow = YAML.parse(deployGateWorkflow) as {
+      concurrency?: unknown;
+      jobs?: Record<string, {
+        concurrency?: { group?: string; queue?: string; 'cancel-in-progress'?: boolean };
+        needs?: string | string[];
+        if?: string;
+        strategy?: { 'fail-fast'?: boolean };
+        steps?: Array<{ uses?: string; with?: Record<string, unknown>; if?: string; run?: string }>;
+      }>;
+    };
+    const jobs = workflow.jobs ?? {};
+
+    assert.equal(workflow.concurrency, undefined, 'the controller must not hold a writer lock');
+    assert.deepEqual(jobs.recover?.needs, ['discover', 'invalidate']);
+    assert.equal(jobs.evaluate?.needs, 'recover');
+    assert.deepEqual(jobs.gate?.needs, ['discover', 'invalidate', 'recover', 'evaluate']);
+    assert.match(jobs.recover?.if ?? '', /always\(\).*needs\.discover\.result == 'success'/);
+    assert.match(jobs.evaluate?.if ?? '', /always\(\).*needs\.recover\.result == 'success'.*outputs\.count != '0'/);
+    assert.match(jobs.invalidate?.if ?? '', /needs\.discover\.result == 'success'.*outputs\.count != '0'/);
+    assert.equal(jobs.gate?.if, '${{ always() }}');
+
+    for (const name of ['invalidate', 'evaluate']) {
+      assert.equal(jobs[name]?.concurrency?.group, 'deploy-gate-${{ matrix.sha }}', `${name} must own the SHA lock`);
+      assert.equal(jobs[name]?.concurrency?.queue, 'max', `${name} must not replace older pending writers`);
+      assert.equal(jobs[name]?.concurrency?.['cancel-in-progress'], false, `${name} must not interrupt an active writer`);
+      assert.equal(jobs[name]?.strategy?.['fail-fast'], false, `${name} must finish unrelated SHA work`);
+    }
+
+    for (const name of ['discover', 'invalidate', 'recover', 'evaluate']) {
+      const checkout = jobs[name]?.steps?.find((step) => step.uses?.startsWith('actions/checkout@'));
+      assert.equal(checkout?.with?.ref, '${{ github.workflow_sha }}', `${name} must execute trusted workflow code`);
+      assert.equal(checkout?.with?.['persist-credentials'], false);
+    }
+    const upload = jobs.invalidate?.steps?.find((step) => step.uses?.startsWith('actions/upload-artifact@'));
+    assert.equal(upload?.if, '${{ always() }}');
+    assert.equal(upload?.with?.name, 'deploy-gate-invalidate-${{ github.run_attempt }}-${{ matrix.sha }}');
+    assert.equal(upload?.with?.['if-no-files-found'], 'error');
+    const download = jobs.recover?.steps?.find((step) => step.uses?.startsWith('actions/download-artifact@'));
+    assert.equal(download?.with?.pattern, 'deploy-gate-invalidate-${{ github.run_attempt }}-*');
+    assert.notEqual(download?.with?.['merge-multiple'], true, 'per-SHA result files must not overwrite one another');
   });
 
   it('treats sidecar changes as code for PR smoke gating', () => {
@@ -1105,7 +1151,7 @@ describe('CI workflow coverage', () => {
       assert.ok(!codeFilterSays(path), `${path} must not set code=true`);
     }
 
-    const unit = testJobBlock('unit');
+    const unit = testJobBlock('unit-shards');
     assert.match(
       unit,
       /^\s+run: node scripts\/openapi-capacity-report\.mjs --out "\$RUNNER_TEMP\/openapi-capacity\.json"\s*$/m,
@@ -1121,7 +1167,7 @@ describe('CI workflow coverage', () => {
     );
     assert.match(
       unit,
-      /name: openapi-capacity-\$\{\{ github\.run_attempt \}\}/,
+      /name: openapi-capacity-\$\{\{ matrix\.shard \}\}-\$\{\{ github\.run_attempt \}\}/,
       'the capacity artifact name must carry run_attempt — upload-artifact v6 rejects a duplicate name within a run, which collides on the re-run started to chase the failure',
     );
     assert.match(
@@ -1311,7 +1357,7 @@ describe('CI workflow coverage', () => {
     // it back to a narrower path-gated job would silently re-open the
     // "bundle-breaking change with green PR CI" gap.
     assert.match(
-      testJobBlock('unit'),
+      testJobBlock('unit-shards'),
       /^\s+node scripts\/build-sidecar-handlers\.mjs\s*$/m,
       'unit job must run the sidecar handler bundle build',
     );
@@ -1325,7 +1371,7 @@ describe('CI workflow coverage', () => {
       'desktop-config job must run the desktop build env parity check',
     );
     assert.match(
-      testJobBlock('unit'),
+      testJobBlock('unit-shards'),
       /^\s+run: node scripts\/check-desktop-build-env\.mjs\s*$/m,
       'unit job must run the desktop build env parity check',
     );

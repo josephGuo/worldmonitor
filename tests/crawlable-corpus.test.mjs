@@ -20,6 +20,7 @@ import {
   buildChokepointHubRows,
   buildCorpus,
   buildMicrostateCoverageStory,
+  assertCountryBriefPresentation,
   assertCountryDevelopmentsRendered,
   assertDevelopmentsCoverage,
   CHOKEPOINT_PAGE_CONTENT_VERSION,
@@ -4377,6 +4378,8 @@ describe('crawlable corpus generator', () => {
         assert.match(compareHub, new RegExp('href="' + page.path.replaceAll('/', '/') + '"'));
       }
       assert.match(compareHub, /href="\/blog\/posts\/worldmonitor-vs-traditional-intelligence-tools\/"/);
+      assert.match(compareHub, /distinguishes published prices from enterprise-negotiated licensing/);
+      assert.doesNotMatch(compareHub, /full price matrix/);
       for (const page of COMPARISON_PAGES) {
         const html = read(outDir, 'compare/' + page.slug + '/index.html');
         const ld = jsonLdObjects(html);
@@ -4549,6 +4552,24 @@ describe('crawlable corpus generator', () => {
       // Unnamed third-party enterprise price claims must never be published.
       const dataminrPage = read(outDir, 'compare/worldmonitor-vs-dataminr/index.html');
       const recordedFuturePage = read(outDir, 'compare/worldmonitor-vs-recorded-future/index.html');
+      const enterpriseVendors = ['Dataminr', 'Recorded Future', 'Crisis24', 'Everbridge'];
+      const undisclosedEnterprisePrices = new Set([
+        'Enterprise-negotiated (undisclosed)',
+        'Undisclosed (enterprise-negotiated)',
+      ]);
+      const comparisonHtml = [
+        compareHub,
+        ...COMPARISON_PAGES.map((page) => read(outDir, 'compare/' + page.slug + '/index.html')),
+      ];
+      for (const vendor of enterpriseVendors) {
+        const priceCells = comparisonHtml.flatMap((html) => [
+          ...html.matchAll(new RegExp(`<tr><td>${vendor}(?=\\s|\\(|<)[^<]*</td><td>([^<]*)</td>`, 'g')),
+        ].map((match) => match[1]));
+        assert.ok(priceCells.length > 0, `${vendor} must appear in a generated comparison matrix`);
+        for (const price of priceCells) {
+          assert.ok(undisclosedEnterprisePrices.has(price), `${vendor} must not publish an unsupported price`);
+        }
+      }
       for (const [label, html] of [['dataminr', dataminrPage], ['recorded-future', recordedFuturePage]]) {
         assert.doesNotMatch(html, /six figures|\$100K|\$300K/i, label + ' must omit enterprise figures without a named source');
         assert.match(html, /does not publish list pricing/);
@@ -4635,6 +4656,31 @@ describe('crawlable corpus generator', () => {
       assert.match(liveToolsScript, /credentials:\s*'include'/);
       assert.doesNotMatch(liveToolsScript, /list-natural-events\?days=/);
       assert.doesNotMatch(liveToolsScript, /generation:/);
+
+      // Every live tool now reads a session-gated RPC. Without the preflight a
+      // page load spends a guaranteed 401 before the retry mints a session, and
+      // Hazard Pulse — which was the last call site missing it — is exactly the
+      // shape that regresses silently, because the retry still renders.
+      const liveToolsSource = readFileSync(join(repoRoot, 'scripts/crawlable-live-tools.mjs'), 'utf8');
+      const callSites = [...liveToolsSource.matchAll(/(?<!function\s)\brequestLiveJson\(/g)]
+        .map((match) => {
+          let depth = 0;
+          for (let i = match.index + match[0].length - 1; i < liveToolsSource.length; i += 1) {
+            if (liveToolsSource[i] === '(') depth += 1;
+            else if (liveToolsSource[i] === ')' && (depth -= 1) === 0) {
+              return liveToolsSource.slice(match.index, i + 1);
+            }
+          }
+          throw new Error('unbalanced requestLiveJson call');
+        });
+      assert.ok(callSites.length >= 6, 'expected to find the live-tool RPC call sites');
+      for (const call of callSites) {
+        assert.match(
+          call,
+          /preflightSession:\s*true/,
+          `every requestLiveJson call must preflight an anonymous session: ${call.slice(0, 80)}`,
+        );
+      }
 
       const changelogIndex = read(outDir, 'reference/changelog/index.html');
       const changelogPage2 = read(outDir, 'reference/changelog/page/2/index.html');
@@ -5038,7 +5084,11 @@ describe('live-pulse snapshot injection (#7533)', () => {
             'reference/changelog/index.html',
           ]],
           ['comparisons', [
-            laterDate(COMPARISONS_CONTENT_VERSION, gitFileLastmod(repoRoot, 'scripts/build-comparison-pages.mjs')),
+            laterDate(
+              COMPARISONS_CONTENT_VERSION,
+              gitFileLastmod(repoRoot, 'scripts/build-comparison-pages.mjs'),
+              gitFileLastmod(repoRoot, 'scripts/comparison-page-narratives.mjs'),
+            ),
             pageFor(manifest.sections.comparisons.index),
           ]],
         ]);
@@ -5141,7 +5191,7 @@ describe('live-pulse snapshot injection (#7533)', () => {
   // #7533-allowlist: 2026-08-08 x3 2026-08-09 x4 2026-08-10 x4 2026-08-11 x3 2026-08-12 x3 2026-08-13 x4 — sourcePageLastmod pure-function fixtures
   // #7533-allowlist: 2026-08-29 x5 — STORY_CAPTURED_AT synthetic story clock and static snapshot-path fixtures
   // #7533-allowlist: 2026-09-01 x4 — CORPUS_GENERATOR_CONTENT_VERSION and synthetic development fixtures
-  // #7533-allowlist: 2026-09-02 x11 — synthetic developments timestamps
+  // #7533-allowlist: 2026-09-02 x15 — synthetic developments timestamps
   // #7533-allowlist: 2026-09-03 x13 — genuinely static: research lastmod, DataCatalog render fixture, datasetObservationCoverage fixtures
   it('rejects undocumented calendar-date literals in this file', () => {
     const source = readFileSync(fileURLToPath(import.meta.url), 'utf8');
@@ -5233,13 +5283,115 @@ describe('country recent developments', () => {
     assert.ok(!html.toLowerCase().includes('driven by'));
     // Brief body, generation line and grounding source count.
     assert.ok(html.includes('data-intel-brief'));
-    assert.ok(html.includes('SITUATION NOW<br>Convoys move under escort [1].'));
+    assert.ok(html.includes('<h3>Situation now</h3>'));
+    assert.ok(html.includes('Convoys move under escort [1].'));
     assert.ok(html.includes('<time datetime="2026-09-02T12:00:00.000Z">'));
     assert.ok(html.includes('from 2 grounding sources'));
     // Timeline event with summary, domain and source link.
     assert.ok(html.includes('data-intel-timeline'));
     assert.ok(html.includes('Port call logged in SD'));
     assert.ok(html.includes('<a href="https://example.test/port-call">source</a>'));
+  });
+
+  it('rejects literal markdown emphasis and ISO brief-heading leaks (#7738)', () => {
+    assert.throws(
+      () => assertCountryBriefPresentation({
+        pagePath: '/countries/norway/',
+        html: '<main><h3>Country brief</h3><p>**NBIM** proposed a sale [1].</p></main>',
+      }),
+      /literal markdown emphasis/,
+    );
+    assert.throws(
+      () => assertCountryBriefPresentation({
+        pagePath: '/countries/norway/',
+        html: '<main><h3>WHAT THIS MEANS FOR NO</h3><p>Named entity impact [1].</p></main>',
+      }),
+      /heading leaks ISO code/,
+    );
+    assert.throws(
+      () => assertCountryBriefPresentation({
+        pagePath: '/countries/norway/',
+        html: '<main><h3>What this means for NO</h3><p>Named entity impact [1].</p></main>',
+      }),
+      /heading leaks ISO code/,
+    );
+    assert.throws(
+      () => assertCountryBriefPresentation({
+        pagePath: '/countries/norway/',
+        html: '<main><h3>Country brief</h3><p>WHAT THIS MEANS FOR NO<br>Named entity impact [1].</p></main>',
+      }),
+      /brief heading leaks an ISO-3166 alpha-2 code/,
+    );
+    assert.doesNotThrow(() => assertCountryBriefPresentation({
+      pagePath: '/countries/norway/',
+      html: '<main><h3>What this means for Norway</h3><p><strong>NBIM</strong> proposed a sale [1].</p></main>',
+    }));
+    assert.doesNotThrow(() => assertCountryBriefPresentation({
+      pagePath: '/countries/tools/',
+      html: '<main><h3>WATCH FOR AI</h3><p>Unrelated heading.</p></main>',
+    }));
+    assert.doesNotThrow(() => assertCountryBriefPresentation({
+      pagePath: '/countries/norway/',
+      html: '<main><p>Analysts asked what this means for us.</p><div data-intel-brief><h3>What this means for Norway</h3></div></main>',
+    }));
+  });
+
+  it('renders frozen intel briefs as HTML with country names, not markdown or ISO codes (#7738)', () => {
+    const html = renderCountryDevelopments({
+      countryName: 'Norway',
+      developments: {
+        headlines: [],
+        brief: {
+          text: [
+            'SITUATION NOW',
+            'Norway’s sovereign wealth fund proposed cutting U.S. Treasury holdings [1].',
+            '',
+            'WHAT THIS MEANS FOR NO',
+            '• **Norges Bank Investment Management (NBIM)**: Proposed slashing of U.S. Treasury holdings [1].',
+            '• **Russian ship seizure**: Sparks diplomatic retaliation from Moscow.',
+            '',
+            'KEY RISKS',
+            '• **Retaliatory Russian actions**: maritime restrictions.',
+            '',
+            'OUTLOOK',
+            'NEXT 24H: Officials respond.',
+            '',
+            'WATCH ITEMS',
+            'NBIM asset allocation announcement · Russian maritime declarations',
+          ].join('\n'),
+          model: 'test-model',
+          generatedAt: '2026-09-02T08:16:38.074Z',
+          sources: [HEADLINE],
+        },
+        timeline: [],
+        briefSkipped: null,
+        capturedAt: '2026-09-02T08:16:38.074Z',
+      },
+    });
+    assertCountryBriefPresentation({ pagePath: '/countries/norway/', html });
+    assert.ok(!html.includes('**'), 'emphasis markers must not reach the page');
+    assert.ok(html.includes('<strong>Norges Bank Investment Management (NBIM)</strong>'));
+    assert.ok(html.includes('<h3>What this means for Norway</h3>'));
+    assert.ok(!/\bFOR [A-Z]{2}\b/.test(html.replace(/<[^>]+>/g, ' ')));
+    const combined = renderCountryDevelopments({
+      countryName: 'Norway',
+      developments: {
+        headlines: [],
+        brief: {
+          text: '### **WHAT THIS MEANS FOR NO**\nNamed infrastructure impact [1].',
+          model: 'test-model',
+          generatedAt: '2026-09-02T08:16:38.074Z',
+          sources: [HEADLINE],
+        },
+        timeline: [],
+        briefSkipped: null,
+        capturedAt: '2026-09-02T08:16:38.074Z',
+      },
+    });
+    assertCountryBriefPresentation({ pagePath: '/countries/norway/', html: combined });
+    assert.ok(combined.includes('<h3>What this means for Norway</h3>'));
+    assert.ok(html.includes('<h3>Situation now</h3>'));
+    assert.ok(html.includes('Norway’s sovereign wealth fund proposed cutting U.S. Treasury holdings [1].'));
   });
 
   it('appends brief-only sources without duplicating headline URLs', () => {
@@ -5605,6 +5757,22 @@ describe('country recent developments', () => {
       'a country with no frozen developments renders no section');
     const plainWebPage = jsonLdObjects(plain).find((entry) => entry['@type'] === 'WebPage');
     assert.ok(!('dateModified' in plainWebPage), 'no items means no dateModified claim');
+  });
+
+  it('sweeps every frozen pulse brief for markdown and ISO heading leaks (#7738)', async () => {
+    const data = await loadCorpusData({ rootDir: repoRoot });
+    const names = new Map(data.countries.map((entry) => [entry.code, entry.name]));
+    let briefCount = 0;
+    for (const [code, row] of Object.entries(data.livePulse?.countries || {})) {
+      const developments = row?.developments;
+      if (!developments?.brief?.text) continue;
+      briefCount += 1;
+      const name = names.get(code);
+      assert.ok(name, `pulse country ${code} must resolve to a display name`);
+      const html = renderCountryDevelopments({ countryName: name, developments });
+      assertCountryBriefPresentation({ pagePath: `/countries/${code}/`, html });
+    }
+    assert.ok(briefCount >= 10, `expected frozen briefs to sweep, got ${briefCount}`);
   });
 });
 describe('GEO residue #7616 (U2b changelog lastmod)', () => {
