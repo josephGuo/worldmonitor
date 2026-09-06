@@ -6,26 +6,33 @@
 // methodology, unique Why-we-win copy, and extra FAQs.
 
 import { CHOKEPOINT_REGISTRY } from '../src/config/chokepoint-registry.ts';
+import { computeStats } from './docs-stats.mjs';
 
 const CHECKED_ON = '5 September 2026';
 const CHOKEPOINT_COUNT = CHOKEPOINT_REGISTRY.length;
+// computeStats, not loadStatsForInventoryFacts: a drifted attribution
+// manifest must fail this copy rather than republish the last known-good
+// count (#6038 / #7744).
+const PROVIDER_COUNT = computeStats().sourceAttribution.providerCount.toLocaleString('en-US');
 
-function methodology(focus) {
+function methodology(
+  focus,
+  recheck = 'Vendors change SKUs, so re-check the linked vendor page before you buy.',
+) {
   return [
     `Prices and capability cells on this page were checked on ${CHECKED_ON} from each named vendor's public pricing, product, or API documentation and from World Monitor's published catalog at /pricing, /mcp, and /compare/. ${focus} Where a vendor publishes a list price or quota, the matrix uses that figure. Where a vendor does not publish list pricing, the cell is "Undisclosed (enterprise-negotiated)". This family never substitutes a third-party estimate for a missing list price.`,
-    'World Monitor prices on every row are the public catalog: $0 for the dashboard with no signup, Pro from $39.99/month including MCP access, and API Starter from $99.99/month for 1,000 requests/day. Third-party MCP status is Yes only when a public server or community implementation is documented; otherwise it is Unverified. Signup walls, archive depth, and domain coverage were read from product or docs pages. This page is committed copy with a dated lastmod. Vendors change SKUs, so re-check the linked vendor page before you buy.',
+    `World Monitor prices on every row are the public catalog: $0 for the dashboard with no signup, Pro from $39.99/month including MCP access, and API Starter from $99.99/month for 1,000 requests/day. Third-party MCP status is Yes only when a public server or community implementation is documented; otherwise it is Unverified. Signup walls, archive depth, and domain coverage were read from product or docs pages. This page is committed copy with a dated lastmod. ${recheck}`,
   ];
 }
 
 export const COMPARE_HUB_NARRATIVE = {
-  lede: 'This hub is the index for World Monitor comparison pages: one shared matrix, named concessions, and the questions engines lift verbatim. Use it to pick a head-to-head, not as a substitute for the child pages.',
+  lede: 'Compare tools for conflict monitoring, country risk, shipping disruption, and live geopolitical data. Review their prices, data coverage, update frequency, API access, and limitations, then open a detailed comparison for your use case.',
   howToRead: {
-    heading: 'How to read this comparison family',
+    heading: 'How to choose a comparison',
     paragraphs: [
-      'Every child page uses the same columns: Price, Update latency, Domains covered, Signup required, REST API, MCP server, Open source, Source count and licensing, Historical archive, and Best for. That is deliberate. A comparison that changes axes per vendor is a brochure. A comparison that keeps the axes fixed lets you see who actually publishes a number, who hides behind an enterprise desk, and who wins a cell we would rather not concede.',
-      'Read the Direct answer first. It is the extractable one-sentence claim for the page. Then read the competitor prose — what the named product is, who runs it, what it genuinely does better, and who should still buy it. The matrix is evidence, not the argument. The concession list is the argument we are willing to lose in public. If a page cannot name what the other product wins, it is not a comparison.',
-      'Head-to-head pages (the vs-* URLs) are for a single named incumbent. Multi-product pages are for category queries: Liveuamap alternatives, best dashboards, MCP servers, chokepoint tools, free dashboards, and travel-risk intelligence versus assistance. The hub matrix is the union of the major platforms that appear anywhere in the family, so a row here may be thicker than the row on a child page that only needs two products.',
-      'Do not treat this hub as a price list for enterprise vendors. Palantir, Dataminr, Recorded Future, Crisis24, International SOS, and Everbridge do not publish list pricing on the pages we can cite. Their cells stay undisclosed. World Monitor, Liveuamap, OrreryX, IMF PortWatch, GDELT Cloud, and ACLED are the vendors that give the public something to quote, and those are the numbers we quote.',
+      'Start with the task you need to complete. Compare tools with the same criteria, then consult the named vendor\'s current documentation for the capabilities that matter to you.',
+      'For global multi-domain monitoring, open Best Real-Time Geopolitical Risk Dashboards. For structured historical conflict research, open World Monitor vs ACLED. For Ukraine frontline detail, open World Monitor vs Deep State Map.',
+      'For programmatic API or MCP access, open MCP Servers for Geopolitical Data. For monitoring versus travel assistance, open Travel Risk Intelligence vs Assistance. Check the detailed comparison\'s dated methodology, then confirm the current price or capability with the vendor because both can change.',
     ],
   },
   concessions: {
@@ -39,6 +46,7 @@ export const COMPARE_HUB_NARRATIVE = {
     heading: 'How these figures were checked',
     paragraphs: methodology(
       'The hub row-set is the union of platforms compared on the child pages, checked on the same date against the same public sources.',
+      'Vendors change SKUs, so use the check date above and confirm the current price or capability in the named vendor\'s documentation before you buy.',
     ),
   },
   editorial: [
@@ -335,7 +343,7 @@ export const COMPARISON_NARRATIVES = {
         name: 'war-dashboard-data and world-intel-mcp',
         paragraphs: [
           'These are GDELT-based dashboard and MCP projects. They wrap the firehose in a UI or a tool surface you host. They inherit GDELT\'s cadence (15-minute batches) and GDELT\'s volume. They are not a second event ontology; they are packaging.',
-          'Pick them when you want to self-host a GDELT surface. Pick World Monitor when you want 747 attributed providers curated into scored indices, including GDELT-derived signals, without running the wrapper yourself.',
+          `Pick them when you want to self-host a GDELT surface. Pick World Monitor when you want ${PROVIDER_COUNT} attributed providers curated into scored indices, including GDELT-derived signals, without running the wrapper yourself.`,
         ],
       },
     ],
@@ -366,7 +374,7 @@ export const COMPARISON_NARRATIVES = {
       ['Does World Monitor replace GDELT BigQuery?', 'No. If you need decades of raw events in BigQuery, stay on GDELT. World Monitor is the scored, current watch.'],
       ['How often does GDELT update?', '15-minute global batches. World Monitor cadence is source-dependent and includes live and minute-level feeds plus slower datasets.'],
       ['What is world-intel-mcp in this comparison?', 'A GDELT-based MCP project you self-host. It is packaging for the firehose, not a separate event universe.'],
-      ['Does World Monitor ingest GDELT?', 'It ingests GDELT-derived signals among 747 attributed providers. That is curation, not a full GDELT mirror.'],
+      ['Does World Monitor ingest GDELT?', `It ingests GDELT-derived signals among ${PROVIDER_COUNT} attributed providers. That is curation, not a full GDELT mirror.`],
       ['Should I use both?', 'Yes, when you need both the archive and the live scored layer. This page is written for that split.'],
     ],
   },
@@ -381,7 +389,7 @@ export const COMPARISON_NARRATIVES = {
         paragraphs: [
           'Dataminr (Pulse and related enterprise products) sells real-time alerting to newsrooms, corporations, and the public sector. The distinctive cells are proprietary social-data ingestion, sub-minute alerting SLAs, and enterprise integration support. Those cells are why it wins procurement in rooms that already have a security budget. The company does not publish list pricing; licenses are negotiated. This page will not invent a number to fill that silence.',
           'Who should pick Dataminr: organizations that need proprietary social firehoses, contractual SLAs, and a vendor that will sit in the incident channel. Who should pick something else: teams that cannot or will not sign an undisclosed enterprise contract, and teams that need a transparent public-source watch they can open without a salesperson. World Monitor is in the second set. It is not a Dataminr clone at a lower SLA.',
-          'The category error is treating "alerting" as one product. Dataminr alerts from a proprietary stack. World Monitor alerts from 747 attributed public providers. Speed and exclusivity versus transparency and price is the trade, and both sides of the trade are real.',
+          `The category error is treating "alerting" as one product. Dataminr alerts from a proprietary stack. World Monitor alerts from ${PROVIDER_COUNT} attributed public providers. Speed and exclusivity versus transparency and price is the trade, and both sides of the trade are real.`,
         ],
       },
     ],
@@ -400,7 +408,7 @@ export const COMPARISON_NARRATIVES = {
       'Dataminr pricing is marked undisclosed because no public list price was found on the check date. No third-party estimate is used. World Monitor prices are the public catalog only.',
     ),
     whyWeWinBody: [
-      'World Monitor publishes the prices Dataminr does not: $0 for the dashboard, Pro from $39.99/month with MCP, API Starter from $99.99/month. The data is 747 attributed public providers rather than a proprietary social stack. That is the transparency trade: you can verify the cells, and you give up Dataminr\'s exclusivity and SLA.',
+      `World Monitor publishes the prices Dataminr does not: $0 for the dashboard, Pro from $39.99/month with MCP, API Starter from $99.99/month. The data is ${PROVIDER_COUNT} attributed public providers rather than a proprietary social stack. That is the transparency trade: you can verify the cells, and you give up Dataminr's exclusivity and SLA.`,
       'Dataminr still wins proprietary ingestion, sub-minute SLAs, and enterprise integration. If those cells are the job, this page is not a reason to churn. If the job is a public-source watch you can buy from a catalog, it is.',
     ],
     extraFaqs: [
@@ -601,7 +609,7 @@ export const COMPARISON_NARRATIVES = {
     extraFaqs: [
       ['Is World Monitor MCP free?', 'No. MCP access starts at Pro, $39.99/month. The dashboard is free. Self-hosted packs are free as software and cost you operations.'],
       ['Why concede 171 tools?', 'Because it is true. Satellite MCP\'s tool-count breadth is a real win for satellite-only workflows. We do not compete on that row.'],
-      ['Does World Monitor wrap GDELT only?', 'No. It curates 747 attributed providers across domains. GDELT-derived signals are in the mix, not the whole mix.'],
+      ['Does World Monitor wrap GDELT only?', `No. It curates ${PROVIDER_COUNT} attributed providers across domains. GDELT-derived signals are in the mix, not the whole mix.`],
       ['Can I point Claude or another agent at World Monitor MCP?', 'Yes. That is what a published server-card and OAuth are for. Confirm current auth docs at /mcp; this page is the comparison, not the live protocol spec.'],
       ['Is a community GDELT MCP official?', 'No. It is labelled community implementation. GDELT Cloud is the upstream data; the MCP is plumbing.'],
       ['Should I self-host and also buy Pro?', 'You can. Self-host the satellite or OSINT packs you need, and use World Monitor MCP for the governed multi-domain session. The page is a comparison, not a monopoly.'],
