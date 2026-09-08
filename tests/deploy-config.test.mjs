@@ -727,6 +727,19 @@ describe('crawlable content corpus deployment contracts', () => {
     }
   });
 
+  it('marks stock workspaces and their markdown twins noindex without breaking deep links (#7905)', () => {
+    for (const path of ['/stocks', '/stocks/', '/stocks.md', '/stocks/AAPL', '/stocks/ZZZZFAKE',
+      '/stocks/aapl/', '/stocks/BRK.B', '/stocks/7203.T', '/stocks/AAPL.md', '/stocks/ZZZZFAKE.md']) {
+      assert.equal(effectiveHeader(path, 'X-Robots-Tag'), 'noindex, follow', path);
+    }
+    for (const path of ['/dashboard', '/stocksmith', '/countries/united-states']) {
+      assert.equal(effectiveHeader(path, 'X-Robots-Tag'), null, path);
+    }
+    for (const symbol of ['AAPL', 'ZZZZFAKE', 'BRK.B', '7203.T']) {
+      assert.equal(firstRewriteFor({ host: 'www.worldmonitor.app', path: `/stocks/${symbol}` })?.destination, DASHBOARD_HTML_DESTINATION);
+    }
+  });
+
   it('serves no SPA fallback for generated corpus paths while keeping real client deep links', () => {
     // #6575: unknown paths must fall through to the filesystem (404), so the
     // only dashboard-serving rewrites left are the explicit client History
@@ -3744,6 +3757,30 @@ describe('agent readiness: generic markdown URL-fallback rewrite', () => {
     assert.ok(SPA_HTML_CACHE_SOURCE.includes('|.*\\.md$'), 'HTML cache catch-all must exclude every *.md path');
     assert.equal(sourceToRegExp(SPA_HTML_CACHE_SOURCE).test('/dashboard.md'), false);
     assert.equal(sourceToRegExp(SPA_HTML_CACHE_SOURCE).test('/dashboard'), true);
+  });
+
+  it('never declares a static canonical over the unbounded generated .md space', () => {
+    // The curated twins (pricing.md, developers.md, …) are standalone documents
+    // with no HTML sibling, so their literal self-canonical header rules are
+    // correct. The generated space is unbounded — /countries/iran.md and an
+    // invented /countries/does-not-exist-xyz.md both land on /api/md-twin — so a
+    // canonical rule that reached them would mint a self-canonical soft-404 that
+    // no handler change can retract (#7860). Only the handler may set a
+    // canonical there, and it points at the sibling HTML page.
+    const generatedTwins = ['/countries/iran.md', '/countries/does-not-exist-xyz.md', '/stocks/AAPL.md'];
+    for (const rule of vercelConfig.headers ?? []) {
+      const declaresCanonical = (rule.headers ?? []).some(
+        (h) => h.key?.toLowerCase() === 'link' && /rel="?canonical"?/.test(h.value ?? ''),
+      );
+      if (!declaresCanonical) continue;
+      for (const path of generatedTwins) {
+        assert.equal(
+          sourceToRegExp(rule.source).test(path),
+          false,
+          `header rule "${rule.source}" declares a canonical over generated twin ${path}`,
+        );
+      }
+    }
   });
 });
 
