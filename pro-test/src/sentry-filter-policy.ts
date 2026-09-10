@@ -149,24 +149,36 @@ export const MARKETING_IGNORE_ERRORS: RegExp[] = [
   // postMessage` entry above covers the same bridge from the other direction
   // (WORLDMONITOR-10W, whose dashboard-side copy is added in the same pass).
   /\bWKWebView_[A-Za-z]\w*/,
-  // Android WebView's Java-bridge teardown error. Chromium's `android_webview`
-  // emits this exact sentence — `Error invoking <method>: Java object is gone` —
-  // when injected JS calls a `@JavascriptInterface` method whose Java object has
-  // already been garbage-collected or detached, which is what happens when an
-  // in-app browser's own chrome script runs during `beforeunload`. The observed
-  // event is Instagram 415 on Android 13 calling its own
-  // `enableButtonsClickedMetaDataLogging` bridge; neither that method name nor
-  // the phrase appears anywhere in this bundle, and a pure-web bundle has no
-  // `@JavascriptInterface` object to lose, so it can never be ours. Already
-  // suppressed on the dashboard since #4005 (`/Java object is gone/` in
-  // `src/bootstrap/sentry-init.ts`); the two surfaces run separate Sentry
-  // clients, so the missing marketing copy is what let WORLDMONITOR-117 through
-  // with three infra-only frames (the `/pro/assets/sentry-*.js` chunk plus two
-  // `<anonymous>`), which `marketingBeforeSend`'s frame gates cannot act on.
+  // Android WebView's Java-bridge errors. Chromium's `android_webview` wraps a
+  // failed `@JavascriptInterface` call as `Error invoking <method>: <reason>`,
+  // where the reason is a `GinJavaBridgeError` member. Two have been observed
+  // in production, and both are enumerated here:
+  //   WORLDMONITOR-117  `Error invoking enableButtonsClickedMetaDataLogging: Java object is gone`
+  //   WORLDMONITOR-126  `Error invoking log: Java bridge method invocation error`
+  // The first is an in-app browser's chrome script calling a bridge whose Java
+  // object was already collected or detached, typically during `beforeunload`
+  // (Instagram 415 on Android 13). The second is an injected `scanForForms`
+  // autofill scan on Chrome Mobile 153 / Android 10, reaching Sentry through
+  // the SDK's `setTimeout` instrumentation. Neither method name nor either
+  // sentence appears anywhere in this bundle, and a pure-web bundle owns no
+  // `@JavascriptInterface` object at all, so neither can ever be ours.
   //
-  // Anchored to the whole sentence, unlike the dashboard's bare
-  // `/Java object is gone/`. `ignoreErrors` is frame-blind, so an unanchored
-  // substring also drops any first-party message that happens to CONTAIN the
+  // Already suppressed on the dashboard (`src/bootstrap/sentry-init.ts`, which
+  // enumerates both reasons); the two surfaces run separate Sentry clients, so
+  // a missing marketing copy is what lets these through with infra-only frames
+  // (the `/pro/assets/sentry-*.js` chunk plus `<anonymous>`), which
+  // `marketingBeforeSend`'s frame gates cannot act on. That gap produced
+  // WORLDMONITOR-117, and again WORLDMONITOR-126 after #7356 copied only the
+  // first reason across.
+  //
+  // The reasons stay ENUMERATED rather than matched by a slot: a Chromium
+  // reason we have not seen should surface as a new issue and be added
+  // deliberately, which is the safe failure direction — under-suppression
+  // announces itself, over-suppression does not.
+  //
+  // Anchored to the whole sentence, as the dashboard entry has been since
+  // #7357. `ignoreErrors` is frame-blind, so an unanchored substring also
+  // drops any first-party message that happens to CONTAIN the
   // phrase (`Our Java object is gone`) even when its stack points straight at
   // `/pro/assets/*.js` — the observability blind spot this array exists to
   // avoid. Only the complete Chromium shape is third-party by construction, so
@@ -179,10 +191,10 @@ export const MARKETING_IGNORE_ERRORS: RegExp[] = [
   // obtenirDonnées()` is legal, and Chromium emits the same sentence for it)
   // while JavaScript's `\w` is, so an ASCII slot silently misses them. Widening
   // it cannot loosen the rule — the envelope is anchored at both ends and the
-  // reason is fixed, so this matches only if our own bundle emits the whole
-  // Chromium sentence. Java method names hold no colon, so excluding one keeps
-  // the slot off the reason separator (PR #7356 review).
-  /^Error invoking [^\s:]+: Java object is gone$/,
+  // reasons are enumerated, so this matches only if our own bundle emits a
+  // whole Chromium sentence. Java method names hold no colon, so excluding
+  // one keeps the slot off the reason separator (PR #7356 review).
+  /^Error invoking [^\s:]+: (?:Java object is gone|Java bridge method invocation error)$/,
   // iOS in-app WebView native bridge. The host app injects `sendDataToNative` /
   // `sendPageHideMessage` into the document and they dereference
   // `window.webkit.messageHandlers`, which only exists when a WKWebView host
@@ -229,6 +241,35 @@ export const MARKETING_IGNORE_ERRORS: RegExp[] = [
   // `/pro/assets/*.js` frame. `tests/pro-sentry-filter-policy.test.mts` pins
   // both the suppression and the bare-identifier scan that licenses it.
   /^jQuery is not defined$/,
+  // DuckDuckGo's `content-scope-scripts`. The browser injects its own feature
+  // registry into every document and rejects when a configured feature name has
+  // no registered implementation — the message is that registry's, phrased
+  // `feature named \`<name>\` was not found`. WORLDMONITOR-127 is the shape:
+  // DuckDuckGo 18.1 / macOS at `/`, an `onunhandledrejection` capture with a
+  // NULL stacktrace, so `marketingBeforeSend`'s frame gates have nothing to act
+  // on and only a message rule can reach it.
+  //
+  // The licence is the whole sentence, not the feature name: the registry, its
+  // wording and its features all live in the browser, and `feature named`
+  // appears in no marketing first-party source (the guard test pins that scan).
+  // A pure-web bundle has no DuckDuckGo feature registry to miss a lookup in,
+  // so it can never emit this.
+  //
+  // The name is SLOTTED rather than enumerated — unlike the `Error invoking`
+  // reasons above — because it is a third-party identifier, not a fixed
+  // vocabulary we want to review one member at a time: DuckDuckGo adds features
+  // per release and each new one would otherwise open a fresh issue with the
+  // same disposition. The backticks are matched literally, so a re-quoted
+  // future wording reports instead of being swallowed, which is the safe
+  // failure direction this file keeps: under-suppression announces itself,
+  // over-suppression does not.
+  //
+  // Already suppressed on the dashboard (`/feature named .\w+. was not found/`
+  // in `src/bootstrap/sentry-init.ts`); the two surfaces run separate Sentry
+  // clients, which is the same gap that let WORLDMONITOR-15/-102/-107/-108/
+  // -10N/-10T/-117/-126 through. Anchored here rather than copied bare, for the
+  // reason the `jQuery` entry above spells out.
+  /^feature named `[\w-]+` was not found$/,
   // A synthetic `unhandledrejection` CustomEvent, dispatched by injected script
   // and swept up by Sentry's global rejection handler. WORLDMONITOR-11S is the
   // shape: Safari 26.6.2 / macOS on `/pro`, zero frames, and

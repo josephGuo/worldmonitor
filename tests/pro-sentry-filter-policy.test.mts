@@ -438,6 +438,118 @@ describe('marketing ignoreErrors — in-app-browser injected globals (2026-08-27
     assert.equal(isIgnored('Error', 'Java object is missing'), false);
     assert.equal(isIgnored('Error', 'Our Java gateway is gone'), false);
   });
+
+  it("drops the Java bridge's other Chromium reason (WORLDMONITOR-126)", () => {
+    // Verbatim production value: Chrome Mobile 153 on Android 10 at `/`, fired
+    // through Sentry's `setTimeout` instrumentation from an injected
+    // `scanForForms` autofill scan, with only the `/pro/assets/sentry-*.js`
+    // chunk and one `<anonymous>` on the stack.
+    //
+    // `GinJavaBridgeError` has more than one member, and the dashboard array
+    // enumerates two of them (`src/bootstrap/sentry-init.ts`). #7356 copied
+    // only `Java object is gone` to this surface, so the second reason fell
+    // through to a separate issue on the marketing client. The reasons stay
+    // ENUMERATED rather than slotted: a Chromium reason we have not seen should
+    // surface as a new issue and be added deliberately, because
+    // under-suppression announces itself and over-suppression does not.
+    assert.equal(
+      isIgnored('Error', 'Error invoking log: Java bridge method invocation error'),
+      true,
+    );
+    // The method slot is shape-matched here too, per the entry above.
+    assert.equal(
+      isIgnored('Error', 'Error invoking 获取设备信息: Java bridge method invocation error'),
+      true,
+    );
+  });
+
+  it('keeps a first-party message that merely CONTAINS the second reason', () => {
+    // Same control as the `Java object is gone` half: `ignoreErrors` is
+    // frame-blind, so only the complete anchored Chromium sentence may match.
+    assert.equal(isIgnored('Error', 'Java bridge method invocation error'), false);
+    assert.equal(
+      isIgnored('Error', 'Relay failed: Java bridge method invocation error'),
+      false,
+    );
+    assert.equal(
+      isIgnored('Error', 'Error invoking log: Java bridge method invocation error (retrying)'),
+      false,
+    );
+  });
+
+  it('keeps an unenumerated Chromium reason so it surfaces as a new issue', () => {
+    // The safe failure direction the entry documents: a reason we have never
+    // observed must still report rather than be swallowed by a widened slot.
+    assert.equal(isIgnored('Error', 'Error invoking log: Java exception was raised'), false);
+  });
+
+  it('pins the marketing surface as `Error invoking`-free, which is what licenses the rule', () => {
+    // What licenses matching the envelope at all: a pure-web bundle owns no
+    // `@JavascriptInterface` object, so it can never emit Chromium's sentence.
+    // The dashboard test pins the same scan for its own copy.
+    const offenders = marketingFirstPartySources()
+      .filter((f) => !f.rel.includes('sentry-filter-policy'))
+      .filter((f) => /Error invoking/.test(f.code))
+      .map((f) => f.rel);
+    assert.deepEqual(offenders, [],
+      'the marketing surface now emits `Error invoking` — re-derive the WORLDMONITOR-117/-126 rule');
+  });
+});
+
+describe("MARKETING_IGNORE_ERRORS — DuckDuckGo's feature registry (WORLDMONITOR-127)", () => {
+  it('drops the registry miss the dashboard has always dropped', () => {
+    // Verbatim production value: DuckDuckGo 18.1 / macOS at `/`, captured
+    // through `onunhandledrejection` with a NULL stacktrace — zero frames, so
+    // `marketingBeforeSend`'s frame gates cannot reach it and only a message
+    // rule can. The dashboard has suppressed the same sentence since
+    // `/feature named .\w+. was not found/` landed in
+    // `src/bootstrap/sentry-init.ts`; the marketing client is a separate init,
+    // which is the gap this closes.
+    assert.equal(isIgnored('Error', 'feature named `pageContext` was not found'), true);
+  });
+
+  it('slots the feature name, because DuckDuckGo adds features per release', () => {
+    // Deliberately NOT enumerated like the `Error invoking` reasons above: the
+    // name is a third-party identifier, not a vocabulary we review member by
+    // member, so every future feature shares the one disposition.
+    assert.equal(isIgnored('Error', 'feature named `duckPlayer` was not found'), true);
+    assert.equal(isIgnored('Error', 'feature named `click-to-load` was not found'), true);
+  });
+
+  it('keeps a first-party message that merely CONTAINS the phrase', () => {
+    // `ignoreErrors` is frame-blind, so only the complete anchored sentence may
+    // match — an unanchored copy of the dashboard's entry would also swallow
+    // our own wording riding a `/pro/assets/*.js` frame.
+    assert.equal(isIgnored('Error', 'feature named `pageContext` was not found'.toUpperCase()), false);
+    assert.equal(
+      isIgnored('Error', 'Config load failed: feature named `pageContext` was not found'),
+      false,
+    );
+    assert.equal(
+      isIgnored('Error', 'feature named `pageContext` was not found (retrying)'),
+      false,
+    );
+  });
+
+  it('keeps a re-quoted future wording so it surfaces as a new issue', () => {
+    // The backticks are matched literally. If DuckDuckGo re-quotes the message
+    // it must report rather than be swallowed by a loosened delimiter — the
+    // safe failure direction this policy keeps.
+    assert.equal(isIgnored('Error', "feature named 'pageContext' was not found"), false);
+    assert.equal(isIgnored('Error', 'feature named "pageContext" was not found'), false);
+  });
+
+  it('pins the marketing surface as `feature named`-free, which is what licenses the rule', () => {
+    // What licenses a frame-blind rule at all: the registry, its wording and
+    // its features are all DuckDuckGo's, and a pure-web bundle has no such
+    // registry to miss a lookup in.
+    const offenders = marketingFirstPartySources()
+      .filter((f) => !f.rel.includes('sentry-filter-policy'))
+      .filter((f) => /feature named/.test(f.code))
+      .map((f) => f.rel);
+    assert.deepEqual(offenders, [],
+      'the marketing surface now emits `feature named` — re-derive the WORLDMONITOR-127 rule');
+  });
 });
 
 describe('marketingBeforeSend — Safari-masked injected script (WORLDMONITOR-110)', () => {
@@ -588,8 +700,13 @@ describe('policy wiring', () => {
     const dashboard = readFileSync(resolve(root, 'src/bootstrap/sentry-init.ts'), 'utf8');
     const dashboardCount = (dashboard.match(/^\s{6}\/.*\/,\s*(\/\/.*)?$/gm) ?? []).length;
     assert.ok(dashboardCount > 100, `sanity: expected a large dashboard array, got ${dashboardCount}`);
+    // The bound is a RATCHET against bulk-copying, not a budget to spend: it
+    // moves by one, in the same commit as the entry that needs the slot, and
+    // only once that entry carries its own licence scan and suppression tests
+    // (WORLDMONITOR-127 took it from 19 to 20). Raising it by more than one, or
+    // ahead of an entry, defeats the deliberation this red is here to force.
     assert.ok(
-      MARKETING_IGNORE_ERRORS.length < 20,
+      MARKETING_IGNORE_ERRORS.length < 21,
       `marketing array must stay a vetted subset, got ${MARKETING_IGNORE_ERRORS.length}`,
     );
   });
