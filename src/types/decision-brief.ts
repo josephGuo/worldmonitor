@@ -15,6 +15,7 @@ export interface DecisionBriefCapture {
 }
 
 export interface DecisionBriefSnapshot {
+  operationalWorksheet?: import('./operational-balance').OperationalSnapshot | null;
   selection: DecisionBriefSelection;
   capturedAt: string;
   captures: [DecisionBriefCapture, DecisionBriefCapture];
@@ -25,4 +26,42 @@ export interface DecisionBriefSnapshot {
   impact: string;
   action: { text: string; references: string[]; constraint: string; trigger: string };
   unknowns: string[];
+}
+
+export interface CommodityBriefSelection {
+  countryCode: string;
+  countryName: string;
+  commodityId: string;
+  chokepointId: string;
+}
+
+export interface CommodityBriefCapture {
+  retrievedAt: string;
+  products: import('@/generated/client/worldmonitor/supply_chain/v1/service_client').GetCountryProductsResponse;
+  vulnerabilities: import('@/generated/client/worldmonitor/supply_chain/v1/service_client').GetCountryVulnerabilitiesResponse;
+}
+
+export interface CommodityBriefSnapshot {
+  kind: 'commodity';
+  selection: CommodityBriefSelection;
+  capturedAt: string;
+  commodity: string;
+  hs4: string;
+  capture: CommodityBriefCapture;
+  evidence: DecisionBriefSnapshot['evidence'];
+  candidates: {
+    origin: string;
+    shareReference: string;
+    sharePct: number | null;
+    routeIds: string[];
+    transitChokepoints: string[];
+    affectedChokepoints: string[];
+    routeState: 'exposed' | 'not_on_modeled_route' | 'unknown';
+    reason: string;
+    constraints: string;
+  }[];
+  context: string;
+  caveats: string[];
+  ordering: string;
+  action: DecisionBriefSnapshot['action'];
 }
