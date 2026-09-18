@@ -2,6 +2,7 @@
 
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
+import { getDefaultAutoSelectFamily, getDefaultAutoSelectFamilyAttemptTimeout, isIP } from 'node:net';
 
 import {
   loadEnvFile,
@@ -58,6 +59,19 @@ const NHC_ADVISORY_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const DAYS = 30;
 const WILDFIRE_MAX_AGE_MS = 48 * 60 * 60 * 1000;
+const SOURCE_REQUEST_TIMEOUT_MS = 15_000;
+const SOURCE_REQUEST_BUDGET_MS = 30_500;
+const SOURCE_TRANSPORT_CODES = new Set([
+  'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EAI_AGAIN', 'ENOTFOUND', 'EPIPE',
+  'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_SOCKET',
+]);
+const SOURCE_DIAGNOSTIC_CODES = new Set([
+  ...SOURCE_TRANSPORT_CODES, 'ENETUNREACH', 'EHOSTUNREACH',
+  'CERT_HAS_EXPIRED', 'ERR_TLS_CERT_ALTNAME_INVALID', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN',
+]);
+const SOURCE_ERROR_NAMES = new Set(['Error', 'TypeError', 'AggregateError', 'AbortError', 'TimeoutError', 'SyntaxError']);
+const SOURCE_ERROR_SYSCALLS = new Set(['connect', 'getaddrinfo', 'read', 'write']);
 
 const GDACS_TO_CATEGORY = {
   EQ: 'earthquakes',
@@ -123,15 +137,90 @@ function selectSourceSnapshot(result, previous, now, validateRecords) {
     && validateRecords(previous.records) ? previous : null;
 }
 
+function sourceFailureDetails(error) {
+  const errors = [];
+  const seen = new Set();
+  let truncated = false;
+  const queue = [{ error, parent: null, relation: 'root' }];
+  while (queue.length && errors.length < 8) {
+    const { error: item, parent, relation } = queue.shift();
+    if (!item || typeof item !== 'object' || seen.has(item)) continue;
+    seen.add(item);
+    const index = errors.length;
+    errors.push({
+      parent, relation,
+      name: SOURCE_ERROR_NAMES.has(item.name) ? item.name : 'OtherError',
+      code: SOURCE_DIAGNOSTIC_CODES.has(item.code) ? item.code : undefined,
+      syscall: SOURCE_ERROR_SYSCALLS.has(item.syscall) ? item.syscall : undefined,
+      family: isIP(typeof item.address === 'string' ? item.address : '') || undefined,
+    });
+    if (item.cause) queue.push({ error: item.cause, parent: index, relation: 'cause' });
+    if (Array.isArray(item.errors)) {
+      if (item.errors.length > 8) truncated = true;
+      for (const child of item.errors.slice(0, 8)) queue.push({ error: child, parent: index, relation: 'member' });
+    }
+  }
+  return {
+    node: process.versions.node, undici: process.versions.undici,
+    defaultAutoSelectFamily: getDefaultAutoSelectFamily(),
+    defaultAddressAttemptTimeoutMs: getDefaultAutoSelectFamilyAttemptTimeout(),
+    errors, truncated: truncated || queue.length > 0,
+  };
+}
+
+async function fetchEventSourceJson(source, url, fetchFn) {
+  const started = performance.now();
+  const deadline = started + SOURCE_REQUEST_BUDGET_MS;
+  let attempt = 0;
+  return withRetry(async () => {
+    const remaining = Math.floor(deadline - performance.now());
+    if (remaining <= 0) throw Object.assign(new Error(`${source} request budget exhausted`), { nonRetryable: true });
+    attempt++;
+    const attemptStarted = performance.now();
+    let stage = 'request';
+    try {
+      const res = await fetchFn(url, {
+        headers: { Accept: 'application/json', 'User-Agent': CHROME_UA },
+        signal: AbortSignal.timeout(Math.min(SOURCE_REQUEST_TIMEOUT_MS, remaining)),
+      });
+      if (!res.ok) {
+        stage = 'http';
+        const error = httpRetryError(res, { remainingBudgetMs: deadline - performance.now() });
+        await res.body?.cancel?.().catch(() => { throw error; });
+        throw error;
+      }
+      stage = 'body';
+      return await res.json();
+    } catch (cause) {
+      const code = [cause?.code, cause?.cause?.code].find(value => SOURCE_TRANSPORT_CODES.has(value));
+      const timeout = cause?.name === 'TimeoutError' || cause?.name === 'AbortError';
+      const transport = timeout || code || cause instanceof TypeError;
+      let kind = code || 'FETCH_FAILED';
+      if (timeout) kind = 'TIMEOUT';
+      if (cause instanceof SyntaxError) kind = 'INVALID_JSON';
+      if (stage === 'http') kind = `HTTP_${cause.status}`;
+      const finished = performance.now();
+      let details = '';
+      if (transport && stage !== 'http') {
+        try {
+          details = ` details=${JSON.stringify(sourceFailureDetails(cause))}`;
+        } catch {
+          details = ' details={"unavailable":true}';
+        }
+      }
+      const error = Object.assign(new Error(`${source} ${stage} ${kind} attempt=${attempt} elapsedMs=${Math.round(finished - started)} attemptElapsedMs=${Math.round(finished - attemptStarted)}${details}`), {
+        nonRetryable: stage === 'http' ? cause.nonRetryable : !transport,
+        retryAfterMs: cause.retryAfterMs,
+      });
+      if (deadline - performance.now() <= Math.max(500, error.retryAfterMs || 0)) error.nonRetryable = true;
+      throw error;
+    }
+  }, 1, 500);
+}
+
 async function fetchEonet(days, fetchFn = globalThis.fetch, now = Date.now()) {
   const url = `${EONET_API_URL}?status=open&days=${days}`;
-  const res = await fetchFn(url, {
-    headers: { Accept: 'application/json', 'User-Agent': CHROME_UA },
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!res.ok) throw new Error(`EONET ${res.status}`);
-
-  const data = await res.json();
+  const data = await fetchEventSourceJson('eonet', url, fetchFn);
   if (!Array.isArray(data?.events)) throw new Error('EONET malformed response');
   const events = [];
 
@@ -260,13 +349,7 @@ async function fetchGdacsType(eventtype, fetchFn, now) {
       pageSize: '100', pageNumber: '1',
     }).toString();
   } else url.searchParams.set('eventtype', eventtype);
-  const res = await fetchFn(url.toString(), {
-    headers: { Accept: 'application/json', 'User-Agent': CHROME_UA },
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!res.ok) throw new Error(`GDACS ${res.status} (${eventtype})`);
-
-  const data = await res.json();
+  const data = await fetchEventSourceJson(`gdacs:${eventtype}`, url.toString(), fetchFn);
   if (!Array.isArray(data?.features) || data.features.some(feature =>
     !['Point', 'Polygon', 'MultiPolygon', 'LineString', 'MultiLineString'].includes(feature?.geometry?.type))) {
     throw new Error(`GDACS malformed response (${eventtype})`);
