@@ -346,12 +346,13 @@ export function aggregateHapiConflictEvents(
     const parsedAdminLevel = Number(row?.admin_level ?? 0);
     const adminLevel = Number.isFinite(parsedAdminLevel) ? parsedAdminLevel : 0;
 
-    let aggregate = aggregates.get(countryCode);
-    if (
-      !aggregate
-      || referencePeriod > aggregate.referencePeriod
-      || (referencePeriod === aggregate.referencePeriod && adminLevel > aggregate.adminLevel)
-    ) {
+    let periods = aggregates.get(countryCode);
+    if (!periods) {
+      periods = new Map();
+      aggregates.set(countryCode, periods);
+    }
+    let aggregate = periods.get(referencePeriod);
+    if (!aggregate || adminLevel > aggregate.adminLevel) {
       aggregate = {
         referencePeriod,
         adminLevel,
@@ -360,49 +361,49 @@ export function aggregateHapiConflictEvents(
           || HAPI_COUNTRY_NAMES.of(countryCode)
           || countryCode,
         ),
-        eventsTotal: 0,
         eventsPV: 0,
-        eventsCT: 0,
         eventsDem: 0,
         fatalitiesPV: 0,
-        fatalitiesCT: 0,
       };
-      aggregates.set(countryCode, aggregate);
+      periods.set(referencePeriod, aggregate);
     }
-    if (
-      referencePeriod !== aggregate.referencePeriod
-      || adminLevel !== aggregate.adminLevel
-    ) continue;
+    if (adminLevel !== aggregate.adminLevel) continue;
 
     const eventType = String(row?.event_type || '').toLowerCase();
     const events = finiteCount(row?.events);
     const fatalities = finiteCount(row?.fatalities);
-    aggregate.eventsTotal += events;
     if (eventType === 'political_violence') {
       aggregate.eventsPV += events;
       aggregate.fatalitiesPV += fatalities;
-    } else if (eventType === 'civilian_targeting') {
-      aggregate.eventsCT += events;
-      aggregate.fatalitiesCT += fatalities;
     } else if (eventType === 'demonstration') {
       aggregate.eventsDem += events;
     }
   }
 
   const results = {};
-  for (const [countryCode, aggregate] of aggregates) {
-    results[countryCode] = {
-      summary: {
+  const previousCompletePeriod = previousMonthStart(nowMs);
+  for (const [countryCode, periods] of aggregates) {
+    const result = {};
+    for (const aggregate of periods.values()) {
+      const summary = {
         countryCode,
         countryName: aggregate.countryName,
-        conflictEventsTotal: aggregate.eventsTotal,
-        conflictPoliticalViolenceEvents: aggregate.eventsPV + aggregate.eventsCT,
-        conflictFatalities: aggregate.fatalitiesPV + aggregate.fatalitiesCT,
+        // Civilian targeting is a subset of political violence, not an extra category.
+        conflictEventsTotal: aggregate.eventsPV + aggregate.eventsDem,
+        conflictPoliticalViolenceEvents: aggregate.eventsPV,
+        conflictFatalities: aggregate.fatalitiesPV,
         referencePeriod: aggregate.referencePeriod,
         conflictDemonstrations: aggregate.eventsDem,
         updatedAt: nowMs,
-      },
-    };
+      };
+      if (!result.summary || summary.referencePeriod > result.summary.referencePeriod) {
+        result.summary = summary;
+      }
+      if (summary.referencePeriod.slice(0, 10) === previousCompletePeriod) {
+        result.previousCompleteSummary = summary;
+      }
+    }
+    results[countryCode] = result;
   }
   return results;
 }

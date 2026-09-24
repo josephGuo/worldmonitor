@@ -1905,15 +1905,10 @@
       "host": "bcovlive-a.akamaihd.net",
       "provider": "bcovlive-a.akamaihd.net",
       "kind": "feed",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
       "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "src/config/live-video-sources.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "bd.usembassy.gov",
@@ -2258,15 +2253,10 @@
       "host": "cdnlive.presstv.ir",
       "provider": "cdnlive.presstv.ir",
       "kind": "feed",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
       "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "src/config/live-video-sources.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "celestrak.org",
@@ -2552,21 +2542,10 @@
       "host": "collisionconf.com",
       "provider": "collisionconf.com",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Provider terms for this upstream API/dataset; verify before redistribution",
       "attribution": "Credit collisionconf.com and link to the original upstream API/dataset.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "scripts/ais-relay.cjs"
-        },
-        {
-          "path": "scripts/seed-research.mjs"
-        },
-        {
-          "path": "server/worldmonitor/research/v1/list-tech-events.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "commodity.worldmonitor.app",
@@ -3683,6 +3662,20 @@
       ]
     },
     {
+      "host": "english-livebkali.cgtn.com",
+      "provider": "english-livebkali.cgtn.com",
+      "kind": "feed",
+      "observed": true,
+      "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
+      "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
+      "status": "excluded",
+      "references": [
+        {
+          "path": "src/config/live-video-sources.ts"
+        }
+      ]
+    },
+    {
       "host": "english.alarabiya.net",
       "provider": "english.alarabiya.net",
       "kind": "feed",
@@ -3779,6 +3772,20 @@
       ]
     },
     {
+      "host": "ert-ucdn.broadpeak-aas.com",
+      "provider": "ert-ucdn.broadpeak-aas.com",
+      "kind": "feed",
+      "observed": true,
+      "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
+      "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
+      "status": "excluded",
+      "references": [
+        {
+          "path": "src/config/live-video-sources.ts"
+        }
+      ]
+    },
+    {
       "host": "ert.gr",
       "provider": "ert.gr",
       "kind": "feed",
@@ -3799,15 +3806,10 @@
       "host": "ertflix.ascdn.broadpeak.io",
       "provider": "ertflix.ascdn.broadpeak.io",
       "kind": "feed",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
       "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "src/config/live-video-sources.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "es.euronews.com",
@@ -4664,6 +4666,9 @@
           "path": "api/download.js"
         },
         {
+          "path": "api/health.js"
+        },
+        {
           "path": "scripts/build-accuracy-page.mjs"
         },
         {
@@ -5087,6 +5092,20 @@
         },
         {
           "path": "src/config/feeds.ts"
+        }
+      ]
+    },
+    {
+      "host": "i24newshebrew-cdn.encoders.immergo.tv",
+      "provider": "i24newshebrew-cdn.encoders.immergo.tv",
+      "kind": "feed",
+      "observed": true,
+      "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
+      "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
+      "status": "excluded",
+      "references": [
+        {
+          "path": "src/config/live-video-sources.ts"
         }
       ]
     },
@@ -5523,6 +5542,15 @@
       "host": "kan11.media.kan.org.il",
       "provider": "kan11.media.kan.org.il",
       "kind": "feed",
+      "observed": false,
+      "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
+      "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
+      "status": "excluded"
+    },
+    {
+      "host": "kancdn.medonecdn.net",
+      "provider": "kancdn.medonecdn.net",
+      "kind": "feed",
       "observed": true,
       "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
       "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
@@ -5735,6 +5763,20 @@
       ]
     },
     {
+      "host": "live-cdn-stream-euw1.bfmtv.bct.nextradiotv.com",
+      "provider": "live-cdn-stream-euw1.bfmtv.bct.nextradiotv.com",
+      "kind": "feed",
+      "observed": true,
+      "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
+      "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
+      "status": "excluded",
+      "references": [
+        {
+          "path": "src/config/live-video-sources.ts"
+        }
+      ]
+    },
+    {
       "host": "live-gbnews.simplestreamcdn.com",
       "provider": "live-gbnews.simplestreamcdn.com",
       "kind": "feed",
@@ -5780,15 +5822,10 @@
       "host": "live-hls-web-ajb.getaj.net",
       "provider": "live-hls-web-ajb.getaj.net",
       "kind": "feed",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
       "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "src/config/live-video-sources.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "live-hls-web-ajm.getaj.net",
@@ -5850,8 +5887,8 @@
       ]
     },
     {
-      "host": "liveedge-arisenews.visioncdn.com",
-      "provider": "liveedge-arisenews.visioncdn.com",
+      "host": "live.livetvstream.co.uk",
+      "provider": "live.livetvstream.co.uk",
       "kind": "feed",
       "observed": true,
       "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
@@ -5862,6 +5899,43 @@
           "path": "src/config/live-video-sources.ts"
         }
       ]
+    },
+    {
+      "host": "live.presstv.co.uk",
+      "provider": "live.presstv.co.uk",
+      "kind": "feed",
+      "observed": true,
+      "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
+      "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
+      "status": "excluded",
+      "references": [
+        {
+          "path": "src/config/live-video-sources.ts"
+        }
+      ]
+    },
+    {
+      "host": "live.rudaw.net",
+      "provider": "live.rudaw.net",
+      "kind": "feed",
+      "observed": true,
+      "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
+      "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
+      "status": "excluded",
+      "references": [
+        {
+          "path": "src/config/live-video-sources.ts"
+        }
+      ]
+    },
+    {
+      "host": "liveedge-arisenews.visioncdn.com",
+      "provider": "liveedge-arisenews.visioncdn.com",
+      "kind": "feed",
+      "observed": false,
+      "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
+      "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
+      "status": "excluded"
     },
     {
       "host": "livenewschat.eu",
@@ -6031,6 +6105,20 @@
         },
         {
           "path": "src/config/feeds.ts"
+        }
+      ]
+    },
+    {
+      "host": "masterpl.hls.nhkworld.jp",
+      "provider": "masterpl.hls.nhkworld.jp",
+      "kind": "feed",
+      "observed": true,
+      "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
+      "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
+      "status": "excluded",
+      "references": [
+        {
+          "path": "src/config/live-video-sources.ts"
         }
       ]
     },
@@ -6334,6 +6422,20 @@
       ]
     },
     {
+      "host": "n1ctsota.akamaized.net",
+      "provider": "n1ctsota.akamaized.net",
+      "kind": "feed",
+      "observed": true,
+      "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
+      "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
+      "status": "excluded",
+      "references": [
+        {
+          "path": "src/config/live-video-sources.ts"
+        }
+      ]
+    },
+    {
       "host": "n1info.hr",
       "provider": "n1info.hr",
       "kind": "feed",
@@ -6419,15 +6521,10 @@
       "host": "news.cgtn.com",
       "provider": "news.cgtn.com",
       "kind": "feed",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
       "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "src/config/live-video-sources.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "news.crunchbase.com",
@@ -6649,6 +6746,20 @@
       "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
       "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
       "status": "excluded"
+    },
+    {
+      "host": "nmxlive.akamaized.net",
+      "provider": "nmxlive.akamaized.net",
+      "kind": "feed",
+      "observed": true,
+      "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
+      "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
+      "status": "excluded",
+      "references": [
+        {
+          "path": "src/config/live-video-sources.ts"
+        }
+      ]
     },
     {
       "host": "noaadata.apps.nsidc.org",
@@ -7979,6 +8090,20 @@
       ]
     },
     {
+      "host": "rtvelivestream.rtve.es",
+      "provider": "rtvelivestream.rtve.es",
+      "kind": "feed",
+      "observed": true,
+      "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
+      "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
+      "status": "excluded",
+      "references": [
+        {
+          "path": "src/config/live-video-sources.ts"
+        }
+      ]
+    },
+    {
       "host": "ru.euronews.com",
       "provider": "ru.euronews.com",
       "kind": "feed",
@@ -8487,6 +8612,20 @@
       ]
     },
     {
+      "host": "skai-live.siliconweb.com",
+      "provider": "skai-live.siliconweb.com",
+      "kind": "feed",
+      "observed": true,
+      "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
+      "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
+      "status": "excluded",
+      "references": [
+        {
+          "path": "src/config/live-video-sources.ts"
+        }
+      ]
+    },
+    {
       "host": "slack-status.com",
       "provider": "slack-status.com",
       "kind": "operational-status",
@@ -8817,15 +8956,10 @@
       "host": "stream.ads.ottera.tv",
       "provider": "stream.ads.ottera.tv",
       "kind": "feed",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
       "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "src/config/live-video-sources.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "streaming-live.rtp.pt",
@@ -8862,15 +8996,10 @@
       "host": "svs.itworkscdn.net",
       "provider": "svs.itworkscdn.net",
       "kind": "feed",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
       "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "src/config/live-video-sources.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "syriadirect.org",
@@ -9669,6 +9798,20 @@
       "status": "excluded"
     },
     {
+      "host": "tv-trthaber.medya.trt.com.tr",
+      "provider": "tv-trthaber.medya.trt.com.tr",
+      "kind": "feed",
+      "observed": true,
+      "license": "Excluded: live-video playback transport; channel/provider terms apply separately",
+      "attribution": "Excluded from the external-provider count: presentation-only HLS stream, not an ingested dataset.",
+      "status": "excluded",
+      "references": [
+        {
+          "path": "src/config/live-video-sources.ts"
+        }
+      ]
+    },
+    {
       "host": "tv-trtworld.medya.trt.com.tr",
       "provider": "tv-trtworld.medya.trt.com.tr",
       "kind": "feed",
@@ -10132,21 +10275,10 @@
       "host": "websummit.com",
       "provider": "websummit.com",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Provider terms for this upstream API/dataset; verify before redistribution",
       "attribution": "Credit websummit.com and link to the original upstream API/dataset.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "scripts/ais-relay.cjs"
-        },
-        {
-          "path": "scripts/seed-research.mjs"
-        },
-        {
-          "path": "server/worldmonitor/research/v1/list-tech-events.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "whitehouse.gov",
@@ -11921,21 +12053,10 @@
       "host": "www.gitex.com",
       "provider": "www.gitex.com",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Provider terms for this upstream API/dataset; verify before redistribution",
       "attribution": "Credit www.gitex.com and link to the original upstream API/dataset.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "scripts/ais-relay.cjs"
-        },
-        {
-          "path": "scripts/seed-research.mjs"
-        },
-        {
-          "path": "server/worldmonitor/research/v1/list-tech-events.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "www.githubstatus.com",
@@ -14075,21 +14196,10 @@
       "host": "www.token2049.com",
       "provider": "www.token2049.com",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Provider terms for this upstream API/dataset; verify before redistribution",
       "attribution": "Credit www.token2049.com and link to the original upstream API/dataset.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "scripts/ais-relay.cjs"
-        },
-        {
-          "path": "scripts/seed-research.mjs"
-        },
-        {
-          "path": "server/worldmonitor/research/v1/list-tech-events.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "www.tomshardware.com",
@@ -14632,6 +14742,9 @@
         },
         {
           "path": "scripts/check-live-video-sources.mjs"
+        },
+        {
+          "path": "scripts/lib/live-video-channel-live.mjs"
         },
         {
           "path": "server/worldmonitor/aviation/v1/get-youtube-live-stream-info.ts"

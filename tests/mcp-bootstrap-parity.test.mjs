@@ -38,6 +38,9 @@ const { TOOL_REGISTRY } = mcpTesting;
 // -----------------------------------------------------------------------------
 const EXCLUDED_FROM_MCP = new Map([
 
+  ['live-video:resolved:v1',
+    'dashboard-internal: channel id to current live YouTube video id, read by the Live News and Live Webcams players to try a fresh embed before the channel entry (#8545); a playback hint with no analytical content, not a queryable MCP slice.'],
+
   // ===========================================================================
   // #4920 completeness-measurement ops keys (pipeline health, not content)
   // ===========================================================================
@@ -128,6 +131,8 @@ const EXCLUDED_FROM_MCP = new Map([
     'cascade-mirror: previous-year displacement snapshot used by the dashboard year-over-year diff. Current-year key is exposed via get_displacement_data; the executeTool label-walk would collide on both years (matches api/health.js:482 + api/mcp.ts:346-350 rationale).'],
   ['positive-events:geo:v1',
     'cascade-mirror: live counterpart of positive_events:geo-bootstrap:v1 (covered by get_positive_events).'],
+  ['research:tech-events:v1',
+    'cascade-mirror: RPC cache independently monitored for the hourly research seeder (#8572). get_research_signals reads research:tech-events-bootstrap:v1; adding this mirror would duplicate events and change the tool response envelope.'],
   ['aviation:delays:faa:v1',
     'cascade-mirror: RPC variant of aviation:delays-bootstrap:v2 (covered by get_aviation_status). Its own seed-meta:aviation:faa carries the FAA-only count; the aggregate counts itself since #6987.'],
   ['cyber:threats:v2',
