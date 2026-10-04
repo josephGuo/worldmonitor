@@ -3,6 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import us from './fixtures/country-brief-us.json' with { type: 'json' };
 import { readCountryView } from '../api/mcp/ui/news-dashboard-app';
+import type { CountrySignalCounts } from '../src/types';
 
 const root = process.cwd();
 test.use({ serviceWorkers: 'block' });
@@ -15,10 +16,11 @@ async function installCountryHost(page: Page, fullExposure = false, initialOpenE
   let delayCoverage = false;
   let releaseCoverage: () => void = () => {};
   const coverageDelayed = new Promise<void>(resolve => { releaseCoverage = resolve; });
-  const contexts: Array<{ countryCode: string; topic: string; sections: Array<{ section: string; state: string; coverage?: string; renderedText: string }> }> = [];
+  const contexts: Array<{ countryCode: string; topic: string; signals?: CountrySignalCounts; sections: Array<{ section: string; state: string; coverage?: string; renderedText: string }> }> = [];
   const links: string[] = [];
   let failFacts = false;
   let failActivity = false;
+  let denyActivity = false;
   let atlasDenied = false;
   let atlasUnavailable = false;
   let disruptionsFailed = false;
@@ -33,6 +35,7 @@ async function installCountryHost(page: Page, fullExposure = false, initialOpenE
   let quotaExceeded = false;
   let admissions = 0;
   const admitted = new Set<string>();
+  const panelCountries = new Map<string, string>();
   let delayUS = false;
   let delayAdmission = false;
   let releaseAdmission: () => void = () => {};
@@ -57,7 +60,7 @@ async function installCountryHost(page: Page, fullExposure = false, initialOpenE
     calls.push(params);
     if (id !== undefined) requestNames.set(id, params.name);
     const args = params.arguments;
-    const code = String(args.country_code ?? (args.arguments as Record<string, unknown>)?.country_code ?? (args.arguments as Record<string, unknown>)?.countryCode ?? 'US');
+    const code = String(args.country_code ?? (args.arguments as Record<string, unknown>)?.country_code ?? (args.arguments as Record<string, unknown>)?.countryCode ?? panelCountries.get(String(args.panel_request ?? '')) ?? 'US');
     if (params.name === 'get_country_brief') return { structuredContent: { ...us.brief, countryCode: code, brief: `Controlled ${code} assessment. Source observations, not live acceptance.` } };
     if (params.name === 'get_country_coverage' && delayCoverage) await coverageDelayed;
     if (params.name === 'get_country_coverage') return { structuredContent: { countryCode: code, countryName: code, generatedAt: '2026-10-01T15:00:00Z', degraded: false, headlines: [{ title: `Controlled ${code} source article`, source: 'Fixture publisher', url: 'https://example.com/evidence', publishedAtMs: 1790863200000 }], events: [], sources: [{ source: 'news', state: 'ready' }, { source: 'events', state: 'unavailable' }] } };
@@ -68,11 +71,14 @@ async function installCountryHost(page: Page, fullExposure = false, initialOpenE
       const reused = admitted.has(code) && !args.refresh;
       if (!reused) admissions++;
       admitted.add(code);
-      return { structuredContent: { countryCode: code, topic: args.topic ?? 'overview', panelRequest: { token: `${code}.controlled-admission-${admissions}`, countryCode: code, expiresAt: new Date(Date.now() + 300000).toISOString(), reused, usage: { used: admissions, limit: 50, remaining: 50 - admissions, resetsAt: '2026-10-03T00:00:00.000Z', unit: 'requests' } } } };
+      const token = `${code}.controlled-admission-${admissions}`;
+      panelCountries.set(token, code);
+      return { structuredContent: { countryCode: code, topic: args.topic ?? 'overview', panelRequest: { token, countryCode: code, expiresAt: new Date(Date.now() + 300000).toISOString(), reused, usage: { used: admissions, limit: 50, remaining: 50 - admissions, resetsAt: '2026-10-03T00:00:00.000Z', unit: 'requests' } } } };
     }
     const section = String(args.section);
     if (section === 'facts' && code === 'US' && delayUS) await delayed;
     if (section === 'facts' && failFacts) return { structuredContent: { section, state: 'unavailable', reason: 'Controlled source failure' } };
+    if (denyActivity && ['vessels', 'flights', 'fleet'].includes(section)) return { structuredContent: { section, state: 'locked', reason: 'Controlled authorization loss' } };
     if (failActivity && section === 'vessels') return { structuredContent: { section, state: 'unavailable', reason: 'Controlled AIS outage' } };
     if (delayAtlasDetail && ['pipelineDetail', 'facilityDetail'].includes(section)) await delayedAtlasDetail;
     if (atlasOutages.timeline && section === 'disruptions') await delayedDisruptions;
@@ -84,8 +90,11 @@ async function installCountryHost(page: Page, fullExposure = false, initialOpenE
     const facility = { id: 'us-storage', name: 'Controlled US Storage', operator: 'Fixture storage operator', country: 'US', facilityType: 'spr', capacityMb: 12, capacityTwh: 0, capacityMtpa: 0, workingCapacityUnit: 'Mb', inService: 2025, location: { lat: 38, lon: -77 }, publicBadge: 'operational', evidence: { physicalState: 'operational', physicalStateSource: 'operator', commercialState: 'active', operatorStatement: { text: 'Controlled storage statement', url: 'https://example.com/storage-source', date: '2026-10-01' }, sanctionRefs: [] } };
     const shortage = { id: 'us-shortage', country: 'US', product: 'diesel', severity: 'confirmed', firstSeen: '2026-09-29', lastConfirmed: '2026-10-01', resolvedAt: '', shortDescription: 'Controlled active shortage', impactTypes: ['transport'], causeChain: ['supply'], evidence: { evidenceSources: [{ authority: 'Fixture authority', title: 'Controlled shortage source', url: 'https://example.com/shortage-source', date: '2026-10-01', sourceType: 'official' }], classifierConfidence: 0.9 } };
     const values: Record<string, object> = {
-      flights: { flights: [{ id: 'controlled-us-flight', operatorCountry: 'US', location: { latitude: 38, longitude: -77 } }], pagination: { nextCursor: '' } },
-      vessels: { dataAvailable: true, snapshot: { snapshotAt: Date.now(), status: { connected: true }, candidateReports: [{ mmsi: '235123456', name: 'Controlled military activity', shipType: 35, lat: 38, lon: -77, timestamp: Date.now() }] } },
+      flights: { flights: code === 'FR' ? [
+        { id: 'controlled-paris-flight', operatorCountry: 'FR', location: { latitude: 48.8566, longitude: 2.3522 } },
+        { id: 'controlled-zurich-flight', operatorCountry: 'CH', location: { latitude: 47.3769, longitude: 8.5417 } },
+      ] : [{ id: 'controlled-us-flight', operatorCountry: 'US', location: { latitude: 38, longitude: -77 } }], pagination: { nextCursor: '' } },
+      vessels: { dataAvailable: true, snapshot: { snapshotAt: Date.now(), status: { connected: true }, candidateReports: [{ mmsi: '235123456', name: 'Controlled military activity', shipType: 35, lat: code === 'FR' ? 47.3769 : 38, lon: code === 'FR' ? 8.5417 : -77, timestamp: Date.now() }] } },
       fleet: {},
       facts: { countryCode: code, countryName: code, capital: code === 'US' ? 'Washington, D.C.' : 'Kyiv', population: '340100000', areaSqKm: 9826675, languages: ['English'], currencies: ['US dollar'] },
       factors: us.scorecard,
@@ -161,8 +170,82 @@ async function installCountryHost(page: Page, fullExposure = false, initialOpenE
     window.addEventListener('message', receive);
     frame.contentWindow!.postMessage({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } }, '*');
   }), { name, args });
-  return { calls, contexts, links, unmanaged, cancelled, action, releaseDisruptions, failAtlas: () => { atlasUnavailable = true; }, recoverAtlas: () => { atlasUnavailable = false; }, delayAtlasDetail: () => { delayAtlasDetail = true; }, releaseAtlasDetail, failDisruptions: () => { disruptionsFailed = true; }, failEnergy: () => { energyFailed = true; }, partialAtlas: () => { atlasPartial = true; }, denyAtlas: () => { atlasDenied = true; }, activityOutage: () => { failActivity = true; }, activityRecover: () => { failActivity = false; }, partial: () => { partialBootstrap = true; }, complete: () => { partialBootstrap = false; }, quota: () => { quotaExceeded = true; }, get admissions() { return admissions; }, delayAdmission: () => { delayAdmission = true; }, releaseAdmission, delayCoverage: () => { delayCoverage = true; }, releaseCoverage, fail: () => { failFacts = true; }, recover: () => { failFacts = false; }, delay: () => { delayUS = true; }, release: releaseUS };
+  return { calls, contexts, links, unmanaged, cancelled, action, releaseDisruptions, failAtlas: () => { atlasUnavailable = true; }, recoverAtlas: () => { atlasUnavailable = false; }, delayAtlasDetail: () => { delayAtlasDetail = true; }, releaseAtlasDetail, failDisruptions: () => { disruptionsFailed = true; }, failEnergy: () => { energyFailed = true; }, partialAtlas: () => { atlasPartial = true; }, denyAtlas: () => { atlasDenied = true; }, activityOutage: () => { failActivity = true; }, activityRecover: () => { failActivity = false; }, denyActivity: () => { denyActivity = true; }, partial: () => { partialBootstrap = true; }, complete: () => { partialBootstrap = false; }, quota: () => { quotaExceeded = true; }, get admissions() { return admissions; }, delayAdmission: () => { delayAdmission = true; }, releaseAdmission, delayCoverage: () => { delayCoverage = true; }, releaseCoverage, fail: () => { failFacts = true; }, recover: () => { failFacts = false; }, delay: () => { delayUS = true; }, release: releaseUS };
 }
+
+test('country territory counts honor loaded polygons instead of neighboring bounding-box observations', async ({ page }, info) => {
+  const host = await installCountryHost(page);
+  const frame = page.frameLocator('iframe');
+  await expect(frame.locator('[data-brief-section=military] .cdp-military-grid')).toContainText('Own Flights1');
+  await frame.getByRole('textbox', { name: 'Country name or code' }).fill('FR');
+  await frame.getByRole('button', { name: 'Open country', exact: true }).click();
+  await expect(frame.locator('#countryStatus')).toContainText('France country brief.');
+  await frame.getByRole('button', { name: 'Security', exact: true }).click();
+  const military = frame.locator('[data-brief-section=military]');
+  const grid = military.locator('.cdp-military-grid');
+  await expect(grid).toContainText('Own Flights1');
+  await military.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: info.outputPath('country-territory-desktop.png'), fullPage: true });
+  await expect(grid).toContainText('Foreign Flights0');
+  await expect(grid).toContainText('Naval Vessels0');
+  await expect(grid).toContainText('Foreign PresenceUnknown');
+  await expect.poll(() => host.contexts.at(-1)?.sections.find(section => section.section === 'military')?.renderedText).toMatch(/Foreign Flights\s*0/);
+  expect(host.admissions).toBe(2);
+  await frame.getByRole('button', { name: 'Overview', exact: true }).click();
+  await frame.getByRole('button', { name: 'Security', exact: true }).click();
+  expect(host.admissions).toBe(2);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await military.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: info.outputPath('country-territory-mobile.png'), fullPage: true });
+});
+
+test('country Signals reuse loaded military observations and keep missing sources explicit', async ({ page }, info) => {
+  const host = await installCountryHost(page, true);
+  const frame = page.frameLocator('iframe');
+  await frame.getByRole('button', { name: 'Security', exact: true }).click();
+  const signals = frame.locator('[data-brief-section=signals]');
+  await expect(signals).toContainText('1 Military Air');
+  await expect(signals).toContainText('1 Naval Vessels');
+  await expect(signals).toContainText('Critical News unavailable');
+  await expect(signals).toContainText('Aggregate severity and recent high-severity observations are unavailable');
+  await expect(signals).toHaveAttribute('data-brief-coverage', 'partial');
+  await expect.poll(() => host.contexts.at(-1)?.signals?.militaryFlights).toBe(1);
+  expect(host.contexts.at(-1)?.signals?.criticalNews).toBeNull();
+  await expect.poll(() => host.contexts.at(-1)?.sections.filter(section => section.state === 'loading').length).toBe(0);
+  const initialReads = host.calls.length;
+  await frame.getByRole('button', { name: 'Economy & trade', exact: true }).click();
+  await frame.getByRole('button', { name: 'Security', exact: true }).click();
+  expect(host.calls).toHaveLength(initialReads);
+  expect(host.admissions).toBe(1);
+  await signals.screenshot({ path: info.outputPath('signals-observed-desktop.png') });
+  host.activityOutage();
+  await frame.getByRole('button', { name: 'Refresh country', exact: true }).click();
+  await expect(signals).toContainText('Showing previously loaded observations');
+  await expect(signals).toContainText('1 Naval Vessels');
+  await expect(signals).toContainText('1 Military Air');
+  await expect.poll(() => host.contexts.at(-1)?.signals?.militaryVessels).toBe(1);
+  await signals.screenshot({ path: info.outputPath('signals-source-outage-desktop.png') });
+  host.activityRecover();
+  await frame.getByRole('button', { name: 'Refresh country', exact: true }).click();
+  await expect(signals).toContainText('1 Naval Vessels');
+  await expect(signals).not.toContainText('Naval Vessels unavailable');
+  await expect.poll(() => host.contexts.at(-1)?.signals?.militaryVessels).toBe(1);
+  await expect(signals).not.toContainText('Showing previously loaded observations');
+  expect(host.admissions).toBe(3);
+  expect(host.unmanaged).toEqual([]);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signals.screenshot({ path: info.outputPath('signals-recovered-mobile.png') });
+  expect(await frame.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth + 1)).toBe(true);
+  await writeFile(info.outputPath('signals-request-cost.json'), JSON.stringify({ surface: 'compiled opaque iframe, controlled observations', initialHostCalls: initialReads, initialDailyUnits: 1, navigationCalls: 0, newSignalsReaders: 0, signalProjection: 'observed military counts, remaining sources explicitly unavailable' }, null, 2));
+  host.denyActivity();
+  await frame.getByRole('button', { name: 'Refresh country', exact: true }).click();
+  await expect(signals).toContainText('Military Air unavailable');
+  await expect(signals).toContainText('Naval Vessels unavailable');
+  await expect(signals).not.toContainText('Showing previously loaded observations');
+  await expect.poll(() => host.contexts.at(-1)?.signals?.militaryFlights).toBeNull();
+  await expect.poll(() => host.contexts.at(-1)?.signals?.militaryVessels).toBeNull();
+  expect(host.admissions).toBe(4);
+});
 
 test('cached country resource loads the current compiled panel after its old assets are removed', async ({ page }, info) => {
   const fetchBefore = globalThis.fetch;
