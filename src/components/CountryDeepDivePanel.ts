@@ -135,6 +135,7 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
   private currentName: string | null = null;
   private currentScore: CountryScore | null = null;
   private currentSignals: CountrySignalCounts | null = null;
+  private signalCoverageNotes: readonly string[] = [];
   private currentSignalDetails: CountryDeepDiveSignalDetails | null = null;
   private currentBrief: string | null = null;
   private currentBriefGeneratedAt: string | number | null = null;
@@ -378,6 +379,7 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
     this.currentName = country;
     this.currentScore = score;
     this.currentSignals = signals;
+    this.signalCoverageNotes = [];
     this.currentBrief = null;
     this.currentBriefGeneratedAt = null;
     this.currentBriefCached = null;
@@ -413,6 +415,7 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
     this.currentName = null;
     this.currentScore = null;
     this.currentSignals = null;
+    this.signalCoverageNotes = [];
     this.currentBrief = null;
     this.currentBriefGeneratedAt = null;
     this.currentBriefCached = null;
@@ -471,15 +474,18 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
 
   public updateSignals(signals: CountrySignalCounts, notes: readonly string[] = []): void {
     this.currentSignals = signals;
+    this.signalCoverageNotes = notes.slice(0, 12).map(note => note.slice(0, 1600));
     this.renderInitialSignals(signals);
-    if (Object.values(signals).some(value => value === null)) {
+    const liveValues = Object.entries(signals).filter(([key]) => key !== 'isTier1').map(([, value]) => value);
+    const partial = liveValues.some(value => value === null);
+    if (partial) {
       const notice = this.el('p', 'cdp-economic-source', 'Signal coverage is partial. Unavailable inputs are not evidence of zero activity.');
-      if (Object.values(signals).every(value => value === null)) notice.dataset.briefState = 'unavailable';
+      if (liveValues.every(value => value === null)) notice.dataset.briefState = 'unavailable';
       this.signalsBody?.prepend(notice);
     }
     for (const note of notes) this.signalsBody?.append(this.el('p', 'cdp-economic-source', note));
     const section = this.sections.find(section => section.id === 'signals');
-    if (section) section.card.dataset.briefCoverage = Object.values(signals).some(value => value === null) ? 'partial' : 'complete';
+    if (section) section.card.dataset.briefCoverage = partial ? 'partial' : 'complete';
   }
 
   public updateSignalDetails(details: CountryDeepDiveSignalDetails): void {
@@ -3707,6 +3713,7 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
       this.addSignalChip(chips, signals.temporalAnomalies, t('countryBrief.chips.temporalAnomalies'), '⏱️', 'outage');
     }
     this.addSignalChip(chips, signals.cyberThreats, t('countryBrief.chips.cyberThreats'), '🛡️', 'conflict');
+    this.addSignalChip(chips, signals.thermalEscalations, 'Thermal escalations', '🌡️', 'climate');
     this.addSignalChip(chips, signals.earthquakes, t('countryBrief.chips.earthquakes'), '🌍', 'quake');
     if (signals.displacementOutflow === null) {
       chips.append(this.makeSignalChip(`🌊 ${t('countryBrief.chips.displaced')} unavailable`, 'unavailable'));
@@ -3724,8 +3731,12 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
     } else if (signals.travelAdvisories > 0 && signals.travelAdvisoryMaxLevel) {
       const advLabel = signals.travelAdvisoryMaxLevel === 'do-not-travel' ? t('countryBrief.chips.doNotTravel')
         : signals.travelAdvisoryMaxLevel === 'reconsider' ? t('countryBrief.chips.reconsiderTravel')
+        : signals.travelAdvisoryMaxLevel === 'normal' ? t('countryBrief.chips.normalPrecautions')
+        : signals.travelAdvisoryMaxLevel === 'info' ? t('components.securityAdvisories.levels.info')
         : t('countryBrief.chips.exerciseCaution');
       chips.append(this.makeSignalChip(`⚠️ ${signals.travelAdvisories} ${t('countryBrief.chips.advisory')}: ${advLabel}`, 'advisory'));
+    } else {
+      this.addSignalChip(chips, signals.travelAdvisories, t('countryBrief.chips.advisory'), '⚠️', 'advisory');
     }
     this.addSignalChip(chips, signals.orefSirens, t('countryBrief.chips.activeSirens'), '🚨', 'conflict');
     this.addSignalChip(chips, signals.orefHistory24h, t('countryBrief.chips.sirens24h'), '🕓', 'conflict');
@@ -4255,6 +4266,7 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
         pubDate: headline.pubDate ? new Date(headline.pubDate).toISOString() : undefined,
       }));
     }
+    data.signalCoverageNotes = this.signalCoverageNotes;
     exportCountryEvidenceMarkdown(data);
   }
 

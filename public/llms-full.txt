@@ -45,6 +45,7 @@ The project is built with TypeScript, Vite, MapLibre GL JS, deck.gl, D3.js, and 
 - [Chokepoint methodology](#corpus-chokepoint-methodology)
 - [Start here](#corpus-start-here)
 - [What we track](#corpus-what-we-track)
+- [Live transit counts and coverage](#corpus-live-transit-counts-and-coverage)
 - [Live Flow](#corpus-live-flow)
 - [Score Badge](#corpus-score-badge)
 - [Threat Taxonomy](#corpus-threat-taxonomy)
@@ -733,9 +734,9 @@ The Lombok Strait, between Bali and Lombok, is a deep-water alternative to the M
 
 The standing forecast-resolution record is published at https://www.worldmonitor.app/accuracy/.
 
-Over the current 180-day window, World Monitor's headline cohort scores a Brier of 0.125 across 223 scored forecasts, against 0.25 for answering 0.5 to everything.
+Over the current 180-day window, World Monitor's headline cohort scores a Brier of 0.122 across 239 scored forecasts, against 0.25 for answering 0.5 to everything.
 
-Captured 2026-09-28.
+Captured 2026-10-05.
 
 This page does not publish confidence intervals; each figure is published with the number of forecasts behind it instead. It does not score the 24-hour, 7-day and 30-day projections shown in the product. It publishes aggregates only — no individual forecasts, resolution evidence, judge inputs or archive locations.
 
@@ -816,6 +817,33 @@ in the current seeder:
 The other six canonical waterways still receive transit summaries, warnings,
 AIS-disruption matching, threat classification, disruption score, and war-risk
 tier, but `flowEstimate` is absent until a baseline-backed flow model is added.
+
+<a id="corpus-live-transit-counts-and-coverage"></a>
+## Live transit counts and coverage
+
+The live transit counter uses AIS entry and exit reports for the same vessel.
+The vessel must remain inside the monitored area for at least five minutes.
+Counts cover the preceding 24 hours. They are observed crossings, not a census
+of all traffic. Missing entry or exit reports prevent a measurement.
+PortWatch history and week-over-week movement are separate inputs and do not
+fill a missing live count.
+
+Completed crossings are saved to a Redis event window at each transit publish,
+normally every ten minutes. Deployments read this window before publishing.
+Each observation expires at its original 24-hour deadline. A failed window read
+leaves the previous publication unchanged. An abrupt restart can still lose
+observations since the last successful save and journeys that have not yet exited.
+
+The Strait of Hormuz page explains this measurement requirement when its count
+is absent. An absent count does not establish zero traffic or a closed strait.
+There is no claim that AIS coverage is permanently unavailable there.
+
+The `chokepointTransits` health check counts canonical waterways with observed
+crossings, out of 13. Its floor is five, the coverage in the September 9, 2026
+published pulse. Fewer than five produces `COVERAGE_PARTIAL`; zero produces
+`EMPTY_DATA`. The existing Seed Freshness Monitor checks every 15 minutes and
+reports incident transitions. A fresh write of 13 empty rows cannot satisfy
+this coverage check. The raw cache and seed metadata include the missing ids.
 
 <a id="corpus-live-flow"></a>
 ## Live Flow
