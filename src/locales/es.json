@@ -16,7 +16,7 @@
     "predictionMarkets": "Mercados de predicción",
     "loadingMarkets": "Cargando mercados de predicción...",
     "infrastructure": "Exposición de infraestructura",
-    "briefUnavailable": "Resumen de IA no disponible: configure GROQ_API_KEY en Configuración.",
+    "briefUnavailable": "Resumen de IA no disponible: configure OPENROUTER_API_KEY en Configuración.",
     "cached": "En caché",
     "fresh": "Actual",
     "noMarkets": "No se encontraron mercados de predicción",
@@ -86,6 +86,7 @@
       "suppliers": "Arms suppliers ({{start}}–{{end}})",
       "source": "Sources: World Bank and SIPRI Arms Transfers Database. TIV measures transfer volume, not financial value.",
       "sourceWorldBank": "Source: World Bank.",
+      "snapshotAssembled": "Instantánea de {{source}} compilada el {{time}}",
       "unavailable": "Not available",
       "coverage": "Mapped coverage",
       "supplierRetained": "Supplier data retained from the last successful importer refresh."
@@ -761,7 +762,7 @@
       "fresh": "Fresco",
       "noMarkets": "No se encontraron mercados de predicción",
       "predictionMarkets": "Mercados de predicción",
-      "unavailable": "Resumen de IA no disponible: configure GROQ_API_KEY en Configuración."
+      "unavailable": "Resumen de IA no disponible: configure OPENROUTER_API_KEY en Configuración."
     },
     "countryBrief": {
       "components": {
@@ -797,7 +798,7 @@
       "predictionMarkets": "Mercados de predicción",
       "loadingMarkets": "Cargando mercados de predicción...",
       "infrastructure": "Exposición de infraestructura",
-      "briefUnavailable": "Resumen de IA no disponible: configure GROQ_API_KEY en Configuración.",
+      "briefUnavailable": "Resumen de IA no disponible: configure OPENROUTER_API_KEY en Configuración.",
       "cached": "en cache",
       "fresh": "Fresco",
       "noMarkets": "No se encontraron mercados de predicción",
@@ -1776,7 +1777,7 @@
     },
     "insights": {
       "noStories": "Aún no hay noticias de última hora o de múltiples fuentes",
-      "infoTooltip": "<strong>Análisis impulsado por IA</strong><br>• <strong>Resumen mundial</strong>: Resumen de IA (Groq/OpenRouter)<br>• <strong>Sentimento</strong>: Análisis del tono de las noticias<br>• <strong>Velocity</strong>: Historias de rápido movimiento<br>• <strong>Focal Puntos</strong>: Correlaciona entidades de noticias con señales de mapas (militares, protestas, cortes)<br><em>Solo escritorio • Desarrollado por Llama 3.3 + Detección de puntos focales</em>",
+      "infoTooltip": "<strong>Análisis impulsado por IA</strong><br>• <strong>Resumen mundial</strong>: Resumen de IA (OpenRouter)<br>• <strong>Sentimento</strong>: Análisis del tono de las noticias<br>• <strong>Velocity</strong>: Historias de rápido movimiento<br>• <strong>Focal Puntos</strong>: Correlaciona entidades de noticias con señales de mapas (militares, protestas, cortes)<br><em>Solo escritorio • Desarrollado por Llama 3.3 + Detección de puntos focales</em>",
       "step": "Step {{step}}/{{total}}",
       "waitingForData": "Waiting for news data...",
       "rankingStories": "Ranking important stories...",
@@ -1786,7 +1787,7 @@
       "streamQualityDesc": "Establecer calidad para todas las transmisiones en vivo (menor ahorra ancho de banda)",
       "mapFlashLabel": "Live Event Pulse",
       "mapFlashDesc": "Flash locations on the map when breaking news arrives",
-      "aiFlowCloudLabel": "IA en la nube (Groq & OpenRouter)",
+      "aiFlowCloudLabel": "IA en la nube (OpenRouter)",
       "aiFlowCloudDesc": "Enviar titulares a la nube para resumen con IA (recomendado)",
       "aiFlowBrowserLabel": "Modelo local del navegador",
       "aiFlowBrowserDesc": "Ejecutar IA localmente en su navegador",
@@ -2362,7 +2363,22 @@
       "unscored": "Escenarios narrativos, no calificados por precisión."
     },
     "forecast": {
-      "infoTooltip": "<strong>Pronósticos de IA</strong> Estimaciones de probabilidad generadas por IA para eventos geopolíticos y económicos:<ul><li>Cobertura multidominios: conflicto, mercados, cadena de suministro, ciberseguridad, política</li><li>Cada pronóstico muestra probabilidad estimada, nivel de confianza e horizonte temporal</li><li>Calibrado contra líneas de base de mercados de predicción donde esté disponible</li></ul>Los pronósticos se actualizan a medida que llegan nuevas señales de inteligencia. Filtra por dominio usando las pestañas anteriores."
+      "infoTooltip": "<strong>Pronósticos de IA</strong> Estimaciones de probabilidad generadas por IA para eventos geopolíticos y económicos:<ul><li>Cobertura multidominios: conflicto, mercados, cadena de suministro, ciberseguridad, política</li><li>Cada pronóstico muestra probabilidad estimada, nivel de confianza e horizonte temporal</li><li>Calibrado contra líneas de base de mercados de predicción donde esté disponible</li></ul>Los pronósticos se actualizan a medida que llegan nuevas señales de inteligencia. Filtra por dominio usando las pestañas anteriores.",
+      "record": {
+        "label": "Historial de aciertos",
+        "labelHint": "Cómo puntuaron los pronósticos publicados una vez resueltos, en los últimos {{days}} días. Pasa el cursor sobre un número para ver qué significa.",
+        "unavailable": "No disponible ahora mismo",
+        "insufficient": "Aún no hay suficientes pronósticos calificados",
+        "brier": "Puntuación Brier {{score}} (n={{n}})",
+        "brierHint": "Puntuación Brier sobre {{n}} pronósticos calificados: la media del cuadrado de la diferencia entre la probabilidad pronosticada y lo que ocurrió. 0 es perfecto, 0,25 equivale a lanzar una moneda; cuanto más baja, mejor.",
+        "baseRate": "Tasa base {{score}} (n={{n}})",
+        "baseRateHint": "Lo que habría obtenido quien respondiera siempre con la tasa de «sí» observada en los mismos {{n}} pronósticos ({{pct}}% se resolvieron como «sí»). Superarla significa que los pronósticos aportan información.",
+        "void": "Anulados {{pct}}% ({{count}} de {{resolved}})",
+        "voidHint": "Pronósticos resueltos que no pudieron calificarse, de {{resolved}} resueltos en el periodo.",
+        "stale": "Desactualizado",
+        "staleHint": "Última calificación: {{date}}. El calificador no se ha ejecutado desde entonces, así que estas cifras son más antiguas de lo debido.",
+        "fullRecord": "Historial completo"
+      }
     },
     "escalationCorrelation": {
       "infoTooltip": "<strong>Monitor de Escalada</strong> Detecta señales geopolíticas convergentes:<ul><li>Correlaciona movimientos militares, eventos de conflicto y picos de noticias</li><li>Puntúa zonas de convergencia por gravedad (crítica/alta/media/baja)</li><li>Rastrea tendencias de escalada o desescalada a lo largo del tiempo</li></ul>Haz clic en una tarjeta para ampliar la región en el mapa."

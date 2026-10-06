@@ -9,13 +9,11 @@ import { compactForecastDashboardPayload } from './_forecast-dashboard.mjs';
 import { unwrapEnvelope } from './_seed-envelope-source.mjs';
 import { allBootstrapMarkets } from './_prediction-classify.mjs';
 import { tagRegions } from './_prediction-scoring.mjs';
-import { attachResolutionSpecs, HORIZON_MS } from './_forecast-resolution.mjs';
+import { attachResolutionSpecs, CHOKEPOINT_MARKET_REGIONS, evaluateExtractionShadow, extractionShadowFeedKeys, HORIZON_MS, summarizeExtractionShadow } from './_forecast-resolution.mjs';
 import { assessFunnelDiversity, NON_REAL_FUNNEL_ORIGINS } from './_forecast-funnel.mjs';
 import { resolveR2StorageConfig, putR2JsonObject, getR2JsonObject } from './_r2-storage.mjs';
 import { extractFirstJsonObject, extractFirstJsonArray, cleanJsonText } from './_llm-json.mjs';
 import {
-  GROQ_DEFAULT_MODEL,
-  GROQ_REASONING_EXTRA_BODY,
   getLlmAttemptTimeoutMs,
   isDeepseekV4FlashModel,
   OPENROUTER_FREE_BACKUP_MODEL,
@@ -262,28 +260,6 @@ const CHOKEPOINT_COMMODITIES = {
   'Western Pacific': { commodity: 'Semiconductors', sensitivity: 0.9 },
   'South China Sea': { commodity: 'Trade goods', sensitivity: 0.6 },
   'Black Sea': { commodity: 'Grain/Energy', sensitivity: 0.7 },
-};
-
-const CHOKEPOINT_MARKET_REGIONS = {
-  'Strait of Hormuz': 'Middle East',
-  'Bab el-Mandeb': 'Red Sea',
-  'Red Sea': 'Red Sea',
-  'Suez Canal': 'Red Sea',
-  'Taiwan Strait': 'Western Pacific',
-  'South China Sea': 'Western Pacific',
-  'Strait of Malacca': 'South China Sea',
-  'Kerch Strait': 'Black Sea',
-  'Black Sea': 'Black Sea',
-  'Bosporus Strait': 'Black Sea',
-  'Persian Gulf': 'Middle East',
-  'Arabian Sea': 'Middle East',
-  'Baltic Sea': 'Northern Europe',
-  'Danish Straits': 'Northern Europe',
-  'Strait of Gibraltar': 'Mediterranean',
-  'Mediterranean Sea': 'Mediterranean',
-  'Panama Canal': 'Central America',
-  'Lombok Strait': 'Southeast Asia',
-  'Cape of Good Hope': 'Southern Africa',
 };
 
 const MARKET_INPUT_KEYS = {
@@ -14160,8 +14136,11 @@ function summarizePublishFiltering(predictions, selectedPredictions = [], publis
   };
 }
 
+// Publish selection prefers hard-resolvable forecasts. A state-derived forecast
+// can carry a hard spec (#5234) without that preference applying to it, so the
+// published share of synthetic backfill does not change.
 function isHardResolvableForecast(pred) {
-  return pred?.resolution?.kind === 'hard';
+  return pred?.resolution?.kind === 'hard' && pred.generationOrigin !== 'state_derived';
 }
 
 function isRealForecastForDomainCoverage(pred) {
@@ -14342,7 +14321,7 @@ function computePublishSelectionScore(pred, memoryIndex = null) {
   const defensePenalty = topBucketId === 'defense' && pred.marketSelectionContext?.topChannel !== 'defense_repricing'
     ? 0.018
     : 0;
-  const resolvabilityLift = pred?.resolution?.kind === 'hard' ? RESOLVABLE_HARD_SELECTION_LIFT : 0;
+  const resolvabilityLift = isHardResolvableForecast(pred) ? RESOLVABLE_HARD_SELECTION_LIFT : 0;
   pred.publishSelectionMemory = memoryHint ? {
     matchedBy: memoryHint.matchedBy,
     situationId: memoryHint.memory?.situationId || '',
@@ -15014,8 +14993,8 @@ function selectForecastsForEnrichment(predictions, options = {}) {
 }
 
 // ── Phase 2: LLM Scenario Enrichment ───────────────────────
-// Forecast narrative calls try the paid OpenRouter model, two fixed free
-// OpenRouter variants, then Groq. Separate entries let application validation
+// Forecast narrative calls try the paid OpenRouter model, then two fixed free
+// OpenRouter variants. Separate entries let application validation
 // advance after malformed/empty content; do not replace them with the random
 // `openrouter/free` router. Per-stage FORECAST_LLM_*_PROVIDER_ORDER still overrides.
 const FORECAST_LLM_PROVIDERS = [
@@ -15031,13 +15010,12 @@ const FORECAST_LLM_PROVIDERS = [
   { name: 'openrouter', envKey: 'OPENROUTER_API_KEY', apiUrl: 'https://openrouter.ai/api/v1/chat/completions', model: 'deepseek/deepseek-v4-flash', timeout: 25_000, extraBody: { reasoning: { enabled: false }, provider: OPENROUTER_PROVIDER_ROUTING } },
   { name: 'openrouter-free', envKey: 'OPENROUTER_API_KEY', apiUrl: 'https://openrouter.ai/api/v1/chat/completions', model: OPENROUTER_FREE_PRIMARY_MODEL, timeout: 25_000, maxRetries: 0, extraBody: { reasoning: { enabled: false }, provider: OPENROUTER_PROVIDER_ROUTING } },
   { name: 'openrouter-free-backup', envKey: 'OPENROUTER_API_KEY', apiUrl: 'https://openrouter.ai/api/v1/chat/completions', model: OPENROUTER_FREE_BACKUP_MODEL, timeout: 25_000, maxRetries: 0, extraBody: { reasoning: { enabled: false }, provider: OPENROUTER_PROVIDER_ROUTING } },
-  { name: 'groq', envKey: 'GROQ_API_KEY', apiUrl: 'https://api.groq.com/openai/v1/chat/completions', model: GROQ_DEFAULT_MODEL, timeout: 20_000, extraBody: GROQ_REASONING_EXTRA_BODY },
 ];
 
 // PER-79 (upstream PR 3/3): generic OpenAI-compatible provider for the
 // forecast seeder. Activated ONLY when LLM_API_URL, LLM_API_KEY, and
 // LLM_MODEL are all set AND none of the named providers above (openrouter,
-// openrouter-free, openrouter-free-backup, groq) have a key. Resolved-time
+// openrouter-free, openrouter-free-backup) have a key. Resolved-time
 // append keeps the existing FORECAST_LLM_PROVIDERS table (and its
 // array-shape tests) intact. LLM_API_URL is the FULL chat/completions
 // endpoint verbatim (see SELF_HOSTING.md) and LLM_MODEL is required — the
@@ -15084,12 +15062,11 @@ function buildForecastGenericLlmProvider() {
   };
 }
 
-// market_implications does NOT fall back to groq. Groq's free tier caps at 100k
-// tokens/day and this stage alone needs ~114k (4,749 tokens x 24 hourly runs), so
-// the fallback 429s for most of the day. Reserving 20s of run budget for a provider
-// that returns 429 in 86ms only raises the admission bar and starves the stage.
-// OpenRouter is the primary and, with throughput routing, succeeds 100% of measured
-// runs. Still overridable via FORECAST_LLM_MARKET_IMPLICATIONS_PROVIDER_ORDER.
+// market_implications runs on paid OpenRouter alone. Admission reserves the whole
+// runnable chain (getMarketImplicationsMinRunBudgetMs), so every fallback rung
+// raises the admission bar and starves the stage. OpenRouter, with throughput
+// routing, succeeds 100% of measured runs. Still overridable via
+// FORECAST_LLM_MARKET_IMPLICATIONS_PROVIDER_ORDER.
 const MARKET_IMPLICATIONS_DEFAULT_PROVIDER_ORDER = ['openrouter'];
 
 // Requested window for DeepSeek-Flash in forecast stages. Kept above the Flash
@@ -15145,27 +15122,20 @@ function parseForecastProviderOrder(raw) {
   return providers.length > 0 ? providers : null;
 }
 
-function migrateLegacyGlobalProviderOrder(providerOrder) {
-  if (providerOrder.length !== 2
-    || providerOrder[0] !== 'openrouter'
-    || providerOrder[1] !== 'groq') return providerOrder;
-  const paidIndex = providerOrder.indexOf('openrouter');
-  const groqIndex = providerOrder.indexOf('groq');
-  if (paidIndex < 0 || groqIndex < 0 || paidIndex > groqIndex) return providerOrder;
-  const freeProviders = ['openrouter-free', 'openrouter-free-backup'];
-  return providerOrder.flatMap(provider => provider === 'groq'
-    ? [...freeProviders.filter(freeProvider => !providerOrder.includes(freeProvider)), provider]
-    : [provider]);
+// Production still carries the historical global `openrouter,groq` value. Groq
+// is no longer a provider, so that exact legacy value maps to the full
+// OpenRouter chain; any other value stays exact.
+function parseGlobalForecastProviderOrder(raw) {
+  const normalized = typeof raw === 'string'
+    ? raw.split(',').map(item => item.trim().toLowerCase()).filter(Boolean).join(',')
+    : '';
+  if (normalized === 'openrouter,groq') return FORECAST_LLM_PROVIDERS.map(provider => provider.name);
+  return parseForecastProviderOrder(raw);
 }
 
 function getForecastLlmCallOptions(stage = 'default') {
   const defaultProviderOrder = FORECAST_LLM_PROVIDERS.map(provider => provider.name);
-  const globalProviderOrder = parseForecastProviderOrder(process.env.FORECAST_LLM_PROVIDER_ORDER);
-  // Production carries the historical global `openrouter,groq` value. Migrate
-  // only that exact legacy default; stage-scoped operator overrides stay exact.
-  const effectiveGlobalProviderOrder = globalProviderOrder
-    ? migrateLegacyGlobalProviderOrder(globalProviderOrder)
-    : null;
+  const effectiveGlobalProviderOrder = parseGlobalForecastProviderOrder(process.env.FORECAST_LLM_PROVIDER_ORDER);
   const combinedProviderOrder = parseForecastProviderOrder(process.env.FORECAST_LLM_COMBINED_PROVIDER_ORDER);
   const criticalProviderOrder = parseForecastProviderOrder(process.env.FORECAST_LLM_CRITICAL_PROVIDER_ORDER);
   const impactProviderOrder = parseForecastProviderOrder(process.env.FORECAST_LLM_IMPACT_PROVIDER_ORDER);
@@ -15176,10 +15146,9 @@ function getForecastLlmCallOptions(stage = 'default') {
       ? (criticalProviderOrder || effectiveGlobalProviderOrder || defaultProviderOrder)
       : stage === 'impact_expansion'
         ? (impactProviderOrder || effectiveGlobalProviderOrder || defaultProviderOrder)
-      // Deliberately does NOT fall through to globalProviderOrder: that env is set
-      // to `openrouter,groq` in production, which would re-add the groq fallback
-      // this stage must not depend on (see MARKET_IMPLICATIONS_DEFAULT_PROVIDER_ORDER).
-      // Its own stage env still overrides.
+      // Deliberately does NOT fall through to the global order, which would add
+      // fallback rungs this stage must not reserve budget for (see
+      // MARKET_IMPLICATIONS_DEFAULT_PROVIDER_ORDER). Its own stage env still overrides.
       : stage === 'market_implications'
         ? (marketImplicationsProviderOrder || MARKET_IMPLICATIONS_DEFAULT_PROVIDER_ORDER)
       : (effectiveGlobalProviderOrder || defaultProviderOrder);
@@ -15199,25 +15168,23 @@ function getForecastLlmCallOptions(stage = 'default') {
   // strength/confidence flow into state-derived (market/supply_chain)
   // forecast probabilities and publish selection (frames → world signals →
   // pressure/confirmation scores → buildStateDerivedForecast probability).
-  // Hold this stage on the same provider hosts and OpenRouter fallback. Groq's
-  // decommissioned 8B model moves to its official gpt-oss-20b replacement.
+  // Hold this stage on paid OpenRouter with a pinned model.
   // ONLY the stage-scoped FORECAST_LLM_CRITICAL_PROVIDER_ORDER
   // unpins it — a global FORECAST_LLM_PROVIDER_ORDER must not move a
   // probability-coupled stage as a side effect (review finding on #4965).
   if (stage === 'critical_signals' && !criticalProviderOrder) {
     return {
-      providerOrder: ['groq', 'openrouter'],
+      providerOrder: ['openrouter'],
       modelOverrides: {
-        groq: GROQ_DEFAULT_MODEL,
-        // ONLY the stage-scoped model env may change the pinned fallback —
+        // ONLY the stage-scoped model env may change the pinned model —
         // a global FORECAST_LLM_MODEL_OPENROUTER must not move the
         // probability-coupled stage either (review finding on #4965).
         openrouter: process.env.FORECAST_LLM_CRITICAL_MODEL_OPENROUTER || 'google/gemini-2.5-flash',
       },
       // Legacy request-body parity: the pinned models predate the
       // reasoning-off extraBody on the table's openrouter entry. Keep that
-      // omission, but never drop the mandatory provider-routing policy: a
-      // Groq fallback still sends this probability-bearing prompt to OpenRouter.
+      // omission, but never drop the mandatory provider-routing policy: this
+      // probability-bearing prompt still goes to OpenRouter.
       extraBodyOverrides: { openrouter: { provider: OPENROUTER_PROVIDER_ROUTING } },
     };
   }
@@ -15267,13 +15234,12 @@ function resolveForecastLlmProviders(options = {}) {
   }
   // PER-79 (upstream PR 3/3): append the generic OpenAI-compatible provider
   // ONLY when all three envs are set AND the chain above matched no named
-  // provider (envKey for both openrouter and groq unset). The env check uses
+  // provider (OPENROUTER_API_KEY unset). The env check uses
   // ONLY the names — never echo or log the values. Kept out of
   // FORECAST_LLM_PROVIDERS so existing table-shape tests and the per-stage
   // pinning in critical_signals / market_implications stay exact.
   if (isForecastGenericLlmReady()
     && !process.env.OPENROUTER_API_KEY
-    && !process.env.GROQ_API_KEY
     && !seen.has(FORECAST_GENERIC_LLM_PROVIDER_SPEC.name)) {
     const generic = buildForecastGenericLlmProvider();
     const genericModel = generic.model;
@@ -15293,7 +15259,7 @@ function resolveForecastLlmProviders(options = {}) {
 }
 
 // Hosted production must keep the pin-based critical_signals cache tag
-// (#4965): `providerOrder` then the openrouter/groq override slots. Replacing
+// (#4965): `providerOrder` then the openrouter override slot. Replacing
 // that whole tag with the resolved runnable chain would change the hosted
 // key shape and bust the 20-minute Redis cache for no reason. Append the
 // generic name + model ONLY when generic is actually in the resolved chain
@@ -15303,7 +15269,6 @@ function buildCriticalSignalRouteTag(options = {}) {
   const pinTag = [
     (options.providerOrder || []).join('-') || 'default',
     options.modelOverrides?.openrouter || 'table',
-    options.modelOverrides?.groq || 'table',
   ].join('_');
   const generic = resolveForecastLlmProviders(options).find((provider) => provider.name === 'generic');
   const genericSuffix = generic ? `_generic_${generic.model}` : '';
@@ -15897,9 +15862,6 @@ function buildUserPrompt(preds) {
   const predsText = preds.map((p, i) => {
     const sigs = p.signals.map(s => `[SIGNAL] ${sanitizeForPrompt(s.value)}`).join('\n');
     const cal = p.calibration ? `\n[CALIBRATION] ${sanitizeForPrompt(p.calibration.marketTitle)} at ${Math.round(p.calibration.marketPrice * 100)}%` : '';
-    const projections = p.projections
-      ? `\n[PROJECTIONS] 24h ${Math.round(p.projections.h24 * 100)}% | 7d ${Math.round(p.projections.d7 * 100)}% | 30d ${Math.round(p.projections.d30 * 100)}%`
-      : '';
     const cascades = (p.cascades || []).length > 0
       ? `\n[CASCADES] ${p.cascades.map(c => `${sanitizeForPrompt(c.domain)} via ${sanitizeForPrompt(c.effect)} (${Math.round(c.probability * 100)}%)`).join('; ')}`
       : '';
@@ -15928,7 +15890,7 @@ function buildUserPrompt(preds) {
       .map(branch => `- ${sanitizeForPrompt(branch.kind)}: ${sanitizeForPrompt(branch.summary)} | outcome: ${sanitizeForPrompt(branch.outcome)} | projected: ${Math.round((branch.projectedProbability || 0) * 100)}%`)
       .join('\n');
     const caseSections = `${support ? `\n[SUPPORTING_EVIDENCE]\n${support}` : ''}${counter ? `\n[COUNTER_EVIDENCE]\n${counter}` : ''}${triggers ? `\n[TRIGGERS]\n${triggers}` : ''}${actors ? `\n[ACTORS]\n${actors}` : ''}${worldSummary ? `\n[WORLD_STATE]\n- ${worldSummary}` : ''}${worldPressures ? `\n[ACTIVE_PRESSURES]\n${worldPressures}` : ''}${worldStabilizers ? `\n[STABILIZERS]\n${worldStabilizers}` : ''}${worldUnknowns ? `\n[KEY_UNKNOWNS]\n${worldUnknowns}` : ''}${branches ? `\n[SIMULATED_BRANCHES]\n${branches}` : ''}`;
-    return `[${i}] "${sanitizeForPrompt(p.title)}" (${p.domain}, ${p.region})\nProbability: ${Math.round(p.probability * 100)}% | Confidence: ${Math.round(p.confidence * 100)}% | Trend: ${p.trend} | Horizon: ${p.timeHorizon}\n${sigs}${cal}${projections}${cascades}${news}${caseSections}`;
+    return `[${i}] "${sanitizeForPrompt(p.title)}" (${p.domain}, ${p.region})\nProbability: ${Math.round(p.probability * 100)}% | Confidence: ${Math.round(p.confidence * 100)}% | Trend: ${p.trend} | Horizon: ${p.timeHorizon}\n${sigs}${cal}${cascades}${news}${caseSections}`;
   }).join('\n\n');
   return `Predictions to analyze:\n\n${predsText}`;
 }
@@ -16662,6 +16624,8 @@ async function fetchForecasts() {
   const initiallyPublishedSituationClusters = publishArtifacts.filteredSituationClusters;
   const initiallyPublishedSituationFamilies = publishArtifacts.filteredSituationFamilies;
   const publishedPredictions = publishArtifacts.publishedPredictions;
+  // Only published forecasts reach the resolution ledger, so only they are measured.
+  await runExtractionGateShadow(publishedPredictions);
   const publishTelemetry = summarizePublishFiltering(predictions, finalSelectionPool, publishedPredictions);
   const publishedSituationClusters = publishArtifacts.publishedSituationClusters;
   const publishedSituationFamilies = publishArtifacts.publishedSituationFamilies;
@@ -16695,6 +16659,38 @@ async function fetchForecasts() {
     priorWorldState,
     priorWorldStates,
   };
+}
+
+// Extraction gate shadow (#7067): reads each hard spec's sourceFeed raw, as
+// seed-forecast-resolutions does (no envelope unwrap; the shared shaper needs
+// `_seed`), and logs per-family/per-domain counters plus the would-downgrade
+// cohort. Never changes a spec and never fails the run.
+async function runExtractionGateShadow(predictions) {
+  try {
+    const keys = extractionShadowFeedKeys(predictions);
+    const { url, token } = getRedisCredentials();
+    const reads = await Promise.allSettled(keys.map(async (key) => {
+      if (_testRedisStore) return _testRedisStore[key] ?? null;
+      const raw = await redisCommand(url, token, ['GET', key]);
+      return raw?.result == null ? null : JSON.parse(raw.result);
+    }));
+    const rawByKey = {};
+    reads.forEach((read, index) => {
+      if (read.status === 'fulfilled') rawByKey[keys[index]] = read.value;
+      else console.warn(`  [ExtractionGate] feed ${keys[index]} unavailable: ${read.reason?.message || read.reason}`);
+    });
+    const verdicts = evaluateExtractionShadow(predictions, rawByKey);
+    const summary = summarizeExtractionShadow(verdicts);
+    const count = (outcome) => summary.byOutcome[outcome] || 0;
+    console.log(`  [ExtractionGate] shadow hard=${summary.total} pass=${count('pass')} fail=${count('fail')} feed_unavailable=${count('feed_unavailable')} skipped=${count('skipped')} byFamily=${JSON.stringify(summary.byFamily)} byDomain=${JSON.stringify(summary.byDomain)}`);
+    for (const v of verdicts) {
+      if (v.outcome === 'fail') console.log(`  [ExtractionGate] would_downgrade id=${JSON.stringify(v.id)} family=${v.family} domain=${v.domain} metricKey=${JSON.stringify(v.metricKey)} reason=${v.reason}`);
+    }
+    return { verdicts, summary };
+  } catch (err) {
+    console.warn(`  [ExtractionGate] shadow skipped: ${err?.message || err}`);
+    return null;
+  }
 }
 
 async function readForecastRefreshRequest() {
@@ -17590,8 +17586,8 @@ const MARKET_IMPLICATIONS_STAGE_CACHE_PREFIX = 'forecast:llm-market-implications
 // overridden) order that actually has an API key, ONE attempt each (market_implications
 // forces maxRetries:0), summed with the 5s stage guard that getUsableForecastLlmBudgetMs
 // subtracts. Reserving only the PRIMARY timeout (the original 30_000) was a latent bug:
-// with the default openrouter→groq order a DeepSeek Flash timeout drained the
-// budget so the groq FALLBACK was stranded and a recoverable timeout was misreported as
+// with a two-provider order a DeepSeek Flash timeout drained the
+// budget so the FALLBACK was stranded and a recoverable timeout was misreported as
 // SEED_ERROR (health WARNING). Reserving the full chain means an admitted call can exhaust
 // the primary AND still run the fallback; below that we skip and preserve last-good (green,
 // age-based STALE_SEED still escalates past 2h) rather than attempt a chain we cannot finish.
@@ -19780,6 +19776,7 @@ export {
   callForecastLLM,
   __setForecastLlmRunDeadlineForTests,
   __setRedisStoreForTests,
+  runExtractionGateShadow,
   buildMarketImplicationsFingerprint,
   buildAndSeedMarketImplications,
 };

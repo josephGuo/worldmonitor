@@ -87,7 +87,7 @@
     "predictionMarkets": "Masoko ya Utabiri",
     "loadingMarkets": "Inapakia masoko ya ubashiri...",
     "infrastructure": "Ufichuzi wa Miundombinu",
-    "briefUnavailable": "Muhtasari wa AI haupatikani - sanidi GROQ_API_KEY katika Mipangilio.",
+    "briefUnavailable": "Muhtasari wa AI haupatikani - sanidi OPENROUTER_API_KEY katika Mipangilio.",
     "cached": "Imehifadhiwa",
     "fresh": "Safi",
     "noMarkets": "Hakuna masoko amilifu kwa nchi hii.",
@@ -260,6 +260,7 @@
       "supplierRetained": "Data ya wasambazaji imehifadhiwa kutoka uonyeshaji upya wa mwisho wa kuingiza data uliofanikiwa.",
       "source": "Vyanzo: Benki ya Dunia na Hifadhidata ya Uhamishaji Silaha ya SIPRI. TIV hupima ujazo wa uhamishaji, si thamani ya kifedha.",
       "sourceWorldBank": "Chanzo: Benki ya Dunia.",
+      "snapshotAssembled": "Picha ya data ya {{source}} imekusanywa {{time}}",
       "unavailable": "Haipatikani"
     },
     "foodStocks": "Hifadhi za chakula",
@@ -868,7 +869,7 @@
       "fresh": "Safi",
       "noMarkets": "Hakuna masoko ya utabiri yaliyopatikana",
       "predictionMarkets": "Masoko ya Utabiri",
-      "unavailable": "Muhtasari wa AI haupatikani - sanidi GROQ_API_KEY katika Mipangilio."
+      "unavailable": "Muhtasari wa AI haupatikani - sanidi OPENROUTER_API_KEY katika Mipangilio."
     },
     "countryBrief": {
       "identifying": "Inatambulisha nchi...",
@@ -884,7 +885,7 @@
       "predictionMarkets": "Masoko ya Utabiri",
       "loadingMarkets": "Inapakia masoko ya ubashiri...",
       "infrastructure": "Ufichuzi wa Miundombinu",
-      "briefUnavailable": "Muhtasari wa AI haupatikani - sanidi GROQ_API_KEY katika Mipangilio.",
+      "briefUnavailable": "Muhtasari wa AI haupatikani - sanidi OPENROUTER_API_KEY katika Mipangilio.",
       "cached": "Imehifadhiwa",
       "fresh": "Safi",
       "noMarkets": "Hakuna masoko ya utabiri yaliyopatikana",
@@ -1572,7 +1573,7 @@
       "rankingStories": "Kuorodhesha hadithi muhimu...",
       "analyzingSentiment": "Inachanganua hisia...",
       "generatingBrief": "Inazalisha muhtasari wa dunia...",
-      "infoTooltip": "<strong>Uchambuzi Unaoendeshwa na AI</strong><br>• <strong>Muhtasari wa Ulimwengu</strong>: Muhtasari wa AI (Groq/OpenRouter)<br>• <strong>Maoni</strong>: Uchanganuzi wa sauti ya habari<br>• <strong>Kasi</strong>: Hadithi zinazosonga haraka<br>• <strong>Viini muhimu</strong>: Wanajeshi na maandamano ya ramani kukatika)<br><em>Desktop pekee • Inaendeshwa na Llama 3.3 + Focal Point Detection</em>",
+      "infoTooltip": "<strong>Uchambuzi Unaoendeshwa na AI</strong><br>• <strong>Muhtasari wa Ulimwengu</strong>: Muhtasari wa AI (OpenRouter)<br>• <strong>Maoni</strong>: Uchanganuzi wa sauti ya habari<br>• <strong>Kasi</strong>: Hadithi zinazosonga haraka<br>• <strong>Viini muhimu</strong>: Wanajeshi na maandamano ya ramani kukatika)<br><em>Desktop pekee • Inaendeshwa na Llama 3.3 + Focal Point Detection</em>",
       "streamQualityLabel": "Ubora wa Video",
       "streamQualityDesc": "Weka ubora wa mitiririko yote ya moja kwa moja (hifadhi data ya chini)",
       "globeRenderScaleOptions": {
@@ -1584,7 +1585,7 @@
       },
       "mapFlashLabel": "Mapigo ya Tukio la Moja kwa Moja",
       "mapFlashDesc": "Mwangaza maeneo kwenye ramani wakati habari muhimu zinapofika",
-      "aiFlowCloudLabel": "Cloud AI (Groq & OpenRouter)",
+      "aiFlowCloudLabel": "Cloud AI (OpenRouter)",
       "aiFlowCloudDesc": "Tuma vichwa vya habari kwa wingu kwa muhtasari wa AI (inapendekezwa)",
       "aiFlowBrowserLabel": "Muundo wa Karibu wa Kivinjari",
       "aiFlowBrowserDesc": "Endesha AI ndani ya kivinjari chako",
@@ -2089,7 +2090,22 @@
       "infoTooltip": "<strong>Utawala wa BTC</strong> Dashibodi ya ishara mchanganyiko ya uwekaji wa Bitcoin na hamu ya hatari:<ul><li><strong>Ukwasi</strong>: Wakala wa ukwasi halisi wa Fed</li><li><strong>Mtiririko</strong>: Marejesho ya BTC dhidi ya QQQ ya siku 5</li><li><strong>Utawala</strong>: Mzunguko wa QQQ dhidi ya XLP (risk-on/off)</li><li><strong>Mwenendo wa BTC</strong>: Bei dhidi ya SMA50/200, Mayer Multiple</li><li><strong>Kiwango cha Hash</strong>: Mabadiliko ya hash ya mtandao ya siku 30</li><li><strong>Hofu na Tamaa</strong>: Kielezo cha hisia za soko</li></ul>Paneli hii ni ya utawala na uwekaji, si data pana ya uchumi mkuu."
     },
     "forecast": {
-      "infoTooltip": "<strong>Makadirio ya AI</strong> Makadirio ya uwezekano yanayotengenezwa na AI kwa matukio ya kijiografia na kiuchumi:<ul><li>Ufunikaji wa vikoa mbalimbali: migogoro, masoko, mnyororo wa ugavi, mtandao, siasa</li><li>Kila makadirio huonyesha uwezekano uliokadiriwa, kiwango cha uaminifu na upeo wa muda</li><li>Hulinganishwa na misingi ya masoko ya utabiri inapopatikana</li></ul>Makadirio husasishwa kadiri ishara mpya za kijasusi zinavyowasili. Chuja kwa kikoa ukitumia vichupo vilivyo hapo juu."
+      "infoTooltip": "<strong>Makadirio ya AI</strong> Makadirio ya uwezekano yanayotengenezwa na AI kwa matukio ya kijiografia na kiuchumi:<ul><li>Ufunikaji wa vikoa mbalimbali: migogoro, masoko, mnyororo wa ugavi, mtandao, siasa</li><li>Kila makadirio huonyesha uwezekano uliokadiriwa, kiwango cha uaminifu na upeo wa muda</li><li>Hulinganishwa na misingi ya masoko ya utabiri inapopatikana</li></ul>Makadirio husasishwa kadiri ishara mpya za kijasusi zinavyowasili. Chuja kwa kikoa ukitumia vichupo vilivyo hapo juu.",
+      "record": {
+        "label": "Rekodi ya utendaji",
+        "labelHint": "Jinsi utabiri uliochapishwa ulivyopata alama baada ya kuamuliwa, katika siku {{days}} zilizopita. Elea juu ya nambari kuona maana yake.",
+        "unavailable": "Haipatikani kwa sasa",
+        "insufficient": "Bado hakuna utabiri wa kutosha uliopimwa",
+        "brier": "Alama ya Brier {{score}} (n={{n}})",
+        "brierHint": "Alama ya Brier kwa utabiri {{n}} uliopimwa: wastani wa mraba wa tofauti kati ya uwezekano uliotabiriwa na kilichotokea. 0 ni kamili, 0.25 ni sawa na kurusha sarafu, chini ni bora.",
+        "baseRate": "Kiwango cha msingi {{score}} (n={{n}})",
+        "baseRateHint": "Alama ambayo mtu anayejibu kila mara kiwango cha \"ndiyo\" kilichoonekana angepata kwenye utabiri {{n}} uleule ({{pct}}% uliamuliwa \"ndiyo\"). Kuizidi kunamaanisha utabiri unaongeza taarifa.",
+        "void": "Batili {{pct}}% ({{count}} kati ya {{resolved}})",
+        "voidHint": "Utabiri ulioamuliwa lakini haukuweza kupimwa, kati ya {{resolved}} ulioamuliwa katika kipindi hiki.",
+        "stale": "Umepitwa na wakati",
+        "staleHint": "Ulipimwa mara ya mwisho {{date}}. Kipimo hakijaendeshwa tangu wakati huo, kwa hivyo nambari hizi ni za zamani kuliko inavyopaswa.",
+        "fullRecord": "Rekodi kamili"
+      }
     },
     "escalationCorrelation": {
       "infoTooltip": "<strong>Ufuatiliaji wa Kuongezeka kwa Mvutano</strong> Hutambua ishara za kijiografia zinazokutana:<ul><li>Huunganisha mienendo ya kijeshi, matukio ya migogoro na miinuko ya habari</li><li>Hupanga maeneo ya muunganiko kwa ukali (muhimu/juu/kati/chini)</li><li>Hufuatilia mwenendo wa kuongezeka au kupungua kwa mvutano kwa muda</li></ul>Bofya kadi ili kukuza eneo kwenye ramani."

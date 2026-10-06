@@ -358,7 +358,7 @@
       "loadingIndex": "Laddar index...",
       "loadingMarkets": "Laddar förutsägelsemarknader...",
       "generatingBrief": "Genererar underrättelseöversikt...",
-      "unavailable": "AI-kort inte tillgänglig — konfigurera GROQ_API_KEY i Inställningar.",
+      "unavailable": "AI-kort inte tillgänglig — konfigurera OPENROUTER_API_KEY i Inställningar.",
       "cached": "cachelagrad",
       "fresh": "Färsk",
       "noMarkets": "Inga förutsägande marknader hittades",
@@ -398,7 +398,7 @@
       "predictionMarkets": "Förutsägelsemarknader",
       "loadingMarkets": "Laddar förutsägelsemarknader...",
       "infrastructure": "Infrastrukturexponering",
-      "briefUnavailable": "AI-kort inte tillgänglig — konfigurera GROQ_API_KEY i Inställningar.",
+      "briefUnavailable": "AI-kort inte tillgänglig — konfigurera OPENROUTER_API_KEY i Inställningar.",
       "cached": "cachelagrad",
       "fresh": "Färsk",
       "noMarkets": "Inga förutsägande marknader hittades",
@@ -1248,7 +1248,7 @@
       "sourcesDetail": "{{active}}/{{total}} sources"
     },
     "insights": {
-      "infoTooltip": "<strong>AI-driven analys</strong><br>• <strong>World Brief</strong>: AI-sammanfattning (Groq/OpenRouter)<br>• <strong>Sentiment</strong>: Nyhetstonanalys<br>• <strong>__2__hastighet: snabbrörlig PH______2__position: <strong>Fokalpunkter</strong>: Korrelerar nyhetsenheter med kartsignaler (militär, protester, avbrott)<br><em>Endast skrivbord • Drivs av Llama 3.3 + Focal Point Detection</em>",
+      "infoTooltip": "<strong>AI-driven analys</strong><br>• <strong>World Brief</strong>: AI-sammanfattning (OpenRouter)<br>• <strong>Sentiment</strong>: Nyhetstonanalys<br>• <strong>__2__hastighet: snabbrörlig PH______2__position: <strong>Fokalpunkter</strong>: Korrelerar nyhetsenheter med kartsignaler (militär, protester, avbrott)<br><em>Endast skrivbord • Drivs av Llama 3.3 + Focal Point Detection</em>",
       "noStories": "Inga breaking- eller flerkällshistorier ännu",
       "step": "Step {{step}}/{{total}}",
       "waitingForData": "Waiting for news data...",
@@ -1257,7 +1257,7 @@
       "generatingBrief": "Generating world brief...",
       "mapFlashLabel": "Live Event Pulse",
       "mapFlashDesc": "Flash locations on the map when breaking news arrives",
-      "aiFlowCloudLabel": "Moln-AI (Groq & OpenRouter)",
+      "aiFlowCloudLabel": "Moln-AI (OpenRouter)",
       "aiFlowCloudDesc": "Skicka rubriker till molnet för AI-sammanfattning (rekommenderat)",
       "aiFlowBrowserLabel": "Lokal webbläsarmodell",
       "aiFlowBrowserDesc": "Kör AI lokalt i din webbläsare",
@@ -1970,7 +1970,22 @@
       "unscored": "Narrativa scenarier, ej bedömda för noggrannhet."
     },
     "forecast": {
-      "infoTooltip": "<strong>AI-prognoser</strong> AI-genererade sannolikhetsuppskattningar för geopolitiska och ekonomiska händelser:<ul><li>Täckning över domäner: konflikt, marknader, försörjningskedjor, cyber, politik</li><li>Varje prognos visar uppskattad sannolikhet, konfidensnivå och tidshoriont</li><li>Kalibrerad mot prediktionsmarknadsbaser där tillgängligt</li></ul>Prognoser uppdateras när nya efterrättelsetecken kommer in. Filtrera efter domän med flikarna ovan."
+      "infoTooltip": "<strong>AI-prognoser</strong> AI-genererade sannolikhetsuppskattningar för geopolitiska och ekonomiska händelser:<ul><li>Täckning över domäner: konflikt, marknader, försörjningskedjor, cyber, politik</li><li>Varje prognos visar uppskattad sannolikhet, konfidensnivå och tidshoriont</li><li>Kalibrerad mot prediktionsmarknadsbaser där tillgängligt</li></ul>Prognoser uppdateras när nya efterrättelsetecken kommer in. Filtrera efter domän med flikarna ovan.",
+      "record": {
+        "label": "Facit hittills",
+        "labelHint": "Hur de publicerade prognoserna bedömdes när de avgjorts, under de senaste {{days}} dagarna. Håll muspekaren över ett tal för att se vad det betyder.",
+        "unavailable": "Inte tillgängligt just nu",
+        "insufficient": "Inte tillräckligt många bedömda prognoser ännu",
+        "brier": "Brier-poäng {{score}} (n={{n}})",
+        "brierHint": "Brier-poäng för {{n}} bedömda prognoser: medelvärdet av kvadraten på skillnaden mellan prognosens sannolikhet och vad som hände. 0 är perfekt, 0,25 motsvarar ett myntkast, lägre är bättre.",
+        "baseRate": "Basfrekvens {{score}} (n={{n}})",
+        "baseRateHint": "Vad någon som alltid svarar den observerade ja-andelen hade fått på samma {{n}} prognoser ({{pct}} % avgjordes med ja). Att slå den betyder att prognoserna tillför information.",
+        "void": "Ogiltiga {{pct}} % ({{count}} av {{resolved}})",
+        "voidHint": "Avgjorda prognoser som inte kunde bedömas, av {{resolved}} avgjorda under perioden.",
+        "stale": "Inaktuellt",
+        "staleHint": "Senast bedömt {{date}}. Bedömningen har inte körts sedan dess, så dessa siffror är äldre än de borde vara.",
+        "fullRecord": "Fullständigt facit"
+      }
     },
     "escalationCorrelation": {
       "infoTooltip": "<strong>Eskaleringsövervakning</strong> Detekterar konvergerande geopolitiska signaler:<ul><li>Korrelerar militära rörelser, konflikthändelser och nyhetsspikar</li><li>Poängsätter konvergenszoner efter allvarlighetsgrad (kritisk/hög/medel/låg)</li><li>Spårar eskalerings- eller de-eskaleringstrender över tid</li></ul>Klicka på ett kort för att zooma in på regionen på kartan."
@@ -3245,7 +3260,7 @@
     "predictionMarkets": "Förutsägelsemarknader",
     "loadingMarkets": "Laddar förutsägelsemarknader...",
     "infrastructure": "Infrastrukturexponering",
-    "briefUnavailable": "AI-sammanfattning ej tillgänglig — konfigurera GROQ_API_KEY i Inställningar.",
+    "briefUnavailable": "AI-sammanfattning ej tillgänglig — konfigurera OPENROUTER_API_KEY i Inställningar.",
     "cached": "Cachelagrad",
     "fresh": "Aktuell",
     "noMarkets": "Inga förutsägelsemarknader hittades",
@@ -3315,6 +3330,7 @@
       "suppliers": "Arms suppliers ({{start}}–{{end}})",
       "source": "Sources: World Bank and SIPRI Arms Transfers Database. TIV measures transfer volume, not financial value.",
       "sourceWorldBank": "Source: World Bank.",
+      "snapshotAssembled": "Ögonblicksbild för {{source}} sammanställd {{time}}",
       "unavailable": "Not available",
       "coverage": "Mapped coverage",
       "supplierRetained": "Supplier data retained from the last successful importer refresh."

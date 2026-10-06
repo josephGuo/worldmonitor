@@ -85,7 +85,7 @@
     "predictionMarkets": "Jósló piacok",
     "loadingMarkets": "Jósló piacok betöltése...",
     "infrastructure": "Infrastruktúra expozíció",
-    "briefUnavailable": "AI összefoglaló nem érhető el — konfiguráljon GROQ_API_KEY értéket a Beállítások között.",
+    "briefUnavailable": "AI összefoglaló nem érhető el — konfiguráljon OPENROUTER_API_KEY értéket a Beállítások között.",
     "cached": "Gyorsítótárban",
     "fresh": "Friss",
     "noMarkets": "Nincsenek aktív piacok ehhez az országhoz.",
@@ -145,6 +145,7 @@
       "suppliers": "Arms suppliers ({{start}}–{{end}})",
       "source": "Sources: World Bank and SIPRI Arms Transfers Database. TIV measures transfer volume, not financial value.",
       "sourceWorldBank": "Source: World Bank.",
+      "snapshotAssembled": "{{source}} adatpillanatkép összeállítva: {{time}}",
       "unavailable": "Not available",
       "coverage": "Mapped coverage",
       "supplierRetained": "Supplier data retained from the last successful importer refresh."
@@ -868,7 +869,7 @@
       "fresh": "Friss",
       "noMarkets": "Nem található jóslatpiac",
       "predictionMarkets": "Jóslatpiacok",
-      "unavailable": "AI-összefoglaló nem elérhető — állítsd be a GROQ_API_KEY-t a Beállításoknál."
+      "unavailable": "AI-összefoglaló nem elérhető — állítsd be a OPENROUTER_API_KEY-t a Beállításoknál."
     },
     "countryBrief": {
       "identifying": "Ország azonosítása...",
@@ -884,7 +885,7 @@
       "predictionMarkets": "Jóslatpiacok",
       "loadingMarkets": "Jóslatpiacok betöltése...",
       "infrastructure": "Infrastruktúra Expo",
-      "briefUnavailable": "AI-összefoglaló nem elérhető — állítsd be a GROQ_API_KEY-t a Beállításoknál.",
+      "briefUnavailable": "AI-összefoglaló nem elérhető — állítsd be a OPENROUTER_API_KEY-t a Beállításoknál.",
       "cached": "Gyorsítótárazott",
       "fresh": "Friss",
       "noMarkets": "Nem található jóslatpiac",
@@ -1572,7 +1573,7 @@
       "rankingStories": "Fontos történetek rangsorolása...",
       "analyzingSentiment": "Hangulatelemzés...",
       "generatingBrief": "Világösszefoglaló generálása...",
-      "infoTooltip": "<strong>AI-alapú elemzés</strong><br>• <strong>Világösszefoglaló</strong>: AI-összefoglalás (Groq/OpenRouter)<br>• <strong>Hangulat</strong>: Hírek tónusának elemzése<br>• <strong>Sebesség</strong>: Gyorsan mozgó történetek<br>• <strong>Fókuszpontok</strong>: Hírjellegzetességek korrelációja térképi jelekkel (katonai, tüntetések, kimaradások)<br><em>Csak asztal • Llama 3.3 + Fókuszpont-detektálás működteti</em>",
+      "infoTooltip": "<strong>AI-alapú elemzés</strong><br>• <strong>Világösszefoglaló</strong>: AI-összefoglalás (OpenRouter)<br>• <strong>Hangulat</strong>: Hírek tónusának elemzése<br>• <strong>Sebesség</strong>: Gyorsan mozgó történetek<br>• <strong>Fókuszpontok</strong>: Hírjellegzetességek korrelációja térképi jelekkel (katonai, tüntetések, kimaradások)<br><em>Csak asztal • Llama 3.3 + Fókuszpont-detektálás működteti</em>",
       "streamQualityLabel": "Videó minősége",
       "streamQualityDesc": "Az összes élő stream minőségének beállítása (alacsonyabb érték sávszélességet takarít meg)",
       "globeRenderScaleOptions": {
@@ -1584,7 +1585,7 @@
       },
       "mapFlashLabel": "Élő esemény impulzus",
       "mapFlashDesc": "Helyeket villan fel a térképen, amikor Breaking News érkezik",
-      "aiFlowCloudLabel": "Felhő AI (Groq & OpenRouter)",
+      "aiFlowCloudLabel": "Felhő AI (OpenRouter)",
       "aiFlowCloudDesc": "Címsorok küldése a felhőbe AI-összegzéshez (javasolt)",
       "aiFlowBrowserLabel": "Böngésző helyi modell",
       "aiFlowBrowserDesc": "AI futtatása helyileg a böngészőben",
@@ -2086,7 +2087,22 @@
       "infoTooltip": "<strong>BTC rendszer</strong> Összetett jellemző irányítópult a Bitcoin pozicionálásához és a kockázati étvágyhoz:<ul><li><strong>Likviditás</strong>: Nettó Fed likviditás proxy</li><li><strong>Áramlás</strong>: BTC vs QQQ 5 napos hozam</li><li><strong>Rendszer</strong>: QQQ vs XLP rotáció (kockázat kapcsolva/ki)</li><li><strong>BTC trend</strong>: Ár vs SMA50/200, Mayer többszörös</li><li><strong>Hash ráta</strong>: 30 napos hálózati hash változás</li><li><strong>Félelem és mohóság</strong>: Piaci sentiment index</li></ul>Ez a panel a pozicionáláshoz és a rendszerhez szól, nem a széles makro adatokhoz."
     },
     "forecast": {
-      "infoTooltip": "<strong>AI Előrejelzések</strong> Mesterséges intelligencia által generált valószínűségi becslések geopolitikai és gazdasági eseményekre:<ul><li>Több területet lefedő előrejelzések: konfliktus, piacok, ellátási lánc, kibervédelem, politika</li><li>Minden előrejelzés becsült valószínűséget, megbízhatósági szintet és időhorizontot mutat</li><li>Kalibrálva az előrejelzési piacok alapértékei alapján, ahol elérhető</li></ul>Az előrejelzések frissülnek, ahogy új híreszerzési jelek érkeznek. A szűréshez használja a fenti lapokat."
+      "infoTooltip": "<strong>AI Előrejelzések</strong> Mesterséges intelligencia által generált valószínűségi becslések geopolitikai és gazdasági eseményekre:<ul><li>Több területet lefedő előrejelzések: konfliktus, piacok, ellátási lánc, kibervédelem, politika</li><li>Minden előrejelzés becsült valószínűséget, megbízhatósági szintet és időhorizontot mutat</li><li>Kalibrálva az előrejelzési piacok alapértékei alapján, ahol elérhető</li></ul>Az előrejelzések frissülnek, ahogy új híreszerzési jelek érkeznek. A szűréshez használja a fenti lapokat.",
+      "record": {
+        "label": "Eddigi eredmények",
+        "labelHint": "Hogyan szerepeltek a közzétett előrejelzések az eldőlésük után az elmúlt {{days}} napban. Vigye az egeret egy szám fölé, hogy lássa, mit jelent.",
+        "unavailable": "Jelenleg nem elérhető",
+        "insufficient": "Még nincs elég értékelt előrejelzés",
+        "brier": "Brier-pontszám {{score}} (n={{n}})",
+        "brierHint": "Brier-pontszám {{n}} értékelt előrejelzésre: az előrejelzett valószínűség és a tényleges kimenetel különbségének átlagos négyzete. A 0 tökéletes, a 0,25 egy érmefeldobásnak felel meg, az alacsonyabb a jobb.",
+        "baseRate": "Alapráta {{score}} (n={{n}})",
+        "baseRateHint": "Amit az érne el, aki mindig a megfigyelt „igen” arányt mondaná ugyanerre a(z) {{n}} előrejelzésre ({{pct}}% dőlt el „igen”-nel). Ha ennél jobbak vagyunk, az előrejelzések valódi információt adnak.",
+        "void": "Érvénytelen {{pct}}% ({{count}} / {{resolved}})",
+        "voidHint": "Eldőlt, de nem értékelhető előrejelzések, az időszakban eldőlt {{resolved}} közül.",
+        "stale": "Elavult",
+        "staleHint": "Utolsó értékelés: {{date}}. Az értékelő azóta nem futott, így ezek a számok régebbiek a kelleténél.",
+        "fullRecord": "Teljes eredménylista"
+      }
     },
     "escalationCorrelation": {
       "infoTooltip": "<strong>Eszkalációs Monitor</strong> Konvergens geopolitikai jeleket detektál:<ul><li>Korrelál katonai mozgásokat, konfliktusesemények és hírvágásokat</li><li>Konvergenciaövezeteket súlyosság szerint értékeli (kritikus/magas/közepes/alacsony)</li><li>Nyomon követi az eszkalációs vagy de-eszkalációs trendeket az idő során</li></ul>Kattintson egy kártyára, hogy nagyítson a térképhez."
