@@ -171,6 +171,7 @@
       "scripts/_bet-templates-markets-classify.mjs",
       "scripts/_cii-risk-cache-keys.mjs",
       "scripts/_ema-threat-engine.mjs",
+      "scripts/_forecast-calibration.mjs",
       "scripts/_forecast-dashboard.mjs",
       "scripts/_forecast-funnel.mjs",
       "scripts/_forecast-resolution-eval.mjs",
@@ -1526,6 +1527,7 @@
       "scripts/seed-forecasts.mjs",
       "scripts/shared/compare-and-delete-script.cjs",
       "scripts/shared/country-names.json",
+      "scripts/shared/judged-subject-terms.json",
       "shared/country-names.json"
     ],
     "documentedAt": "scripts/seed-forecast-resolutions.mjs (header docblock declares daily cron)"
@@ -1539,6 +1541,7 @@
       "scripts/_bet-templates-markets-classify.mjs",
       "scripts/_cii-risk-cache-keys.mjs",
       "scripts/_ema-threat-engine.mjs",
+      "scripts/_forecast-calibration.mjs",
       "scripts/_forecast-dashboard.mjs",
       "scripts/_forecast-funnel.mjs",
       "scripts/_forecast-resolution-eval.mjs",
@@ -1892,6 +1895,7 @@
       "scripts/_bet-templates-markets-classify.mjs",
       "scripts/_cii-risk-cache-keys.mjs",
       "scripts/_ema-threat-engine.mjs",
+      "scripts/_forecast-calibration.mjs",
       "scripts/_forecast-dashboard.mjs",
       "scripts/_forecast-funnel.mjs",
       "scripts/_forecast-resolution-eval.mjs",
