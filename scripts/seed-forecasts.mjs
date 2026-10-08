@@ -9,7 +9,7 @@ import { compactForecastDashboardPayload } from './_forecast-dashboard.mjs';
 import { unwrapEnvelope } from './_seed-envelope-source.mjs';
 import { allBootstrapMarkets } from './_prediction-classify.mjs';
 import { tagRegions } from './_prediction-scoring.mjs';
-import { attachResolutionSpecs, CHOKEPOINT_MARKET_REGIONS, evaluateExtractionShadow, extractionShadowFeedKeys, HORIZON_MS, scoredHorizonKeys, summarizeExtractionShadow } from './_forecast-resolution.mjs';
+import { attachResolutionSpecs, CHOKEPOINT_MARKET_REGIONS, evaluateExtractionShadow, isChokepointDisrupted, extractionShadowFeedKeys, HORIZON_MS, scoredHorizonKeys, summarizeExtractionShadow } from './_forecast-resolution.mjs';
 import { assessFunnelDiversity, NON_REAL_FUNNEL_ORIGINS } from './_forecast-funnel.mjs';
 import { alignPriorToPublication, applyPublishedCalibration, CALIBRATION_FORCE_RAW_ENV, decideCalibrationPublication, parseCalibrationMap, recordCalibrationPublication } from './_forecast-calibration.mjs';
 import { resolveR2StorageConfig, putR2JsonObject, getR2JsonObject } from './_r2-storage.mjs';
@@ -25,6 +25,7 @@ import {
 import { loadTickerSet } from './_ticker-validation.mjs';
 import { computeEmaWindows, computeRisk24h } from './_ema-threat-engine.mjs';
 import { CII_RISK_SCORE_CACHE_KEYS } from './_cii-risk-cache-keys.mjs';
+import { GPS_ZONE_MIN_HEXES, MARITIME_REGIONS, hexesInMaritimeRegion } from './_gps-maritime-regions.mjs';
 // Queue / outcome / runId constants live in the shared shim so the
 // HTTP-trigger handler (server/_shared/simulation-queue.ts) and this
 // seeder agree on the Redis schema. See #3734 + docs/plans/2026-05-18-
@@ -1332,8 +1333,7 @@ function detectSupplyChainScenarios(inputs) {
   const seenRoutes = new Set();
 
   for (const cp of chokepoints) {
-    const disrupted = cp.disrupted || cp.status === 'disrupted' || (cp.riskScore || 0) > 65;
-    if (!disrupted) continue;
+    if (!isChokepointDisrupted(cp.riskScore)) continue;
 
     const route = cp.route || cp.name || cp.region || '';
     if (!route || seenRoutes.has(route)) continue;
@@ -2107,14 +2107,6 @@ function detectCyberScenarios(inputs) {
   return predictions;
 }
 
-const MARITIME_REGIONS = {
-  'Eastern Mediterranean': { latRange: [33, 37], lonRange: [25, 37] },
-  'Red Sea': { latRange: [11, 22], lonRange: [32, 54] },
-  'Persian Gulf': { latRange: [20, 32], lonRange: [45, 60] },
-  'Black Sea': { latRange: [40, 48], lonRange: [26, 42] },
-  'Baltic Sea': { latRange: [52, 65], lonRange: [10, 32] },
-};
-
 function detectGpsJammingScenarios(inputs) {
   const predictions = [];
   const zones = Array.isArray(inputs.gpsJamming) ? inputs.gpsJamming
@@ -2122,13 +2114,8 @@ function detectGpsJammingScenarios(inputs) {
   if (zones.length === 0) return predictions;
 
   for (const [region, bounds] of Object.entries(MARITIME_REGIONS)) {
-    const inRegion = zones.filter(h => {
-      const lat = h.lat || h.latitude || 0;
-      const lon = h.lon || h.longitude || 0;
-      return lat >= bounds.latRange[0] && lat <= bounds.latRange[1]
-          && lon >= bounds.lonRange[0] && lon <= bounds.lonRange[1];
-    });
-    if (inRegion.length < 3) continue;
+    const inRegion = hexesInMaritimeRegion(zones, bounds);
+    if (inRegion.length < GPS_ZONE_MIN_HEXES) continue;
     predictions.push(makePrediction(
       'supply_chain', region,
       `GPS interference in ${region} shipping zone`,
@@ -4994,7 +4981,9 @@ function buildHistoryForecastEntry(pred) {
     } : null,
     // Resolution spec (#4976 Bet 1) — same camelCase block the canonical
     // payload emits, so Bet 2's resolver can score forecasts still in-window.
-    resolution: buildResolutionOutputBlock(pred.resolution),
+    // History also keeps the rule version, or the resolver would migrate a
+    // window it opens from a current emission as if it were legacy (#8990).
+    resolution: buildHistoryResolutionBlock(pred.resolution),
     // Per-horizon projection contracts (#7075). History only, hard contracts
     // only: the resolver registers one window per hard contract and reads
     // nothing else, and the resolver re-reads 200 snapshots every cycle, so an
@@ -5614,6 +5603,12 @@ function buildResolutionOutputBlock(resolution) {
   };
 }
 
+function buildHistoryResolutionBlock(resolution) {
+  const block = buildResolutionOutputBlock(resolution);
+  if (!block || typeof resolution.rule !== 'string' || !Number.isFinite(resolution.ruleVersion)) return block;
+  return { ...block, rule: resolution.rule, ruleVersion: resolution.ruleVersion };
+}
+
 function buildHorizonResolutionsOutputBlock(horizonResolutions) {
   if (!horizonResolutions || typeof horizonResolutions !== 'object') return null;
   const num = (v) => (Number.isFinite(v) ? Number(v) : undefined);
@@ -5622,7 +5617,7 @@ function buildHorizonResolutionsOutputBlock(horizonResolutions) {
   for (const [horizon, spec] of Object.entries(horizonResolutions)) {
     if (spec?.kind !== 'hard') continue;
     block[horizon] = Object.fromEntries(Object.entries({
-      ...buildResolutionOutputBlock(spec),
+      ...buildHistoryResolutionBlock(spec),
       horizon: str(spec.horizon),
       timeHorizon: str(spec.timeHorizon),
       semantics: str(spec.semantics),

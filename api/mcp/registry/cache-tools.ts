@@ -530,7 +530,8 @@ const FORECAST_VOID_REASONS = new Set([
   'unsupported_window', 'unsupported_metric_key', 'not_hard_spec', 'missing_threshold',
   'missing_deadline', 'missing_generated_at', 'beyond_archive_horizon', 'no_archive_evidence',
   'all_judges_void', 'judge_disagreement', 'judge_retry_exhausted', 'withheld_unpublished', 'other',
-  'resolver_envelope_bug', 'market_price_not_outcome', 'judged_evidence_unreliable',
+  'resolver_envelope_bug', 'market_price_not_outcome', 'judged_evidence_unreliable', 'judged_old_selection',
+  'late_read', 'feed_unavailable', 'resolver_could_not_read_feed',
 ]);
 
 function forecastFamilyOutcomes(data: Record<string, unknown>, ids: string[]) {
@@ -1452,7 +1453,7 @@ export const CACHE_TOOLS: ToolDef[] = [
     name: 'get_natural_disasters',
     _uiResourceUri: NATURAL_DISASTERS_UI_URI,
     _outputBudgetBytes: 131072,
-    description: 'Recent M4.5+ earthquakes (USGS and Earthquakes Canada / NRCan), active wildfires (NASA FIRMS), and natural hazard events. Pro panels charge one allocation per opening; repeated views reuse the admission. Snapshot reuse is bounded by source clocks and known health, not complete provider coverage.',
+    description: 'Recent M4.5+ earthquakes (USGS and Earthquakes Canada / NRCan), active wildfires (NASA FIRMS), and natural hazard events. Pro panels charge one allocation per opening; repeated views reuse the admission. Snapshot reuse is bounded by source clocks and known health, not complete provider coverage. Oversized paid panels may simplify or omit public geometry and regional detail, with explicit transportCoverage counts; API allowance reads retain full detail.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1470,7 +1471,8 @@ export const CACHE_TOOLS: ToolDef[] = [
       },
       required: [],
     },
-    outputSchema: cacheEnvelope({
+    outputSchema: (() => {
+      const schema = cacheEnvelope({
       earthquakes: {
         type: ['object', 'null'],
         properties: {
@@ -1512,7 +1514,25 @@ export const CACHE_TOOLS: ToolDef[] = [
           } } },
         },
       },
-    }),
+      }) as { properties: Record<string, unknown> };
+      return { ...schema, properties: { ...schema.properties, transportCoverage: {
+        type: 'object', required: ['count_scope', 'details'], properties: {
+          count_scope: { const: 'post_filter_snapshot' },
+          details: { type: 'array', items: { type: 'object', required: [
+            'dataset', 'collection', 'event_id', 'event_index', 'field', 'state', 'original_count',
+            'returned_count', 'omitted_count', 'omission_reason', 'geometry_simplified',
+          ], properties: {
+            dataset: { const: 'events' }, collection: { type: 'string' },
+            event_id: { type: ['string', 'null'] }, event_index: { type: ['integer', 'null'], minimum: 0 },
+            field: { type: 'string' }, state: { const: 'available' },
+            original_count: { type: 'integer', minimum: 0 }, returned_count: { type: 'integer', minimum: 0 },
+            omitted_count: { type: 'integer', minimum: 0 },
+            omission_reason: { enum: ['geometry_simplified', 'output_budget'] }, geometry_simplified: { type: 'boolean' },
+            original_ring_count: { type: 'integer', minimum: 0 }, returned_ring_count: { type: 'integer', minimum: 0 },
+          } } },
+        },
+      } } };
+    })(),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     _postFilter: (data, params) => {
       const minMag = argNum(params.min_magnitude);
@@ -2246,9 +2266,19 @@ export const CACHE_TOOLS: ToolDef[] = [
         type: ['object', 'null'],
         properties: {
           outbreaks: { type: 'array', items: { type: 'object', properties: {
-            disease: { type: 'string' }, country: { type: 'string' }, countryCode: { type: 'string' },
-            cases: { type: ['number', 'null'] }, deaths: { type: ['number', 'null'] }, date: { type: 'string' },
+            id: { type: 'string', description: 'Source-derived report identifier; multiple sources may report one event.' },
+            disease: { type: 'string' }, location: { type: 'string' }, countryCode: { type: 'string' },
+            alertLevel: { type: 'string', description: 'Editorial watch, warning or alert classification, not a case-count measurement.' },
+            summary: { type: 'string' }, sourceName: { type: 'string' }, sourceUrl: { type: 'string' },
+            publishedAt: { type: 'number', description: 'Source report publication time in Unix epoch milliseconds, or fetch time when the source date is missing or invalid; this field alone does not confirm publication time.' },
+            lat: { type: 'number' }, lng: { type: 'number', description: 'Latitude/longitude are source locations or inferred points; both zero means unknown.' },
+            cases: { type: ['number', 'null'], description: 'Reported case count; zero, null or absence means unknown, not no cases.' },
+            country: { type: 'string', description: 'Optional legacy country field; current reports use location and countryCode.' },
+            deaths: { type: ['number', 'null'], description: 'Optional legacy count; absence is not zero.' },
+            date: { type: 'string', description: 'Optional legacy date; current reports use publishedAt.' },
           } } },
+          fetchedAt: { type: 'number', description: 'Snapshot fetch time in Unix epoch milliseconds; absent clocks remain unknown.' },
+          alertLevelMethodologyVersion: { type: 'string', description: 'Version of the editorial alert-level classifier.' },
         },
       },
       'air-quality': {

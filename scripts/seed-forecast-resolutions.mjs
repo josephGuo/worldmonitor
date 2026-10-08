@@ -20,7 +20,8 @@ import { CHROME_UA, getRedisCredentials, loadEnvFile, redisCommand, runSeed } fr
 import { unwrapEnvelope } from './_seed-envelope-source.mjs';
 import { resolveR2StorageConfig, putR2JsonObject } from './_r2-storage.mjs';
 import { parseMetricKey, resolveHardSpec, resolveHorizonSpec, extractMetricValue, extractMetricObservation, selectResolutionFeed, shapeResolutionFeeds, MARKET_SETTLEMENT_FEED_KEY } from './_forecast-resolution-eval.mjs';
-import { CONFLICT_COUNT_FEED_AVAILABLE, UNREST_COUNT_FEED_AVAILABLE, CONFLICT_COUNT_SOURCE_FEED, CYBER_COUNT_SOURCE_FEED, UNREST_COUNT_SOURCE_FEED, scoredHorizonKeys } from './_forecast-resolution.mjs';
+import { firstTimelySample, isLivePointRead, LATE_READ_MAX_LAG_MS, LATE_READ_VOID_REASON } from './_forecast-resolution-eval.mjs';
+import { CHOKEPOINT_DISRUPTED_MIN_SCORE, CHOKEPOINT_RESOLUTION_RULE, CHOKEPOINT_RESOLUTION_RULE_VERSION, CONFLICT_COUNT_FEED_AVAILABLE, UNREST_COUNT_FEED_AVAILABLE, CONFLICT_COUNT_SOURCE_FEED, CYBER_COUNT_SOURCE_FEED, UNREST_COUNT_SOURCE_FEED, scoredHorizonKeys } from './_forecast-resolution.mjs';
 import { buildFamilyOutcomes, buildPublicReceipts, computeScorecard, DEFAULT_ROLLING_WINDOW_DAYS, isDuplicateWindow, isHorizonEntry, isPublishedOriginEntry, isWithheldEntry } from './_forecast-scorecard.mjs';
 import { evaluateCalibrationShadow, resolveCalibrationMapForRun } from './_forecast-calibration.mjs';
 import { BETS_HISTORY_KEY } from './_forecast-bets-keys.mjs';
@@ -43,6 +44,7 @@ import {
 } from './_forecast-evidence-archive.mjs';
 import { readFileSync } from 'node:fs';
 import { JUDGED_EVIDENCE_GRACE_MS } from './_forecast-scorecard.mjs';
+import { GPS_RESOLUTION_RULE, GPS_RESOLUTION_RULE_VERSION, GPS_ZONE_MIN_HEXES } from './_gps-maritime-regions.mjs';
 
 export { JUDGED_EVIDENCE_GRACE_MS };
 
@@ -1641,6 +1643,11 @@ export function ingestHistory(existingLedger, historySnapshots, nowMs = Date.now
   // another question can precede an existing window of its own question, so
   // the correction runs again and the ledger converges in one run.
   correctLedgerWindows(ledger, nowMs, openingEmissions, { historyRead });
+  // After the window correction, so a duplicate keeps duplicate_window
+  // whichever of the two corrections reaches a ledger first.
+  voidOldSelectionJudgedResolutions(ledger, nowMs);
+  correctLateReads(ledger, nowMs);
+  relabelUnreadFeedVoids(ledger, nowMs);
   migratePendingCountFeedKeys(ledger);
   return sortLedger(ledger);
 }
@@ -1911,6 +1918,32 @@ function migratePendingCountEntry(entry, options = {}) {
     }
   }
   migratePendingCountEntryToJudged(entry, options);
+  migratePendingRule(entry);
+}
+
+// The rule each detector-gated metric resolves on, keyed by metric function.
+// GPS rows emitted before the persistence rule carry the emission-day hex
+// count as their threshold, and chokepoint rows emitted before #8990 carry
+// 60 where the detector emits at the feed's red boundary. No GPS row was ever
+// scored on its old threshold (every GPS row resolved before #8990 is VOID).
+const CURRENT_HARD_RULES = new Map([
+  ['hexCount', { threshold: GPS_ZONE_MIN_HEXES, rule: GPS_RESOLUTION_RULE, ruleVersion: GPS_RESOLUTION_RULE_VERSION }],
+  ['riskScore', { threshold: CHOKEPOINT_DISRUPTED_MIN_SCORE, rule: CHOKEPOINT_RESOLUTION_RULE, ruleVersion: CHOKEPOINT_RESOLUTION_RULE_VERSION }],
+]);
+
+// Each pending row moves to the current rule before it can resolve, and keeps
+// its first threshold for audit. A resolved row keeps the rule it was graded
+// on. Re-running is a no-op.
+function migratePendingRule(entry) {
+  const spec = entry.spec;
+  const current = CURRENT_HARD_RULES.get(parseMetricKey(spec.metricKey)?.fn);
+  if (!current) return;
+  if (spec.rule === current.rule && spec.ruleVersion === current.ruleVersion) return;
+  if (spec.supersededThreshold === undefined) spec.supersededThreshold = spec.threshold;
+  spec.operator = '>=';
+  spec.threshold = current.threshold;
+  spec.rule = current.rule;
+  spec.ruleVersion = current.ruleVersion;
 }
 
 // Families whose count-resolution feed is unavailable (empty without ACLED
@@ -2001,7 +2034,7 @@ export function samplePendingEntries(ledger, feedsByKey, nowMs) {
     // provides one, NOT the cycle time — otherwise a stale kept-warm reading
     // gets a post-deadline ts and is later preferred over the fresh quote,
     // defeating the settlement gate (#5243 P1). Feeds with no per-record
-    // timestamp (riskScore/hexCount/yesPrice) keep the cycle time.
+    // timestamp (riskScore/yesPrice) keep the cycle time.
     const sampleTs = Number.isFinite(asOf) ? asOf : nowMs;
     entry.samples = Number.isFinite(value)
       ? appendSample(entry.samples, { ts: sampleTs, value })
@@ -2067,14 +2100,134 @@ export function voidEnvelopeBugResolutions(ledger, nowMs) {
   return voided;
 }
 
+// Until #8995 the judged lane picked evidence by stock words from the question
+// template, with no deadline cutoff, so most verdicts sealed before its deploy
+// rest on off-subject or post-deadline items (#8990 audit: 14 of 27 YES/NO
+// verdicts unsupported). Every such row's window ended by 2026-08-23, outside
+// the 15-day evidence archive, so none can be judged again: each is voided,
+// its verdict and evidence kept as superseded. No judged YES or NO was sealed
+// between 2026-08-23 and the deploy, so the cutoff minute changes no row.
+// Re-running is a no-op: a voided row is no longer YES or NO.
+export const JUDGED_OLD_SELECTION_VOID_REASON = 'judged_old_selection';
+export const SUBJECT_GATED_SELECTION_SINCE_MS = Date.parse('2026-10-07T14:39:00Z');
+
+export function voidOldSelectionJudgedResolutions(ledger, nowMs) {
+  let voided = 0;
+  for (const entry of Object.values(ledger)) {
+    if (entry?.status !== 'resolved' || entry.spec?.kind !== 'judged') continue;
+    if (entry.outcome !== 'YES' && entry.outcome !== 'NO') continue;
+    if (!(Number(entry.resolvedAt) < SUBJECT_GATED_SELECTION_SINCE_MS)) continue;
+    entry.evidence = {
+      reason: JUDGED_OLD_SELECTION_VOID_REASON,
+      resolvedAt: entry.resolvedAt,
+      supersededOutcome: entry.outcome,
+      supersededEvidence: entry.evidence,
+      voidedAt: nowMs,
+    };
+    entry.outcome = 'VOID';
+    voided += 1;
+  }
+  return voided;
+}
+
+// These feeds held readings while the resolver could not read them, so rows
+// it sealed VOID no_establishable_metric ("the feed had no reading") before
+// the reader was fixed blame the feed for the resolver's fault (#9013). Each
+// cutoff is the first Railway deploy of seed-forecast-resolutions carrying
+// that feed's reader fix:
+//  - gpsjam: the resolver read a hexCount field the per-hex records never
+//    carry (fixed by #9003, deployed 2026-10-07T19:28:03Z).
+//  - outages and bootstrap markets: the resolver read the raw seed envelope
+//    and found no records (fixed by #8986, deployed 2026-10-07T12:43:54Z).
+//  - chokepoints: the resolver read riskScore, which the feed publishes as
+//    disruptionScore (fixed by #8893, deployed 2026-10-06T04:56:48Z).
+// The relabel keeps the outcome and resolvedAt and moves the old evidence
+// under supersededEvidence. A relabelled row no longer carries
+// no_establishable_metric, so re-running is a no-op.
+export const RESOLVER_COULD_NOT_READ_FEED_VOID_REASON = 'resolver_could_not_read_feed';
+const UNREADABLE_FEED_READER_FIXED_AT = new Map([
+  ['intelligence:gpsjam:v2', Date.parse('2026-10-07T19:28:03.541Z')],
+  ['infra:outages:v1', Date.parse('2026-10-07T12:43:54.342Z')],
+  ['prediction:markets-bootstrap:v1', Date.parse('2026-10-07T12:43:54.342Z')],
+  ['supply_chain:chokepoints:v4', Date.parse('2026-10-06T04:56:48.859Z')],
+]);
+
+function isUnreadFeedVoid(entry) {
+  if (entry?.outcome !== 'VOID' || entry.evidence?.reason !== 'no_establishable_metric') return false;
+  const fixedAt = UNREADABLE_FEED_READER_FIXED_AT.get(entry.spec?.sourceFeed);
+  return fixedAt !== undefined && Number(entry.resolvedAt) < fixedAt;
+}
+
+export function relabelUnreadFeedVoids(ledger, nowMs) {
+  let relabelled = 0;
+  for (const entry of Object.values(ledger)) {
+    if (!isUnreadFeedVoid(entry)) continue;
+    entry.evidence = {
+      reason: RESOLVER_COULD_NOT_READ_FEED_VOID_REASON,
+      metricKey: entry.spec.metricKey,
+      resolvedAt: entry.resolvedAt,
+      supersededEvidence: entry.evidence,
+      voidedAt: nowMs,
+    };
+    relabelled += 1;
+  }
+  return relabelled;
+}
+
+// Until #8990 a live at-deadline read had no lateness bound, so a window the
+// resolver reached days after its deadline was graded on that day's price.
+// Each run corrects those rows after the duplicate voids. A row whose read
+// landed more than LATE_READ_MAX_LAG_MS after the deadline is graded again
+// on the first on-time reading any window of the same metric sampled, the
+// reading the bounded resolver would have used, or sealed VOID late_read when
+// the ledger holds none. The replaced outcome and evidence are kept. A
+// corrected row reads on time or is VOID, so re-running changes nothing.
+export function correctLateReads(ledger, nowMs) {
+  const samplesByMetric = new Map();
+  for (const entry of Object.values(ledger)) {
+    const metricKey = entry?.spec?.metricKey;
+    if (!metricKey || !entry.samples?.recent?.length) continue;
+    if (!samplesByMetric.has(metricKey)) samplesByMetric.set(metricKey, []);
+    samplesByMetric.get(metricKey).push(...entry.samples.recent);
+  }
+  for (const entry of Object.values(ledger)) {
+    if (!isLateLiveRead(entry)) continue;
+    const superseded = { supersededOutcome: entry.outcome, supersededEvidence: entry.evidence };
+    const timely = firstTimelySample(samplesByMetric.get(entry.spec.metricKey), Number(entry.deadline));
+    if (timely) {
+      const result = resolveHardSpec(entry, null, [timely], Number(entry.resolvedAt));
+      entry.outcome = result.outcome;
+      entry.evidence = { ...result.evidence, envelopeAware: true, ...superseded, regradedAt: nowMs };
+      continue;
+    }
+    entry.evidence = {
+      reason: LATE_READ_VOID_REASON,
+      metricKey: entry.spec.metricKey,
+      resolvedAt: entry.resolvedAt,
+      maxReadLagMs: LATE_READ_MAX_LAG_MS,
+      ...superseded,
+      voidedAt: nowMs,
+    };
+    entry.outcome = 'VOID';
+  }
+}
+
+function isLateLiveRead(entry) {
+  if (entry?.status !== 'resolved' || (entry.outcome !== 'YES' && entry.outcome !== 'NO')) return false;
+  if (entry.spec?.kind !== 'hard' || isHorizonEntry(entry) || !isLivePointRead(entry.spec)) return false;
+  const readTs = Number(entry.evidence?.readTs ?? entry.resolvedAt);
+  return readTs - Number(entry.deadline) > LATE_READ_MAX_LAG_MS;
+}
+
 // Rows corrected after their receipt reached R2 (#5233 envelope voids,
-// #8990 duplicate voids and rescores) are written again so R2 holds the
-// correction. R2 writes are serial at about 450 ms (p90 about 780 ms), and the
-// whole run has a 150 s fetch phase, so each run rewrites at most this many
-// stale receipts, oldest first: 50 x 780 ms is about 40 s, which leaves the
-// run's own 20 to 60 s of feed reads and judge calls well inside the budget.
-// The backlog drains over later runs, and pruning keeps a stale row until its
-// receipt is rewritten.
+// #8990 duplicate voids, old-selection judged voids, late-read corrections,
+// #9013 unread-feed relabels and rescores) are written again so R2 holds the
+// correction. R2 writes are serial at about 450 ms (p90 about 780 ms), and
+// the whole run has a 150 s fetch phase, so each run rewrites at most this
+// many stale receipts, oldest first: 50 x 780 ms is about 40 s, which leaves
+// the run's own 20 to 60 s of feed reads and judge calls well inside the
+// budget. The backlog drains over later runs, and pruning keeps a stale row
+// until its receipt is rewritten.
 export const RECEIPT_REARCHIVE_PER_RUN = 50;
 
 export function collectUnarchivedReceipts(ledger, { rearchiveLimit = RECEIPT_REARCHIVE_PER_RUN } = {}) {
@@ -2091,6 +2244,8 @@ export function collectUnarchivedReceipts(ledger, { rearchiveLimit = RECEIPT_REA
     }));
 }
 
+const CORRECTION_VOID_REASONS = new Set([ENVELOPE_BUG_VOID_REASON, DUPLICATE_WINDOW_VOID_REASON, JUDGED_OLD_SELECTION_VOID_REASON, LATE_READ_VOID_REASON, RESOLVER_COULD_NOT_READ_FEED_VOID_REASON]);
+
 // Durable: derived from the correction stamps, so it holds until a later
 // archive write stamps receiptArchivedAt after the correction.
 export function receiptNeedsRearchive(entry) {
@@ -2098,7 +2253,8 @@ export function receiptNeedsRearchive(entry) {
   if (entry?.status !== 'resolved' || !entry.receiptArchivedAt || !Number.isFinite(archivedAt)) return false;
   const reason = entry.evidence?.reason;
   const correctedAt = Math.max(
-    reason === ENVELOPE_BUG_VOID_REASON || reason === DUPLICATE_WINDOW_VOID_REASON ? Number(entry.evidence.voidedAt) || 0 : 0,
+    CORRECTION_VOID_REASONS.has(reason) ? Number(entry.evidence.voidedAt) || 0 : 0,
+    Number(entry.evidence?.regradedAt) || 0,
     Number(entry.rescore?.rescoredAt) || 0,
   );
   return archivedAt < correctedAt;
