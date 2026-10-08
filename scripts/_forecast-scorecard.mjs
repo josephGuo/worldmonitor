@@ -126,7 +126,7 @@ export function computeScorecard(ledger, nowMs, options = {}) {
   if (skill) scorecard.skill = skill;
   scorecard.publishedByDomain = summarizePublishedByDomain(scored);
   scorecard.uncertainty = {
-    method: `entry-level percentile bootstrap, ${CALIBRATION_BOOTSTRAP_RESAMPLES} resamples, seed ${SCORECARD_BOOTSTRAP_SEED}`,
+    method: `family-level percentile bootstrap (each resample draws whole forecast families), ${CALIBRATION_BOOTSTRAP_RESAMPLES} resamples, seed ${SCORECARD_BOOTSTRAP_SEED}`,
     overallBrier: brierInterval(scored, 'overall'),
     skillBrier: brierInterval(scored.filter((entry) => !excludeOrigins.has(generationOriginOf(entry))), 'skill'),
   };
@@ -298,11 +298,15 @@ function summarizePublishedByDomain(scored) {
   }
   return [...byDomain.keys()].sort().map((domain) => {
     const entries = byDomain.get(domain);
+    const { bss, bssCi95, ...sample } = summarizeBaseRateSkill(entries, `domain:${domain}`);
     return {
       domain,
       count: entries.length,
       brier: round(mean(entries.map((entry) => brier(entry)))),
       yesCount: entries.filter((entry) => entry.outcome === 'YES').length,
+      ...sample,
+      // A domain's skill is published only where it is measurable (#8990).
+      ...(sample.measurable && { bss, bssCi95 }),
     };
   });
 }
@@ -318,6 +322,7 @@ function summarizeSkill(scored, excludeSet) {
   const excludedOrigins = [...new Set(excludedEntries.map(generationOriginOf))].sort();
   const summary = summarizeScored(real);
   return pruneUndefined({
+    ...(real.length ? summarizeBaseRateSkill(real, 'skill') : {}),
     count: real.length,
     // yesCount / count is the cohort's base rate, the null /accuracy/ compares
     // the headline Brier against (#8873). The pooled calibration buckets carry
@@ -327,6 +332,10 @@ function summarizeSkill(scored, excludeSet) {
     // Always an array (proto `repeated string` is non-optional): a typed client
     // reads skill.excludedOrigins.length on the healthy path, where it is [].
     excludedOrigins,
+    // Headline rows published after a blend toward a pre-#7071 anchor stay
+    // scored on what was published; this count keeps them visible (#9010).
+    // Internal: the public contract selects skill members by name.
+    preLineageAnchorCount: real.filter(hasPreLineageAnchor).length,
     brier: summary?.brier,
     logScore: summary?.logScore,
   });
@@ -503,13 +512,110 @@ function proportion(successes, count) {
 
 function brierInterval(entries, scope) {
   if (!entries.length) return null;
-  const scores = entries.map((entry) => brier(entry));
-  const { mean: ci95 } = pairedBootstrap(scores, { mean }, { scope, seed: SCORECARD_BOOTSTRAP_SEED });
+  const families = familyTotals(entries);
   return {
-    count: scores.length,
-    mean: round(mean(scores)),
-    ci95,
-    insufficientSample: scores.length < INTERVAL_MIN_SAMPLE,
+    count: entries.length,
+    mean: round(mean(entries.map((entry) => brier(entry)))),
+    ci95: familyBootstrap(families, (sum) => sum.brier / sum.rows, scope),
+    // The one flag the public contract has room for (#8990): /accuracy/ and
+    // the card strip read it as the headline's measurable gate.
+    insufficientSample: !meetsFamilyMinimums(families),
+  };
+}
+
+function meetsFamilyMinimums(families) {
+  return families.length >= SKILL_MIN_FAMILIES
+    && families.filter((family) => family.yes > 0).length >= SKILL_MIN_OUTCOME_FAMILIES
+    && families.filter((family) => family.yes < family.rows).length >= SKILL_MIN_OUTCOME_FAMILIES;
+}
+
+// A family is one forecast id (#8990): its windows ask the same question of
+// the same detector, so they are resampled together and counted once. The
+// scorecard's intervals and minimums, the calibration fit and the activation
+// gate (#9034) all use this.
+export function familyKey(entry) {
+  return typeof entry?.id === 'string' && entry.id ? entry.id : '';
+}
+
+function familyTotals(entries) {
+  const byFamily = new Map();
+  for (const entry of entries) {
+    const key = familyKey(entry);
+    const total = byFamily.get(key) ?? { rows: 0, yes: 0, brier: 0 };
+    total.rows += 1;
+    total.yes += outcomeNumber(entry);
+    total.brier += brier(entry);
+    byFamily.set(key, total);
+  }
+  return [...byFamily.values()];
+}
+
+// One cluster-bootstrap resample: as many families as the cohort holds, drawn
+// with replacement.
+function drawFamilies(families, random) {
+  const drawn = new Array(families.length);
+  for (let i = 0; i < families.length; i += 1) drawn[i] = families[Math.floor(random() * families.length)];
+  return drawn;
+}
+
+// Percentile bootstrap over whole families: each resample draws families with
+// replacement and pools their rows. A statistic that is undefined on a draw
+// (a resample whose outcomes all went one way has no base rate to beat) is
+// skipped; past 5% skipped the interval itself is not published.
+function familyBootstrap(families, statistic, scope) {
+  const random = mulberry32(seedFor(scope, SCORECARD_BOOTSTRAP_SEED));
+  const draws = [];
+  for (let r = 0; r < CALIBRATION_BOOTSTRAP_RESAMPLES; r += 1) {
+    const sum = { rows: 0, yes: 0, brier: 0 };
+    for (const family of drawFamilies(families, random)) {
+      sum.rows += family.rows;
+      sum.yes += family.yes;
+      sum.brier += family.brier;
+    }
+    const value = statistic(sum);
+    if (Number.isFinite(value)) draws.push(value);
+  }
+  if (draws.length < 0.95 * CALIBRATION_BOOTSTRAP_RESAMPLES) return null;
+  draws.sort((a, b) => a - b);
+  return [round(percentile(draws, 0.025)), round(percentile(draws, 0.975))];
+}
+
+// Brier skill score against the cohort's own base rate, BSS = 1 - B / p(1-p),
+// with p the YES share of the same rows. 0 is no better than always
+// forecasting that rate, 1 is perfect, below 0 is worse. Undefined (null)
+// when every outcome went one way, because then the rate is never wrong.
+function skillScore({ rows, yes, brier: brierSum }) {
+  const rate = yes / rows;
+  const reference = rate * (1 - rate);
+  return reference > 0 ? 1 - brierSum / rows / reference : NaN;
+}
+
+/**
+ * The skill block of one cohort (#8990): rows, families and Kish's effective
+ * n side by side, the reference Brier of always forecasting the cohort's base
+ * rate, the skill score against it with a family-bootstrap interval, and
+ * whether the cohort meets the family minimums for a verdict.
+ */
+function summarizeBaseRateSkill(entries, scope) {
+  const families = familyTotals(entries);
+  const total = families.reduce((sum, family) => ({
+    rows: sum.rows + family.rows, yes: sum.yes + family.yes, brier: sum.brier + family.brier,
+  }), { rows: 0, yes: 0, brier: 0 });
+  const rate = total.yes / total.rows;
+  const yesFamilies = families.filter((family) => family.yes > 0).length;
+  const noFamilies = families.filter((family) => family.yes < family.rows).length;
+  const bss = skillScore(total);
+  return {
+    families: families.length,
+    // Kish: (sum of family sizes)^2 / sum of squared sizes.
+    nEff: round(total.rows ** 2 / families.reduce((sum, family) => sum + family.rows ** 2, 0)),
+    yesFamilies,
+    noFamilies,
+    referenceBrier: round(rate * (1 - rate)),
+    bss: Number.isFinite(bss) ? round(bss) : null,
+    // Omitted, not null, when it cannot be computed: the contract field is a repeated double.
+    bssCi95: (Number.isFinite(bss) ? familyBootstrap(families, skillScore, `bss:${scope}`) : null) ?? undefined,
+    measurable: meetsFamilyMinimums(families),
   };
 }
 
@@ -611,12 +717,53 @@ const PROJECTION_HORIZON_ORDER = ['h24', 'd7', 'd30'];
 // Per-horizon projection lane (#7075). Reported beside the forecast scorecard,
 // never pooled into it: a Brier appears for a horizon only once that horizon
 // alone reaches the interval sample floor, so an early read cannot be mistaken
-// for measured skill.
+// for measured skill. The same rows are sliced by domain and by the
+// projection-curve version stamped at emission, so a curve change is read
+// apart from the windows the old curves produced.
 function summarizeProjectionHorizons(entries, nowMs) {
-  const byHorizon = PROJECTION_HORIZON_ORDER.map((horizon) => {
+  return {
+    semantics: 'point_in_time',
+    minSample: SKILL_MIN_FAMILIES,
+    methodology: `Brier over resolved YES/NO point-in-time projection windows, reported per horizon only once its scored windows come from at least ${SKILL_MIN_FAMILIES} forecast families with ${SKILL_MIN_OUTCOME_FAMILIES} YES and ${SKILL_MIN_OUTCOME_FAMILIES} NO families, and never pooled into the forecast headline; UNOBSERVED (no sample inside the stored tolerance) is counted apart from NO and VOID. The realized rate is the YES share of scored windows with a 95% Wilson interval; that interval treats each window as independent, so read it beside the family count. Slices by domain and by projection-curve version (null: the window was registered from a history emission that carries no version stamp) repeat the same per-horizon rows.`,
+    byHorizon: summarizeHorizonRows(entries, nowMs, 'projection'),
+    byDomain: sliceHorizonRows(entries, (entry) => entry?.domain || 'unknown').map(([domain, group]) => ({
+      domain,
+      byHorizon: summarizeHorizonRows(group, nowMs, `projection:domain:${domain}`),
+    })),
+    byCurvesVersion: sliceHorizonRows(entries, projectionCurvesVersionOf).map(([curvesVersion, group]) => ({
+      curvesVersion,
+      byHorizon: summarizeHorizonRows(group, nowMs, `projection:curves:${curvesVersion}`),
+    })),
+  };
+}
+
+function projectionCurvesVersionOf(entry) {
+  return Number.isInteger(entry?.projectionCurvesVersion) ? entry.projectionCurvesVersion : null;
+}
+
+// Sorted with null first, then ascending.
+function sliceHorizonRows(entries, keyOf) {
+  const groups = new Map();
+  for (const entry of entries) {
+    const key = keyOf(entry);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(entry);
+  }
+  return [...groups.entries()].sort(([a], [b]) => {
+    if (a === b) return 0;
+    if (a === null) return -1;
+    if (b === null) return 1;
+    return a < b ? -1 : 1;
+  });
+}
+
+function summarizeHorizonRows(entries, nowMs, scope) {
+  return PROJECTION_HORIZON_ORDER.map((horizon) => {
     const group = entries.filter((entry) => entry?.spec?.horizon === horizon);
     const resolved = group.filter((entry) => entry?.status === 'resolved');
     const scored = resolved.filter(isScoredEntry);
+    const families = familyTotals(scored);
+    const yes = scored.filter((entry) => entry.outcome === 'YES').length;
     const maturedPending = group.filter((entry) => {
       if (entry?.status === 'resolved') return false;
       const deadline = entryDeadline(entry);
@@ -628,36 +775,36 @@ function summarizeProjectionHorizons(entries, nowMs) {
       matured: resolved.length + maturedPending.length,
       resolved: resolved.length,
       scored: scored.length,
-      yes: scored.filter((entry) => entry.outcome === 'YES').length,
+      families: families.length,
+      yes,
       no: scored.filter((entry) => entry.outcome === 'NO').length,
       unobserved: resolved.filter((entry) => entry?.outcome === 'UNOBSERVED').length,
       void: resolved.filter((entry) => entry?.outcome === 'VOID').length,
-      brier: scored.length >= INTERVAL_MIN_SAMPLE ? brierInterval(scored, `projection:${horizon}`) : null,
-      insufficientSample: scored.length < INTERVAL_MIN_SAMPLE,
+      realizedRate: proportion(yes, scored.length),
+      brier: meetsFamilyMinimums(families) ? brierInterval(scored, `${scope}:${horizon}`) : null,
+      insufficientSample: !meetsFamilyMinimums(families),
     };
   });
-  return {
-    semantics: 'point_in_time',
-    minSample: INTERVAL_MIN_SAMPLE,
-    methodology: `Brier over resolved YES/NO point-in-time projection windows, reported per horizon only at or above ${INTERVAL_MIN_SAMPLE} scored windows and never pooled into the forecast headline; UNOBSERVED (no sample inside the stored tolerance) is counted apart from NO and VOID.`,
-    byHorizon,
-  };
 }
 
 // ---------------------------------------------------------------------------
 // Calibration shadow metrics and activation gate (#7070).
 //
-// Input rows are forward-cohort pairs { domain, y, raw, calibrated }: one
-// resolved YES/NO published-origin entry, its stored probability, and what the
-// calibration map would have published instead. Building those rows (and
-// refusing in-sample entries) belongs to _forecast-calibration.mjs; this is the
-// measurement half and holds no opinion on how the map was fitted.
+// Input rows are forward-cohort pairs { domain, family, y, raw, calibrated }:
+// one resolved YES/NO published-origin entry, its family key, its stored
+// probability, and what the calibration map would have published instead.
+// Building those rows (and refusing in-sample entries) belongs to
+// _forecast-calibration.mjs; this is the measurement half and holds no opinion
+// on how the map was fitted.
 // ---------------------------------------------------------------------------
 
 export const CALIBRATION_BOOTSTRAP_RESAMPLES = 2000;
 export const CALIBRATION_BOOTSTRAP_SEED = 7070;
-export const ACTIVATION_MIN_FORWARD_TOTAL = 60;
-export const ACTIVATION_MIN_FORWARD_DOMAIN = 30;
+// Forward minimums count families, not rows (#9034, amended preregistration on
+// #7070, 2026-10-08): a recurring question resolves window after window, so a
+// row count let three families pass on 70 rows.
+export const ACTIVATION_MIN_FORWARD_FAMILIES = 60;
+export const ACTIVATION_MIN_FORWARD_DOMAIN_FAMILIES = 30;
 // Upper bound of the paired 95% interval on (calibrated − raw) Brier must sit
 // at or below this margin. Preregistered here so the gate cannot be tuned
 // after the forward cohort is seen.
@@ -665,9 +812,20 @@ export const ACTIVATION_NON_INFERIORITY_MARGIN = 0.005;
 // Scorecard intervals (#7072) use their own seed so a change to the #7070
 // shadow gate's draws cannot move a published interval, and vice versa.
 export const SCORECARD_BOOTSTRAP_SEED = 7072;
-// Below this many entries an interval is still published, flagged as resting
-// on too small a sample to read as a stable estimate.
-export const INTERVAL_MIN_SAMPLE = 30;
+// A cohort is measurable from this many forecast families (#8990). A family is
+// one forecast id, and its windows share a question, a detector and an
+// outcome process, so its rows are not independent: on 2026-10-07 the 243
+// headline rows came from 42 families. Every interval here resamples whole
+// families, and a cluster bootstrap over fewer than about 30 clusters
+// understates its own width, so 30 families is the floor for a published
+// verdict. Below it an interval is still published, flagged as a small sample.
+export const SKILL_MIN_FAMILIES = 30;
+// ...and from this many families with a YES outcome and this many with a NO.
+// The reference Brier p(1-p) rests on the minority outcome: with one or two
+// YES families, one flip moves it by a third or more and the skill score with
+// it. Five of each is the np >= 5 and n(1-p) >= 5 rule behind the normal
+// approximation to a binomial rate, counted in families for the same reason.
+export const SKILL_MIN_OUTCOME_FAMILIES = 5;
 const RELIABILITY_BINS = 10;
 const WILSON_Z95 = 1.959963984540054;
 
@@ -748,23 +906,44 @@ function percentile(sorted, q) {
 }
 
 /**
- * Entry-level paired bootstrap: each resample draws entries (not raw and
- * calibrated values separately), so every statistic sees the same pairs.
+ * Family-cluster paired bootstrap (#9034): each resample draws whole families
+ * with replacement and pools their rows, and a row carries its raw and
+ * calibrated values together, so every statistic sees the same pairs. Windows
+ * of one family share an outcome history; resampling them one by one read a
+ * repeated question as independent evidence and narrowed the interval.
+ * Families keep first-seen order, so with one row per family the draws are
+ * those of a row bootstrap.
  */
 export function pairedBootstrap(rows, statistics, options = {}) {
   const resamples = options.resamples ?? CALIBRATION_BOOTSTRAP_RESAMPLES;
   const random = mulberry32(seedFor(options.scope ?? 'overall', options.seed ?? CALIBRATION_BOOTSTRAP_SEED));
   const names = Object.keys(statistics);
   const draws = Object.fromEntries(names.map((name) => [name, []]));
-  const sample = new Array(rows.length);
+  const families = rowsByFamily(rows);
+  const sample = [];
   for (let r = 0; r < resamples; r += 1) {
-    for (let i = 0; i < rows.length; i += 1) sample[i] = rows[Math.floor(random() * rows.length)];
+    sample.length = 0;
+    for (const family of drawFamilies(families, random)) for (const row of family) sample.push(row);
     for (const name of names) draws[name].push(statistics[name](sample));
   }
   return Object.fromEntries(names.map((name) => {
     const sorted = draws[name].sort((a, b) => a - b);
     return [name, [round(percentile(sorted, 0.025)), round(percentile(sorted, 0.975))]];
   }));
+}
+
+function rowsByFamily(rows) {
+  const byFamily = new Map();
+  for (const row of rows) {
+    if (typeof row?.family !== 'string') throw new TypeError('pairedBootstrap rows need a family key');
+    if (!byFamily.has(row.family)) byFamily.set(row.family, []);
+    byFamily.get(row.family).push(row);
+  }
+  return [...byFamily.values()];
+}
+
+function familyCount(rows) {
+  return new Set(rows.map((row) => row.family)).size;
 }
 
 const brierDeltaStatistic = (sample) => mean(sample.map((row) => rowBrier(row, 'calibrated') - rowBrier(row, 'raw')));
@@ -783,6 +962,7 @@ function summarizeShadowRows(rows, scope, options) {
   });
   return {
     count: rows.length,
+    families: familyCount(rows),
     positives: rows.reduce((sum, row) => sum + row.y, 0),
     raw: side('raw', intervals.rawEce),
     calibrated: side('calibrated', intervals.calibratedEce),
@@ -797,7 +977,7 @@ function summarizeShadowRows(rows, scope, options) {
  * their delta is zero by construction and shows the map stayed out of them.
  */
 export function summarizeCalibrationShadow(rows, modeByDomain = {}, options = {}) {
-  if (!rows.length) return { count: 0, positives: 0, byDomain: [] };
+  if (!rows.length) return { count: 0, families: 0, positives: 0, byDomain: [] };
   const domains = [...new Set(rows.map((row) => row.domain))].sort();
   return {
     ...summarizeShadowRows(rows, 'overall', options),
@@ -808,6 +988,7 @@ export function summarizeCalibrationShadow(rows, modeByDomain = {}, options = {}
         domain,
         mode: modeByDomain[domain] ?? 'identity',
         count: summary.count,
+        families: summary.families,
         positives: summary.positives,
         rawBrier: summary.raw.brier,
         calibratedBrier: summary.calibrated.brier,
@@ -818,7 +999,9 @@ export function summarizeCalibrationShadow(rows, modeByDomain = {}, options = {}
 }
 
 /**
- * The #7070 activation gate. Reports eligibility and every failing reason;
+ * The #7070 activation gate. Its minimums count forward families and its
+ * interval is the family-cluster bootstrap (#9034). Reports eligibility and
+ * every failing reason;
  * seed-forecasts publishes calibrated probabilities only while `eligible`
  * holds for the current map. Coverage, VOID
  * and origin mix ride beside the verdict (from `context`) so a cohort that
@@ -826,8 +1009,8 @@ export function summarizeCalibrationShadow(rows, modeByDomain = {}, options = {}
  */
 export function evaluateActivationGate(shadow, modeByDomain, context = {}, options = {}) {
   const thresholds = {
-    minForwardTotal: options.minForwardTotal ?? ACTIVATION_MIN_FORWARD_TOTAL,
-    minForwardDomain: options.minForwardDomain ?? ACTIVATION_MIN_FORWARD_DOMAIN,
+    minForwardFamilies: options.minForwardFamilies ?? ACTIVATION_MIN_FORWARD_FAMILIES,
+    minForwardDomainFamilies: options.minForwardDomainFamilies ?? ACTIVATION_MIN_FORWARD_DOMAIN_FAMILIES,
     nonInferiorityMargin: options.nonInferiorityMargin ?? ACTIVATION_NON_INFERIORITY_MARGIN,
     bootstrapResamples: options.resamples ?? CALIBRATION_BOOTSTRAP_RESAMPLES,
     bootstrapSeed: options.seed ?? CALIBRATION_BOOTSTRAP_SEED,
@@ -837,7 +1020,8 @@ export function evaluateActivationGate(shadow, modeByDomain, context = {}, optio
   if (options.mapMonotone === false) reasons.push('map_not_monotone');
   if (!activated.length) reasons.push('no_non_identity_domain');
   const forwardCount = shadow?.count ?? 0;
-  if (forwardCount < thresholds.minForwardTotal) reasons.push('insufficient_forward_total');
+  const forwardFamilies = shadow?.families ?? 0;
+  if (forwardFamilies < thresholds.minForwardFamilies) reasons.push('insufficient_forward_total');
 
   const nonInferior = (delta) => Array.isArray(delta?.ci95) && delta.ci95[1] <= thresholds.nonInferiorityMargin;
   const overallNonInferior = forwardCount > 0 && nonInferior(shadow.brierDelta);
@@ -846,13 +1030,15 @@ export function evaluateActivationGate(shadow, modeByDomain, context = {}, optio
   const domains = activated.map((domain) => {
     const row = shadow?.byDomain?.find((candidate) => candidate.domain === domain);
     const count = row?.count ?? 0;
-    const sufficient = count >= thresholds.minForwardDomain;
+    const families = row?.families ?? 0;
+    const sufficient = families >= thresholds.minForwardDomainFamilies;
     const domainNonInferior = count > 0 && nonInferior(row.brierDelta);
     if (!sufficient) reasons.push(`insufficient_forward_domain:${domain}`);
     if (count > 0 && !domainNonInferior) reasons.push(`domain_not_non_inferior:${domain}`);
     return {
       domain,
       count,
+      families,
       sufficient,
       brierDeltaUpper: row?.brierDelta?.ci95?.[1] ?? null,
       nonInferior: domainNonInferior,
@@ -864,6 +1050,7 @@ export function evaluateActivationGate(shadow, modeByDomain, context = {}, optio
     reasons,
     thresholds,
     forwardCount,
+    forwardFamilies,
     overall: {
       brierDeltaUpper: shadow?.brierDelta?.ci95?.[1] ?? null,
       nonInferior: overallNonInferior,

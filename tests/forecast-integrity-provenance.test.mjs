@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
+import { GPS_ZONE_MAX_UNCERTAIN_HEXES, GPS_ZONE_MIN_HEXES, GPS_ZONE_PERSISTENCE_PROBABILITY } from '../scripts/_gps-maritime-regions.mjs';
 
 import { fileURLToPath } from 'node:url';
 
@@ -67,6 +68,7 @@ describe('forecast integrity and provenance surfaces', () => {
 
   it('documents market calibration limits and projection clamp heuristics', () => {
     const docs = read('docs/panels/forecast.mdx');
+    const zhDocs = read('docs/zh/panels/forecast.mdx');
     const seeder = read('scripts/seed-forecasts.mjs');
     const cyberProbMax = parseNumericConst(seeder, 'CYBER_PROB_MAX');
     const conflictBaseMax = parseNumericConst(seeder, 'CONFLICT_BASE_DETECTOR_PROB_MAX');
@@ -109,7 +111,14 @@ describe('forecast integrity and provenance surfaces', () => {
     );
     assert.match(docs, /Market probability ceiling \| 0\.85/);
     assert.match(docs, /Supply-chain \/ maritime probability ceiling \| 0\.85/);
-    assert.match(docs, /GPS supply-chain detector probability ceiling \| 0\.60/);
+    assert.ok(
+      docs.includes(`| GPS supply-chain detector probability (zones holding ${GPS_ZONE_MIN_HEXES} to ${GPS_ZONE_MAX_UNCERTAIN_HEXES} hexes) | ${formatProbabilityFixed(GPS_ZONE_PERSISTENCE_PROBABILITY)} |`),
+      'forecast panel doc must disclose the GPS emission range and probability from _gps-maritime-regions.mjs',
+    );
+    assert.ok(
+      zhDocs.includes(`| GPS 供应链检测器概率（区域内 ${GPS_ZONE_MIN_HEXES} 至 ${GPS_ZONE_MAX_UNCERTAIN_HEXES} 个六边形） | ${formatProbabilityFixed(GPS_ZONE_PERSISTENCE_PROBABILITY)} |`),
+      'Chinese forecast panel doc must disclose the same GPS emission range and probability',
+    );
     assert.match(docs, /Political probability ceiling \| 0\.80/);
     assert.match(docs, /Military probability ceiling \| 0\.90/);
     assert.match(docs, /Infrastructure probability ceiling \| 0\.85/);
@@ -134,6 +143,9 @@ describe('forecast integrity and provenance surfaces', () => {
     assert.match(docs, /1% floor and 95% cap/);
     assert.match(docs, /Market projections use the curve's peak multiplier as the anchor/);
     assert.match(docs, /other domains use the forecast's emitted horizon/);
+    const curvesVersion = parseNumericConst(seeder, 'PROJECTION_CURVES_VERSION');
+    assert.ok(docs.includes(`\`PROJECTION_CURVES_VERSION\` (currently \`${curvesVersion}\`)`), 'forecast panel doc must name the current projection-curve version');
+    assert.ok(zhDocs.includes(`\`PROJECTION_CURVES_VERSION\`（当前为 \`${curvesVersion}\`）`), 'Chinese forecast panel doc must name the same projection-curve version');
     assert.match(seeder, /const PROJECTION_PROBABILITY_FLOOR = 0\.01;/);
     assert.match(seeder, /const PROJECTION_PROBABILITY_CAP = 0\.95;/);
     assert.match(seeder, /const PROJECTION_PEAK_ANCHORED_DOMAINS = new Set\(\['market'\]\);/);

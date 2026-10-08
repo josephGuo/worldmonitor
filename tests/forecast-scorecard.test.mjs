@@ -4,8 +4,9 @@ import { describe, it } from 'node:test';
 import {
   DEFAULT_ROLLING_WINDOW_DAYS,
   DEFAULT_SKILL_EXCLUDED_ORIGINS,
-  INTERVAL_MIN_SAMPLE,
   MARKET_SETTLEMENT_FEED,
+  SKILL_MIN_FAMILIES,
+  SKILL_MIN_OUTCOME_FAMILIES,
   PUBLIC_RECEIPT_FIELDS,
   PUBLIC_RECEIPT_LINKS_SINCE_MS,
   PUBLIC_RECEIPT_LIMIT,
@@ -23,6 +24,7 @@ import {
   wilsonInterval,
 } from '../scripts/_forecast-scorecard.mjs';
 import { PROJECTION_HORIZONS } from '../scripts/_forecast-resolution.mjs';
+import { selectFitCohort } from '../scripts/_forecast-calibration.mjs';
 import { MARKET_SETTLEMENT_FEED as BET_SETTLEMENT_FEED } from '../scripts/_bet-templates-markets.mjs';
 
 const NOW = Date.parse('2026-07-20T00:00:00Z');
@@ -225,8 +227,8 @@ describe('computeScorecard', () => {
 
     assert.equal(scorecard.schemaVersion, 2, 'schema 2 marks a seed that carries publishedByDomain');
     assert.deepEqual(scorecard.publishedByDomain, [
-      { domain: 'conflict', count: 1, brier: 0.09, yesCount: 0 },
-      { domain: 'market', count: 2, brier: 0.1, yesCount: 1 },
+      { domain: 'conflict', count: 1, brier: 0.09, yesCount: 0, families: 1, nEff: 1, yesFamilies: 0, noFamilies: 1, referenceBrier: 0, measurable: false },
+      { domain: 'market', count: 2, brier: 0.1, yesCount: 1, families: 1, nEff: 1, yesFamilies: 1, noFamilies: 1, referenceBrier: 0.25, measurable: false },
     ]);
     assert.equal(scorecard.byDomain.find((row) => row.domain === 'market').scored, 5, 'byDomain still pools every origin');
     // Documented divergence (#8952): promotion adds bet_engine to the headline
@@ -364,6 +366,20 @@ describe('market comparisons read only anchors that price the forecast question 
     assert.ok(!hasPreLineageAnchor(resolved({})));
   });
 
+  it('counts headline rows blended toward a pre-#7071 anchor (#9010)', () => {
+    const scorecard = computeScorecard({
+      stale: preLineage({ probability: 0.388, outcome: 'YES' }),
+      staleExcluded: preLineage({ generationOrigin: 'state_derived', probability: 0.4, outcome: 'NO' }),
+      matched: lineage({ probability: 0.33, outcome: 'NO' }),
+      bet: marketBet({ probability: 0.2, outcome: 'NO' }),
+      clean: resolved({ probability: 0.2, outcome: 'NO' }),
+    }, NOW);
+    assert.equal(scorecard.skill.count, 3);
+    assert.equal(scorecard.skill.preLineageAnchorCount, 1);
+    const none = computeScorecard({ clean: resolved({ probability: 0.2, outcome: 'NO' }) }, NOW);
+    assert.equal(none.skill.preLineageAnchorCount, 0);
+  });
+
   it('treats a null or blank blend as missing lineage', () => {
     for (const marketBlendedProbability of [null, '', '0.33']) {
       const entry = lineage({ calibration: { ...lineage().calibration, marketBlendedProbability } });
@@ -421,7 +437,7 @@ describe('scorecard uncertainty and maturity denominators (#7072)', () => {
     assert.equal(funnel.scoredOfMatured, null);
   });
 
-  it('bootstraps mean Brier at the entry level, deterministically', () => {
+  it('bootstraps mean Brier by family, deterministically', () => {
     const ledger = Object.fromEntries(Array.from({ length: 40 }, (_, i) => [
       `e${i}`,
       resolved({ id: `e${i}`, probability: (i % 10) / 10 + 0.05, outcome: i % 3 === 0 ? 'YES' : 'NO', generationOrigin: i < 30 ? 'detector' : 'state_derived' }),
@@ -436,10 +452,23 @@ describe('scorecard uncertainty and maturity denominators (#7072)', () => {
     assert.equal(overallBrier.mean, a.overall.brier);
     assert.ok(overallBrier.ci95[0] < overallBrier.mean && overallBrier.mean < overallBrier.ci95[1], 'the interval brackets the estimate');
     assert.ok(overallBrier.ci95[1] - overallBrier.ci95[0] > 0.01, 'a 40-entry sample is not a point');
-    assert.equal(overallBrier.insufficientSample, 40 < INTERVAL_MIN_SAMPLE);
+    assert.equal(overallBrier.insufficientSample, false, '40 distinct families clear the minimum');
     assert.equal(skillBrier.count, 30, 'the headline interval covers the headline cohort, not every scored entry');
     assert.equal(skillBrier.mean, a.skill.brier);
-    assert.equal(skillBrier.insufficientSample, 30 < INTERVAL_MIN_SAMPLE);
+    assert.equal(skillBrier.insufficientSample, false, '30 distinct families meet the minimum');
+  });
+
+  it('flags a sample by its families, not its rows (#8990)', () => {
+    const ledger = Object.fromEntries(Array.from({ length: 60 }, (_, i) => [
+      `r${i}`,
+      resolved({ id: `fam-${i % 10}`, probability: 0.3, outcome: i % 4 === 0 ? 'YES' : 'NO' }),
+    ]));
+    const { skillBrier } = computeScorecard(ledger, NOW).uncertainty;
+    assert.equal(skillBrier.count, 60);
+    assert.equal(skillBrier.insufficientSample, true, '60 rows from 10 families are a small sample');
+    const oneWay = Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`o${i}`, resolved({ id: `fam-${i}`, probability: 0.3, outcome: i < 4 ? 'YES' : 'NO' })]));
+    const flag = computeScorecard(oneWay, NOW).uncertainty.skillBrier.insufficientSample;
+    assert.equal(flag, true, '40 families with 4 YES families miss the outcome minimum; the flag carries the whole rule');
   });
 
   it('flags a small sample and emits no estimate for an empty one', () => {
@@ -585,12 +614,104 @@ describe('projection horizon lane (#7075)', () => {
     assert.deepEqual(scorecard.byDomain.map((row) => row.domain), ['market']);
 
     assert.equal(scorecard.projections.semantics, 'point_in_time');
-    assert.equal(scorecard.projections.minSample, INTERVAL_MIN_SAMPLE);
+    assert.equal(scorecard.projections.minSample, SKILL_MIN_FAMILIES);
     assert.deepEqual(scorecard.projections.byHorizon, [
-      { horizon: 'h24', registered: 1, matured: 0, resolved: 0, scored: 0, yes: 0, no: 0, unobserved: 0, void: 0, brier: null, insufficientSample: true },
-      { horizon: 'd7', registered: 4, matured: 4, resolved: 4, scored: 2, yes: 1, no: 1, unobserved: 1, void: 1, brier: null, insufficientSample: true },
-      { horizon: 'd30', registered: 1, matured: 1, resolved: 0, scored: 0, yes: 0, no: 0, unobserved: 0, void: 0, brier: null, insufficientSample: true },
+      { horizon: 'h24', registered: 1, matured: 0, resolved: 0, scored: 0, families: 0, yes: 0, no: 0, unobserved: 0, void: 0, realizedRate: null, brier: null, insufficientSample: true },
+      { horizon: 'd7', registered: 4, matured: 4, resolved: 4, scored: 2, families: 1, yes: 1, no: 1, unobserved: 1, void: 1, realizedRate: { count: 2, successes: 1, rate: 0.5, ci95: wilsonInterval(1, 2) }, brier: null, insufficientSample: true },
+      { horizon: 'd30', registered: 1, matured: 1, resolved: 0, scored: 0, families: 0, yes: 0, no: 0, unobserved: 0, void: 0, realizedRate: null, brier: null, insufficientSample: true },
     ]);
+  });
+
+  it('reports the realized rate with a Wilson interval over scored windows only, beside the family count', () => {
+    const ledger = {
+      y1: horizonRow('d30', { id: 'fc-a', key: 'fc-a@1@d30', outcome: 'YES' }),
+      y2: horizonRow('d30', { id: 'fc-a', key: 'fc-a@2@d30', outcome: 'YES' }),
+      y3: horizonRow('d30', { id: 'fc-b', key: 'fc-b@1@d30', outcome: 'YES' }),
+      n1: horizonRow('d30', { id: 'fc-c', key: 'fc-c@1@d30', outcome: 'NO' }),
+      u1: horizonRow('d30', { id: 'fc-d', key: 'fc-d@1@d30', outcome: 'UNOBSERVED' }),
+      v1: horizonRow('d30', { id: 'fc-e', key: 'fc-e@1@d30', outcome: 'VOID' }),
+    };
+    const d30 = computeScorecard(ledger, NOW).projections.byHorizon.find((row) => row.horizon === 'd30');
+    assert.equal(d30.scored, 4);
+    assert.equal(d30.families, 3, 'two windows of fc-a are one family');
+    assert.deepEqual(d30.realizedRate, { count: 4, successes: 3, rate: 0.75, ci95: wilsonInterval(3, 4) });
+    assert.ok(d30.realizedRate.ci95[0] < 0.75 && d30.realizedRate.ci95[1] > 0.75);
+  });
+
+  it('slices every horizon by domain, never pooling one domain into another', () => {
+    const ledger = {
+      s1: horizonRow('d7', { id: 'fc-s', key: 'fc-s@1@d7', domain: 'supply_chain', outcome: 'YES' }),
+      s2: horizonRow('h24', { id: 'fc-s', key: 'fc-s@1@h24', domain: 'supply_chain', outcome: 'NO' }),
+      c1: horizonRow('d7', { id: 'fc-c', key: 'fc-c@1@d7', domain: 'conflict', outcome: 'NO' }),
+      c2: horizonRow('d7', { id: 'fc-c2', key: 'fc-c2@1@d7', domain: 'conflict', outcome: 'UNOBSERVED' }),
+    };
+    const { byDomain, byHorizon } = computeScorecard(ledger, NOW).projections;
+    assert.deepEqual(byDomain.map((slice) => slice.domain), ['conflict', 'supply_chain']);
+    const cell = (domain, horizon) => byDomain.find((slice) => slice.domain === domain).byHorizon.find((row) => row.horizon === horizon);
+    assert.deepEqual(byDomain[0].byHorizon.map((row) => row.horizon), Object.keys(PROJECTION_HORIZONS));
+    assert.deepEqual([cell('conflict', 'd7').registered, cell('conflict', 'd7').scored, cell('conflict', 'd7').yes, cell('conflict', 'd7').unobserved], [2, 1, 0, 1]);
+    assert.deepEqual([cell('supply_chain', 'd7').scored, cell('supply_chain', 'd7').yes], [1, 1]);
+    assert.deepEqual([cell('supply_chain', 'h24').scored, cell('supply_chain', 'h24').no], [1, 1]);
+    assert.equal(cell('conflict', 'h24').registered, 0);
+    assert.equal(byHorizon.find((row) => row.horizon === 'd7').registered, 3, 'the pooled row still counts every domain');
+  });
+
+  it('reports each projection-curve version apart, with unstamped windows in their own slice', () => {
+    const ledger = {
+      a: horizonRow('d7', { id: 'fc-a', key: 'fc-a@1@d7', projectionCurvesVersion: 1, outcome: 'YES' }),
+      b: horizonRow('d7', { id: 'fc-b', key: 'fc-b@1@d7', projectionCurvesVersion: 2, outcome: 'NO' }),
+      c: horizonRow('d7', { id: 'fc-c', key: 'fc-c@1@d7', projectionCurvesVersion: 2, outcome: 'NO' }),
+      d: horizonRow('d7', { id: 'fc-d', key: 'fc-d@1@d7', outcome: 'YES' }),
+    };
+    const { byCurvesVersion } = computeScorecard(ledger, NOW).projections;
+    assert.deepEqual(byCurvesVersion.map((slice) => slice.curvesVersion), [null, 1, 2]);
+    const d7 = (version) => byCurvesVersion.find((slice) => slice.curvesVersion === version).byHorizon.find((row) => row.horizon === 'd7');
+    assert.deepEqual([d7(null).scored, d7(null).yes], [1, 1]);
+    assert.deepEqual([d7(1).scored, d7(1).yes], [1, 1]);
+    assert.deepEqual([d7(2).scored, d7(2).no], [2, 2]);
+  });
+
+  it('no forecast reader takes parent lineage from a horizon row (#7075 review 2)', () => {
+    const parent = (overrides) => resolved({
+      generationOrigin: 'legacy_detector',
+      calibration: { marketPrice: 0.4, internalProbability: 0.5, marketBlendedProbability: 0.45, marketTitle: 'Hormuz closure', source: 'polymarket' },
+      baselineProbability: 0.3,
+      probabilitySource: 'ensemble',
+      marketSlug: 'hormuz-closure',
+      ...overrides,
+    });
+    const forecasts = {
+      a: parent({ id: 'fc-a', key: 'fc-a@1', probability: 0.8, outcome: 'YES' }),
+      b: parent({ id: 'fc-b', key: 'fc-b@1', probability: 0.3, outcome: 'NO' }),
+      // An open window of the horizon row's forecast, so its family is listed.
+      open: parent({ id: 'fc-h', key: 'fc-h@2', status: 'pending', outcome: undefined, resolvedAt: undefined, lastSeenAt: NOW - DAY_MS }),
+    };
+    const withHorizon = {
+      ...forecasts,
+      h: horizonRow('d7', {
+        generationOrigin: 'legacy_detector',
+        calibration: { marketPrice: 0.99, internalProbability: 0.5, marketBlendedProbability: 0.9, marketTitle: 'Hormuz closure', source: 'polymarket' },
+        baselineProbability: 0.99,
+        probabilitySource: 'ensemble',
+        marketSlug: 'hormuz-closure',
+        probability: 0.1,
+        outcome: 'YES',
+        title: 'Hormuz disruption risk rises',
+        generatedAt: NOW - 9 * DAY_MS,
+      }),
+    };
+    assert.equal(buildPublicReceipts({ h: { ...withHorizon.h, spec: { ...withHorizon.h.spec, horizon: undefined } } }, NOW).length, 1, 'the fixture is receipt-shaped');
+    const strip = ({ generatedAt: _g, projections: _p, ...rest }) => rest;
+    assert.deepEqual(strip(computeScorecard(withHorizon, NOW)), strip(computeScorecard(forecasts, NOW)));
+    assert.deepEqual(buildPublicReceipts(withHorizon, NOW), buildPublicReceipts(forecasts, NOW));
+    assert.deepEqual(buildFamilyOutcomes(withHorizon, NOW), buildFamilyOutcomes(forecasts, NOW));
+    assert.deepEqual(selectFitCohort(withHorizon, NOW), selectFitCohort(forecasts, NOW));
+  });
+
+  it('reports no slices on an empty ledger', () => {
+    const { byDomain, byCurvesVersion } = computeScorecard({}, NOW).projections;
+    assert.deepEqual(byDomain, []);
+    assert.deepEqual(byCurvesVersion, []);
   });
 
   it('reports the section with zero rows on an empty ledger, in the builder order', () => {
@@ -606,16 +727,27 @@ describe('projection horizon lane (#7075)', () => {
     ]));
     const d7 = (count) => computeScorecard(rows(count), NOW).projections.byHorizon.find((row) => row.horizon === 'd7');
 
-    const below = d7(INTERVAL_MIN_SAMPLE - 1);
-    assert.equal(below.scored, INTERVAL_MIN_SAMPLE - 1);
+    const below = d7(SKILL_MIN_FAMILIES - 1);
+    assert.equal(below.scored, SKILL_MIN_FAMILIES - 1);
     assert.equal(below.brier, null);
     assert.equal(below.insufficientSample, true);
 
-    const at = d7(INTERVAL_MIN_SAMPLE);
+    const at = d7(SKILL_MIN_FAMILIES);
     assert.equal(at.insufficientSample, false);
-    assert.equal(at.brier.count, INTERVAL_MIN_SAMPLE);
+    assert.equal(at.brier.count, SKILL_MIN_FAMILIES);
     assert.equal(at.brier.mean, 0.25);
     assert.ok(at.brier.ci95);
+  });
+
+  it('counts a horizon sample in families, so repeated windows of one forecast do not unlock its Brier (#8990)', () => {
+    const ledger = Object.fromEntries(Array.from({ length: 2 * SKILL_MIN_FAMILIES }, (_, i) => [
+      `h${i}`,
+      horizonRow('d7', { id: `fc-${i % 3}`, key: `fc-${i % 3}@${i}@d7`, probability: 0.5, outcome: i % 2 ? 'YES' : 'NO' }),
+    ]));
+    const d7 = computeScorecard(ledger, NOW).projections.byHorizon.find((row) => row.horizon === 'd7');
+    assert.equal(d7.scored, 2 * SKILL_MIN_FAMILIES);
+    assert.equal(d7.brier, null);
+    assert.equal(d7.insufficientSample, true);
   });
 });
 
@@ -941,5 +1073,137 @@ describe('buildFamilyOutcomes (#5092 card chips)', () => {
     const bytes = Buffer.byteLength(JSON.stringify(rows));
     console.log(`familyOutcomes worst case: ${bytes} bytes`);
     assert.ok(bytes <= 14_000, `${bytes} bytes`);
+  });
+});
+
+describe('skill against the cohort base rate (#8990 item 10)', () => {
+  // `families` forecast ids with `rowsPer` windows each; family i resolves YES
+  // when yes(i) is true and is forecast at p(i).
+  function familyLedger({ families, rowsPer = 1, yes, p = () => 0.3, origin = 'detector', domain = 'market', prefix = 'fam' }) {
+    const ledger = {};
+    for (let i = 0; i < families; i += 1) {
+      for (let r = 0; r < rowsPer; r += 1) {
+        ledger[`${prefix}-${i}-${r}`] = resolved({
+          id: `${prefix}-${i}`, probability: p(i), outcome: yes(i) ? 'YES' : 'NO', generationOrigin: origin, domain,
+        });
+      }
+    }
+    return ledger;
+  }
+
+  it('scores BSS = 1 - Brier / p(1-p), with the reference from the headline rows alone', () => {
+    const ledger = {
+      ...familyLedger({ families: 40, yes: (i) => i < 10 }),
+      // An excluded origin with a different base rate must not move the reference.
+      ...familyLedger({ families: 40, yes: () => true, origin: 'state_derived', prefix: 'synthetic' }),
+    };
+    const { skill } = computeScorecard(ledger, NOW);
+    assert.equal(skill.count, 40);
+    assert.equal(skill.yesCount, 10);
+    assert.equal(skill.brier, 0.19, '10 x 0.49 + 30 x 0.09 over 40');
+    assert.equal(skill.referenceBrier, 0.1875, 'base rate 0.25, so 0.25 x 0.75');
+    assert.equal(skill.bss, round6(1 - 0.19 / 0.1875));
+  });
+
+  it('reports rows, families and Kish effective n side by side', () => {
+    const ledger = {
+      ...familyLedger({ families: 1, rowsPer: 6, yes: () => true, prefix: 'big' }),
+      ...familyLedger({ families: 6, rowsPer: 1, yes: (i) => i % 2 === 0, prefix: 'small' }),
+    };
+    const { skill } = computeScorecard(ledger, NOW);
+    assert.equal(skill.count, 12);
+    assert.equal(skill.families, 7);
+    assert.equal(skill.nEff, round6(12 ** 2 / (6 ** 2 + 6)), '(sum of family sizes)^2 / sum of squares');
+    assert.equal(skill.yesFamilies, 4);
+    assert.equal(skill.noFamilies, 3);
+  });
+
+  it(`calls the headline measurable only from ${SKILL_MIN_FAMILIES} families with ${SKILL_MIN_OUTCOME_FAMILIES} YES and ${SKILL_MIN_OUTCOME_FAMILIES} NO families`, () => {
+    const measurable = (options) => computeScorecard(familyLedger(options), NOW).skill.measurable;
+    const half = (i) => i % 2 === 0;
+    assert.equal(measurable({ families: SKILL_MIN_FAMILIES, yes: half }), true);
+    assert.equal(measurable({ families: SKILL_MIN_FAMILIES - 1, yes: half }), false);
+    assert.equal(measurable({ families: SKILL_MIN_FAMILIES - 1, rowsPer: 20, yes: half }), false, 'rows never stand in for families');
+    assert.equal(measurable({ families: SKILL_MIN_FAMILIES, yes: (i) => i < SKILL_MIN_OUTCOME_FAMILIES }), true);
+    assert.equal(measurable({ families: SKILL_MIN_FAMILIES, yes: (i) => i < SKILL_MIN_OUTCOME_FAMILIES - 1 }), false, 'too few YES families');
+    assert.equal(measurable({ families: SKILL_MIN_FAMILIES, yes: (i) => i >= SKILL_MIN_OUTCOME_FAMILIES - 1 }), false, 'too few NO families');
+  });
+
+  it('counts a family with both outcomes as a YES family and as a NO family', () => {
+    // 25 one-way families plus 5 mixed ones: the minority side reaches 5 only through the mixed families.
+    const mixed = (oneWay) => {
+      const ledger = familyLedger({ families: 25, yes: () => oneWay === 'YES', prefix: 'oneway' });
+      for (let i = 0; i < 5; i += 1) {
+        ledger[`mixed-${i}-yes`] = resolved({ id: `mixed-${i}`, probability: 0.4, outcome: 'YES' });
+        ledger[`mixed-${i}-no`] = resolved({ id: `mixed-${i}`, probability: 0.4, outcome: 'NO' });
+      }
+      return computeScorecard(ledger, NOW);
+    };
+    const mostlyYes = mixed('YES');
+    assert.equal(mostlyYes.skill.families, 30);
+    assert.equal(mostlyYes.skill.yesFamilies, 30);
+    assert.equal(mostlyYes.skill.noFamilies, 5);
+    assert.equal(mostlyYes.skill.measurable, true);
+    assert.equal(mostlyYes.uncertainty.skillBrier.insufficientSample, false, 'the interval flag counts mixed families on both sides too');
+    const mostlyNo = mixed('NO');
+    assert.equal(mostlyNo.skill.yesFamilies, 5);
+    assert.equal(mostlyNo.skill.measurable, true);
+    assert.equal(mostlyNo.uncertainty.skillBrier.insufficientSample, false);
+  });
+
+  it('bootstraps BSS by whole family, so repeating every family leaves the interval unchanged', () => {
+    const options = { families: 40, yes: (i) => i % 3 === 0, p: (i) => (i % 10) / 10 + 0.05 };
+    const once = computeScorecard(familyLedger(options), NOW);
+    const repeated = computeScorecard(familyLedger({ ...options, rowsPer: 5 }), NOW);
+    assert.equal(repeated.skill.count, 5 * once.skill.count);
+    assert.equal(repeated.skill.families, once.skill.families);
+    assert.equal(repeated.skill.bss, once.skill.bss);
+    assert.ok(once.skill.bssCi95[0] < once.skill.bss && once.skill.bss < once.skill.bssCi95[1], 'the interval brackets the estimate');
+    assert.deepEqual(repeated.skill.bssCi95, once.skill.bssCi95, 'a row bootstrap would narrow it five-fold');
+    assert.deepEqual(repeated.uncertainty.skillBrier.ci95, once.uncertainty.skillBrier.ci95);
+    assert.deepEqual(computeScorecard(familyLedger(options), NOW).skill.bssCi95, once.skill.bssCi95, 'seeded');
+  });
+
+  it('withholds the BSS interval when more than 5% of family draws hold no minority outcome', () => {
+    // 9 families, 2 of them NO: a draw misses both with probability (7/9)^9, about 10%.
+    const sparse = computeScorecard(familyLedger({ families: 9, yes: (i) => i >= 2 }), NOW).skill;
+    assert.ok(Number.isFinite(sparse.bss));
+    assert.equal('bssCi95' in sparse, false);
+    // 40 families, 10 NO: a draw misses them all with probability (30/40)^40, under 0.01%.
+    const dense = computeScorecard(familyLedger({ families: 40, yes: (i) => i >= 10 }), NOW).skill;
+    assert.equal(dense.bssCi95.length, 2);
+  });
+
+  it('leaves BSS undefined, never NaN, when every outcome went one way', () => {
+    const { skill } = computeScorecard(familyLedger({ families: 35, yes: () => false }), NOW);
+    assert.equal(skill.referenceBrier, 0);
+    assert.equal(skill.bss, null);
+    assert.equal('bssCi95' in skill, false);
+    assert.equal(skill.measurable, false);
+    assert.ok(!JSON.stringify(skill).includes('NaN'));
+  });
+
+  it('publishes a domain BSS only where the domain meets the family and outcome minimums', () => {
+    const half = (i) => i % 2 === 0;
+    const ledger = {
+      ...familyLedger({ families: SKILL_MIN_FAMILIES, yes: half, domain: 'conflict', prefix: 'c' }),
+      ...familyLedger({ families: SKILL_MIN_FAMILIES - 1, rowsPer: 3, yes: half, domain: 'cyber', prefix: 'y' }),
+      ...familyLedger({ families: SKILL_MIN_FAMILIES, yes: () => false, domain: 'political', prefix: 'p' }),
+    };
+    const rows = Object.fromEntries(computeScorecard(ledger, NOW).publishedByDomain.map((row) => [row.domain, row]));
+
+    assert.equal(rows.conflict.measurable, true);
+    assert.equal(rows.conflict.referenceBrier, 0.25);
+    assert.equal(rows.conflict.bss, round6(1 - rows.conflict.brier / 0.25));
+    assert.equal(rows.conflict.bssCi95.length, 2);
+
+    assert.equal(rows.cyber.count, 3 * (SKILL_MIN_FAMILIES - 1));
+    assert.equal(rows.cyber.families, SKILL_MIN_FAMILIES - 1);
+    assert.equal(rows.cyber.measurable, false);
+    assert.equal('bss' in rows.cyber, false, 'no domain BSS below the family minimum');
+    assert.equal('bssCi95' in rows.cyber, false);
+
+    assert.equal(rows.political.measurable, false, 'no YES outcome, no reference to beat');
+    assert.equal('bss' in rows.political, false);
   });
 });

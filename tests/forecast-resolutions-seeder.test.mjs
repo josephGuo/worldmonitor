@@ -44,7 +44,7 @@ import {
 } from '../scripts/seed-forecast-resolutions.mjs';
 import { buildFamilyOutcomes, buildPublicReceipts, computeScorecard } from '../scripts/_forecast-scorecard.mjs';
 import { __setForecastLlmCallOverrideForTests, __setRedisStoreForTests, buildPublishedForecastPayload, runExtractionGateShadow } from '../scripts/seed-forecasts.mjs';
-import { CHOKEPOINT_DISRUPTED_MIN_SCORE, CHOKEPOINT_RESOLUTION_RULE, CHOKEPOINT_RESOLUTION_RULE_VERSION, CONFLICT_COUNT_SOURCE_FEED, HORIZON_MS, PROJECTION_HORIZONS, UNREST_COUNT_SOURCE_FEED, attachResolutionSpecs, evaluateExtractionShadow, horizonSampleToleranceMs, scoredHorizonKeys } from '../scripts/_forecast-resolution.mjs';
+import { CONFLICT_COUNT_SOURCE_FEED, HORIZON_MS, PROJECTION_HORIZONS, UNREST_COUNT_SOURCE_FEED, attachResolutionSpecs, chokepointHardContract, evaluateExtractionShadow, horizonSampleToleranceMs, scoredHorizonKeys } from '../scripts/_forecast-resolution.mjs';
 import { shapeResolutionFeeds } from '../scripts/_forecast-resolution-eval.mjs';
 import { GPS_RESOLUTION_RULE, GPS_RESOLUTION_RULE_VERSION, GPS_ZONE_MIN_HEXES } from '../scripts/_gps-maritime-regions.mjs';
 
@@ -72,16 +72,19 @@ afterEach(() => {
   else process.env.FORECAST_RESOLUTION_JUDGE_EVIDENCE_MAX_LOOKBACK_MS = ORIGINAL_REDIS_ENV.FORECAST_RESOLUTION_JUDGE_EVIDENCE_MAX_LOOKBACK_MS;
 });
 
+const HORMUZ_CONTRACT = chokepointHardContract('Strait of Hormuz');
+const HORMUZ_YES_SCORE = HORMUZ_CONTRACT.threshold + 5;
+
 function forecast(overrides = {}) {
   const generatedAt = overrides.generatedAt ?? T0;
   const deadline = overrides.deadline ?? generatedAt + DAY_MS;
   const resolution = overrides.resolution ?? {
     kind: 'hard',
     metricKey: 'supply_chain:chokepoints:v4|riskScore(route==Strait of Hormuz)',
-    operator: '>=',
-    threshold: CHOKEPOINT_DISRUPTED_MIN_SCORE,
-    rule: CHOKEPOINT_RESOLUTION_RULE,
-    ruleVersion: CHOKEPOINT_RESOLUTION_RULE_VERSION,
+    operator: HORMUZ_CONTRACT.operator,
+    threshold: HORMUZ_CONTRACT.threshold,
+    rule: HORMUZ_CONTRACT.rule,
+    ruleVersion: HORMUZ_CONTRACT.ruleVersion,
     window: 'at-deadline',
     deadline,
     sourceFeed: 'supply_chain:chokepoints:v4',
@@ -146,7 +149,7 @@ describe('processResolutionCycle', () => {
     });
 
     it('publishes the resolved entry as a public receipt and a chip for the open window (#5092)', () => {
-      const resolvedFeeds = { 'supply_chain:chokepoints:v4': { chokepoints: [{ route: 'Strait of Hormuz', riskScore: 61 }] } };
+      const resolvedFeeds = { 'supply_chain:chokepoints:v4': { chokepoints: [{ route: 'Strait of Hormuz', riskScore: HORMUZ_YES_SCORE }] } };
       const reopened = forecast({ generatedAt: T0 + 1.5 * DAY_MS, deadline: T0 + 3 * DAY_MS });
       const { ledger, scorecard } = processResolutionCycle(...opened([snapshot(T0, [first]), snapshot(T0 + 1.5 * DAY_MS, [reopened])]), resolvedFeeds, T0 + 2 * DAY_MS);
       assert.equal(ledger[KEY].status, 'resolved');
@@ -165,7 +168,7 @@ describe('processResolutionCycle', () => {
       probability: 0.72,
       generatedAt: T0 + 6 * 60 * 60 * 1000,
       deadline: T0 + DAY_MS + 6 * 60 * 60 * 1000,
-      resolution: { ...first.resolution, threshold: 70, deadline: T0 + DAY_MS + 6 * 60 * 60 * 1000 },
+      resolution: { ...first.resolution, threshold: HORMUZ_CONTRACT.threshold + 15, deadline: T0 + DAY_MS + 6 * 60 * 60 * 1000 },
     });
     const third = forecast({
       probability: 0.4,
@@ -187,7 +190,9 @@ describe('processResolutionCycle', () => {
     assert.equal(open.firstSeenProbability, 0.6);
     assert.equal(open.probability, 0.6, 'the window is scored on the probability that came with its frozen threshold');
     assert.equal(open.lastSeenProbability, 0.72);
-    assert.equal(open.spec.threshold, CHOKEPOINT_DISRUPTED_MIN_SCORE, 'pre-deadline snapshots must not mutate the frozen spec');
+    assert.equal(open.spec.threshold, HORMUZ_CONTRACT.threshold, 'pre-deadline snapshots must not mutate the frozen spec');
+    assert.equal(open.spec.operator, HORMUZ_CONTRACT.operator);
+    assert.equal(open.spec.rule, HORMUZ_CONTRACT.rule);
     assert.equal(open.deadline, T0 + DAY_MS);
     assert.equal(ledger[`fc-hormuz@${T0 + 2 * DAY_MS}`].probability, 0.4);
   });
@@ -207,7 +212,7 @@ describe('processResolutionCycle', () => {
     delete unspeced.resolution;
 
     const first = processResolutionCycle({}, [snapshot(T0, [hard, judged, unspeced])], {
-      'supply_chain:chokepoints:v4': { chokepoints: [{ route: 'Strait of Hormuz', riskScore: 61 }] },
+      'supply_chain:chokepoints:v4': { chokepoints: [{ route: 'Strait of Hormuz', riskScore: HORMUZ_YES_SCORE }] },
     }, T0 + DAY_MS);
 
     assert.ok(first.ledger[`fc-hormuz@${T0 + DAY_MS}`]);
@@ -3293,10 +3298,10 @@ describe('projection horizon windows (#7075)', () => {
       kind: 'hard',
       semantics: 'point_in_time',
       metricKey: 'supply_chain:chokepoints:v4|riskScore(route==Strait of Hormuz)',
-      operator: '>=',
-      threshold: CHOKEPOINT_DISRUPTED_MIN_SCORE,
-      rule: CHOKEPOINT_RESOLUTION_RULE,
-      ruleVersion: CHOKEPOINT_RESOLUTION_RULE_VERSION,
+      operator: HORMUZ_CONTRACT.operator,
+      threshold: HORMUZ_CONTRACT.threshold,
+      rule: HORMUZ_CONTRACT.rule,
+      ruleVersion: HORMUZ_CONTRACT.ruleVersion,
       window: 'at-deadline',
       sourceFeed: 'supply_chain:chokepoints:v4',
       deadline: generatedAt + HORIZON_MS[timeHorizon],
@@ -3346,6 +3351,60 @@ describe('projection horizon windows (#7075)', () => {
     assert.equal(ledger[PARENT].probability, 0.62);
     assert.equal(scorecard.totals.entries, 1, 'horizon windows stay out of the forecast totals');
     assert.deepEqual(scorecard.projections.byHorizon.map((row) => [row.horizon, row.registered]), [['h24', 1], ['d7', 1], ['d30', 1]]);
+  });
+
+  it('a horizon window takes only the parent fields that describe it, never the parent probability lineage (#7075 review 2)', () => {
+    const parentOnly = {
+      uncalibratedProbability: 0.55,
+      calibration: { marketPrice: 55, marketTitle: 'Hormuz closure', source: 'polymarket' },
+      baselineProbability: 0.3,
+      probabilitySource: 'ensemble',
+      passes: [0.6, 0.64],
+      marketSlug: 'hormuz-closure',
+      marketSource: 'polymarket',
+    };
+    const fc = projected({ ...parentOnly, stateBucketId: 'bucket-1', projectionCurvesVersion: 1 });
+    const { ledger } = processResolutionCycle({}, [snapshot(T0, [fc])], HORMUZ(40), T0);
+    for (const key of [`${PARENT}@h24`, `${PARENT}@d7`, `${PARENT}@d30`]) {
+      const row = ledger[key];
+      for (const field of Object.keys(parentOnly)) assert.equal(field in row, false, `${key} carries ${field}`);
+      assert.equal(row.domain, 'supply_chain');
+      assert.equal(row.region, 'Strait of Hormuz');
+      assert.equal(row.title, 'Hormuz disruption risk rises');
+      assert.equal(row.generationOrigin, 'detector');
+      assert.equal(row.stateBucketId, 'bucket-1');
+      assert.equal(row.projectionCurvesVersion, 1);
+    }
+    assert.deepEqual(ledger[PARENT].calibration, parentOnly.calibration, 'the parent keeps its own lineage');
+    assert.equal(ledger[PARENT].marketSlug, 'hormuz-closure');
+    assert.equal('projectionCurvesVersion' in ledger[PARENT], false);
+  });
+
+  it('a horizon window from history without a curve version carries none (#7075)', () => {
+    const { ledger } = processResolutionCycle({}, [snapshot(T0, [projected()])], HORMUZ(40), T0);
+    assert.equal('projectionCurvesVersion' in ledger[`${PARENT}@d7`], false);
+  });
+
+  it('strips parent lineage already copied onto stored horizon windows, and leaves the parent alone (#7075 review 2)', () => {
+    const first = processResolutionCycle({}, [snapshot(T0, [projected()])], HORMUZ(40), T0);
+    const stale = structuredClone(first.ledger);
+    const stored = { calibration: { marketPrice: 55 }, baselineProbability: 0.3, probabilitySource: 'ensemble', passes: [0.6], marketSlug: 'slug', marketSource: 'polymarket', uncalibratedProbability: 0.55 };
+    Object.assign(stale[`${PARENT}@d7`], stored);
+    Object.assign(stale[PARENT], { marketSlug: 'slug' });
+    const { ledger } = processResolutionCycle(stale, [snapshot(T0, [projected()])], HORMUZ(40), T0);
+    for (const field of Object.keys(stored)) assert.equal(field in ledger[`${PARENT}@d7`], false, field);
+    assert.equal(ledger[PARENT].marketSlug, 'slug');
+  });
+
+  it('a re-emission with a different curve version keeps the window at its first stamp (#7075)', () => {
+    const first = processResolutionCycle({}, [snapshot(T0, [projected({ projectionCurvesVersion: 1 })])], HORMUZ(40), T0);
+    const later = T0 + 6 * 60 * 60 * 1000;
+    const { ledger } = processResolutionCycle(first.ledger, [snapshot(later, [projected({ projectionCurvesVersion: 2 })])], HORMUZ(40), later);
+    for (const horizon of Object.keys(PROJECTION_HORIZONS)) {
+      const row = ledger[`${PARENT}@${horizon}`];
+      assert.equal(row.projectionCurvesVersion, 1, horizon);
+      assert.equal(row.lastSeenAt, later, `${horizon} saw the re-emission`);
+    }
   });
 
   it('the same forecast at two deadlines and three horizons creates six distinct keys', () => {
@@ -3415,14 +3474,14 @@ describe('projection horizon windows (#7075)', () => {
     const key = `${PARENT}@h24`;
     const deadline = T0 + DAY_MS;
     assert.equal(horizonSampleToleranceMs('24h'), 12 * H);
-    const registered = processResolutionCycle({}, [snapshot(T0, [projected()])], HORMUZ(61), T0);
-    assert.equal(registered.ledger[key].samples.recent[0].value, 61);
+    const registered = processResolutionCycle({}, [snapshot(T0, [projected()])], HORMUZ(HORMUZ_YES_SCORE), T0);
+    assert.equal(registered.ledger[key].samples.recent[0].value, HORMUZ_YES_SCORE);
 
     const missedRun = processResolutionCycle(registered.ledger, [], HORMUZ(40), deadline + 25 * H);
     assert.equal(missedRun.ledger[key].outcome, 'UNOBSERVED', 'the only readings are 24h early and 25h late');
 
     const onTime = processResolutionCycle(registered.ledger, [], HORMUZ(40), deadline + 8 * H);
-    assert.equal(onTime.ledger[key].outcome, 'NO', 'the 8h-late reading grades the window, not the 61 read at emission');
+    assert.equal(onTime.ledger[key].outcome, 'NO', 'the 8h-late reading grades the window, not the above-base read at emission');
     assert.equal(onTime.ledger[key].evidence.readTs, deadline + 8 * H);
   });
 
@@ -3430,7 +3489,7 @@ describe('projection horizon windows (#7075)', () => {
     const parent24h = (generatedAt) => projected({ generatedAt, timeHorizon: '24h' });
     const parentKey = `fc-hormuz@${T0 + DAY_MS}`;
     let { ledger } = processResolutionCycle({}, [snapshot(T0, [parent24h(T0)])], HORMUZ(40), T0);
-    ({ ledger } = processResolutionCycle(ledger, [], HORMUZ(61), T0 + DAY_MS));
+    ({ ledger } = processResolutionCycle(ledger, [], HORMUZ(HORMUZ_YES_SCORE), T0 + DAY_MS));
     assert.equal(ledger[parentKey].outcome, 'YES');
     assert.equal(ledger[`${parentKey}@h24`], undefined, 'the parent horizon carries no projection window');
     assert.equal(ledger[`${parentKey}@d7`].status, 'pending');
@@ -3452,7 +3511,7 @@ describe('projection horizon windows (#7075)', () => {
     assert.equal(ledger[`${parentKey}@d7`].outcome, 'NO', 'd7 reads its own deadline sample, not the parent YES');
     assert.equal(ledger[`${parentKey}@d30`].status, 'pending');
 
-    const { ledger: final, receipts } = processResolutionCycle(ledger, [], HORMUZ(61), T0 + 30 * DAY_MS);
+    const { ledger: final, receipts } = processResolutionCycle(ledger, [], HORMUZ(HORMUZ_YES_SCORE), T0 + 30 * DAY_MS);
     assert.equal(final[`${parentKey}@d30`].outcome, 'YES');
     assert.ok(receipts.some((receipt) => receipt.key === `${parentKey}@d30`), 'the horizon window is receipted on its own deadline');
   });
@@ -3460,11 +3519,11 @@ describe('projection horizon windows (#7075)', () => {
   it('resolves on the nearest sample inside the stored tolerance, before or after the deadline', () => {
     const key = `${PARENT}@h24`;
     const deadline = T0 + DAY_MS;
-    let { ledger } = processResolutionCycle({}, [snapshot(T0, [projected()])], HORMUZ(61), deadline - 4 * H);
+    let { ledger } = processResolutionCycle({}, [snapshot(T0, [projected()])], HORMUZ(HORMUZ_YES_SCORE), deadline - 4 * H);
     assert.equal(ledger[key].status, 'pending');
     ({ ledger } = processResolutionCycle(ledger, [], HORMUZ(40), deadline + 8 * H));
     assert.equal(ledger[key].outcome, 'YES', 'the 4h-early sample is nearer than the 8h-late one');
-    assert.equal(ledger[key].evidence.metricValue, 61);
+    assert.equal(ledger[key].evidence.metricValue, HORMUZ_YES_SCORE);
     assert.equal(ledger[key].evidence.readTs, deadline - 4 * H);
     assert.equal(ledger[key].evidence.offsetMs, -4 * H);
     assert.equal(ledger[PARENT].status, 'pending');

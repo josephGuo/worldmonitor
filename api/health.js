@@ -607,7 +607,7 @@ const STANDALONE_KEYS = {
   // Atomic country evidence + derived five-factor results (#6441). The public
   // API and MCP service read this key only; no request-time source fan-out.
   scorecardFiveFactor:       'scorecard:five-factor:v1',
-  resilienceRanking:        'resilience:ranking:v28',
+  resilienceRanking:        'resilience:ranking:v29',
   productCatalog:           'product-catalog:v3',
   energySpineCountries:     'energy:spine:v1:_countries',
   energyExposure:           'energy:exposure:v1:index',
@@ -624,7 +624,7 @@ const STANDALONE_KEYS = {
   portwatchChokepointsRef:  'portwatch:chokepoints:ref:v1',
   chokepointFlows:          'energy:chokepoint-flows:v1',
   emberElectricity:         'energy:ember:v1:_all',
-  resilienceIntervals:      'resilience:intervals:v11:US',
+  resilienceIntervals:      'resilience:intervals:v12:US',
   sprPolicies:              'energy:spr-policies:v1',
   pipelinesGas:             'energy:pipelines:gas:v1',
   pipelinesOil:             'energy:pipelines:oil:v1',
@@ -1261,7 +1261,7 @@ const SEED_META = {
   },
   forecastBets:        { key: 'seed-meta:forecast:bets',            maxStaleMin: 2880 }, // #5233 shadow bet-engine seeder; daily cron (05:00 UTC), 48h = 2× interval
   forecastMarketsResolution: { key: 'seed-meta:prediction:markets-resolution', maxStaleMin: 2160 }, // #5525 market settlement feed; written every resolver run (even zero-due), so it shares the resolver's 36h window
-  forecastFunnel:      { key: 'seed-meta:forecast:funnel:health:v1', maxStaleMin: 180 }, // funnel-diversity guardrail (#5233); written by seed-forecasts afterPublish each hourly run (3× cadence). status:'error' → SEED_ERROR when the published funnel collapses (too few domains / mostly synthetic)
+  forecastFunnel:      { key: 'seed-meta:forecast:funnel:health:v1', maxStaleMin: 180 }, // funnel-diversity guardrail (#5233); written by seed-forecasts afterPublish each hourly run (3× cadence). A collapsed funnel (too few domains / mostly synthetic) is recorded as information and never sets status:'error' (#8990)
   sectors:          { key: 'seed-meta:market:sectors',             maxStaleMin: 30 },
   techReadiness:    { key: 'seed-meta:economic:worldbank-techreadiness:v1', maxStaleMin: 10080 },
   progressData:     { key: 'seed-meta:economic:worldbank-progress:v1',     maxStaleMin: 10080 },
@@ -2271,6 +2271,68 @@ function parseFredRatesRolloutUntil(results) {
   return Number.isSafeInteger(until) && until > 0 ? until : null;
 }
 
+// A PR that bumps a versioned data key (`family:vN:...`) deploys this reader on
+// merge, but a cron writer keeps its previous code until its next scheduled
+// tick (a Railway deploy does not run the job). #9044 moved resilienceIntervals
+// from v11 to v12 at 08:55 UTC on 2026-10-08, and health read EMPTY (crit) for
+// three hours beside a fresh seed-meta written by the v11 code. A fresh writer
+// whose `sourceVersion` names an older version of the read key's family is that
+// state, so the absent key gets the ROLLOUT_PENDING window the FRED rollout
+// uses. The window is the key's own staleness budget capped at one day, claimed
+// once per data key version in production; a writer that still writes the old
+// version after it reads EMPTY again. The cap matters for budgets of weeks or
+// months (resilienceStaticIndex: 400 days): the gap is one writer tick, and a
+// writer that never moves to the new version must not keep the key at warn.
+const KEY_VERSION_ROLLOUT_DEADLINE_PREFIX = 'health:rollout-deadline:key-version:';
+const KEY_VERSION_ROLLOUT_MAX_MS = 24 * 60 * 60 * 1_000;
+
+function keyVersionRolloutDurationMs(seedCfg) {
+  return Math.min(seedCfg.maxStaleMin * 60_000, KEY_VERSION_ROLLOUT_MAX_MS);
+}
+
+function versionedKeyFamily(dataKey) {
+  const match = /^(.+?):v(\d+)(?=:|$)/.exec(dataKey);
+  return match ? { family: match[1], version: Number(match[2]) } : null;
+}
+
+function writerKeyVersionBehind(dataKey, sourceVersion) {
+  const target = versionedKeyFamily(dataKey);
+  if (!target || typeof sourceVersion !== 'string') return false;
+  const family = target.family.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = new RegExp(`(?:^|:)${family}:v(\\d+)(?=:|$)`).exec(sourceVersion);
+  return match !== null && Number(match[1]) < target.version;
+}
+
+function keyVersionRolloutCandidates(registries, keyStrens, keyErrors, keyMetaValues, keyMetaErrors, now) {
+  const candidates = [];
+  for (const registry of registries) {
+    for (const [name, dataKey] of Object.entries(registry)) {
+      const seedCfg = SEED_META[name];
+      if (!seedCfg || keyErrors.get(dataKey) || keyHasData(dataKey, keyStrens.get(dataKey) ?? 0)) continue;
+      const seedMeta = readSeedMeta(seedCfg, keyMetaValues, keyMetaErrors, now);
+      if (!seedMeta.hasMeta || seedMeta.seedError || seedMeta.seedStale !== false) continue;
+      const meta = unwrapEnvelope(parseRedisValue(keyMetaValues.get(seedCfg.key))).data;
+      if (!writerKeyVersionBehind(dataKey, meta?.sourceVersion)) continue;
+      candidates.push({ name, dataKey, durationMs: keyVersionRolloutDurationMs(seedCfg) });
+    }
+  }
+  return candidates;
+}
+
+// Production only, SET NX without expiry: the same reasons as
+// fredRatesRolloutCommands. The deadline key names the data key version, so the
+// next bump opens its own window.
+function keyVersionRolloutCommands(candidates, now, vercelEnv = process.env.VERCEL_ENV) {
+  if (vercelEnv !== 'production') return [];
+  return candidates.flatMap(({ dataKey, durationMs }) => {
+    const deadlineKey = `${KEY_VERSION_ROLLOUT_DEADLINE_PREFIX}${dataKey}`;
+    return [
+      ['SET', deadlineKey, String(now + durationMs), 'NX'],
+      ['GET', deadlineKey],
+    ];
+  });
+}
+
 function staleContentGraceEvidence(contentAge, contentFreshness, now) {
   if (!contentAge && !contentFreshness) return null;
 
@@ -2432,7 +2494,7 @@ const EMPTY_DATA_OK_KEYS = new Set([
   'resilienceStaticFao', // empty aggregate = no IPC Phase 3+ countries this year (possible in theory); the key must exist but count=0 is fine
   'cableHealth', // `cables: {}` = no active subsea cable disruptions per NGA NAVAREA warnings — all cables implicitly healthy. Also covers NGA-upstream-down windows where get-cable-health writes back the fallback response (empty cables); without this, those would alarm EMPTY_DATA.
   'forecastBets', // #5233 shadow bet-engine stream; absent before the cron ships it and empty on weeks the energy feed yields no bet — tolerate as STALE_SEED (warn), not EMPTY (crit).
-  'forecastFunnel', // #5233 funnel guardrail is a new afterPublish side-write; before the first seed-forecasts run ships it the key is absent — tolerate as STALE_SEED (warn), not EMPTY (crit). A COLLAPSED funnel still surfaces via seed-meta status:'error' → SEED_ERROR, which classifyKey checks before this branch.
+  'forecastFunnel', // #5233 funnel guardrail is a new afterPublish side-write; before the first seed-forecasts run ships it the key is absent — tolerate as STALE_SEED (warn), not EMPTY (crit). Its producer never writes status:'error': a collapsed funnel is informational (#8990), so only freshness can degrade this check.
   'forecastCalibrationMap', // #7070 map; absent until the daily resolver first writes it, and seed-forecasts publishes raw while it is absent. A dead resolver still alarms through forecastResolutions/forecastScorecard.
   'marketAlertLedger', 'marketAlertScorecard', // #8867: an empty ledger means no market alert has fired yet, and the scorecard then carries four zero rows; a dead seeder still alarms through the 30-minute seed-meta gate.
   'viarailLive', // unofficial optional VIA Rail live JSON (#6615); unconfigured / 404 is STALE_SEED then NOT_CONFIGURED, never EMPTY/crit
@@ -3317,7 +3379,13 @@ function classifyKey(name, redisKey, opts, ctx) {
     // marker rather than measuring it, so all eight of these keys kept the old
     // warn on that path while the sibling `sourceState` path (where staleness
     // IS measured) correctly reported EMPTY. One physical state, two verdicts.
-    else if (MISSING_DATA_IS_FAILURE_KEYS.has(name) && hasMeta && (seedStale !== true || fault)) absent = 'EMPTY';
+    // Inside a rollout window the absence is explained (fresh metadata from a
+    // writer still on the previous key version), so it reads ROLLOUT_PENDING.
+    // Assigned here, not by falling through: every key in this set is also in
+    // EMPTY_DATA_OK_KEYS, whose arm would read OK.
+    else if (MISSING_DATA_IS_FAILURE_KEYS.has(name) && hasMeta && (seedStale !== true || fault)) {
+      absent = isRolloutPending ? 'ROLLOUT_PENDING' : 'EMPTY';
+    }
     // Ahead of EMPTY_DATA_OK_KEYS only when no readable publication evidence
     // exists. Marker absence alone never overrides normal data/meta semantics.
     else if (isPreActivationOnDemand) absent = 'EMPTY_ON_DEMAND';
@@ -3345,9 +3413,7 @@ function classifyKey(name, redisKey, opts, ctx) {
     //     ROLLOUT_PENDING): the fault holds. Four key classes land here, and a
     //     bare guard would silence or generify every one of them — most sharply
     //     EMPTY_DATA_OK_KEYS, whose absence resolves to plain OK whenever the
-    //     fault arrived via `sourceState` (which leaves seedStale false). See
-    //     the forecastFunnel entry in that set, which documents its reliance on
-    //     a collapsed funnel surfacing as SEED_ERROR.
+    //     fault arrived via `sourceState` (which leaves seedStale false).
     status = fault && statusSeverityRank(absent) <= statusSeverityRank(fault)
       ? fault
       : absent;
@@ -5267,6 +5333,23 @@ export async function handleHealth(req, ctx, options = {}) {
   if (fredRatesRolloutUntil !== null) {
     rolloutPendingUntilMs.set('fredRatesSeeder', fredRatesRolloutUntil);
   }
+  // Rare second round trip: only while a writer lags a key-version bump.
+  const keyVersionRollouts = keyVersionRolloutCandidates(
+    [BOOTSTRAP_KEYS, STANDALONE_KEYS], keyStrens, keyErrors, keyMetaValues, keyMetaErrors, evaluationNow,
+  );
+  const keyVersionCommands = keyVersionRolloutCommands(keyVersionRollouts, evaluationNow);
+  if (keyVersionCommands.length > 0) {
+    if (budget.exhausted()) return deadlineFallback();
+    const deadlineResults = await redisPipeline(
+      fenceHealthMutations(keyVersionCommands, refreshLockToken), budget.clamp(4_000), true,
+    ).catch(() => null);
+    if (budget.exhausted()) return deadlineFallback();
+    // A failed claim or read grants no window: the key keeps its strict verdict.
+    keyVersionRollouts.forEach(({ name }, index) => {
+      const until = parseFredRatesRolloutUntil(deadlineResults?.slice(index * 2, index * 2 + 2));
+      if (until !== null) rolloutPendingUntilMs.set(name, until);
+    });
+  }
 
   const containmentEvidenceByName = new Map();
   const classifyCtx = {
@@ -5579,6 +5662,11 @@ export const __testing__ = {
   RUNTIME_ROLLOUT_PENDING_POLICIES,
   FRED_RATES_ROLLOUT_DEADLINE_KEY,
   FRED_RATES_ROLLOUT_DURATION_MS,
+  KEY_VERSION_ROLLOUT_DEADLINE_PREFIX,
+  KEY_VERSION_ROLLOUT_MAX_MS,
+  keyVersionRolloutDurationMs,
+  writerKeyVersionBehind,
+  keyVersionRolloutCommands,
   fredRatesRolloutCommands,
   parseFredRatesRolloutUntil,
   STALE_CONTENT_GRACE_MS,

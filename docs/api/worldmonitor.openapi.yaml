@@ -11657,8 +11657,8 @@ paths:
                 - name: runId
                   in: query
                   description: |-
-                    Optional run identifier. The latest package is always returned; when it
-                     differs from this value, note says so.
+                    Optional run identifier. It does not select a package yet: the latest is
+                     always returned, and note says when it differs.
                   required: false
                   example: "example-id"
                   schema:
@@ -43630,9 +43630,7 @@ components:
                          Distinguishes an outage from a healthy empty forecast set.
                 stale:
                     type: boolean
-                    description: |-
-                        True when forecasts are served from a stale fallback. Currently false for
-                         this endpoint because get-forecasts does not have a stale fallback cache.
+                    description: 'Always false: get-forecasts has no stale fallback.'
                 error:
                     type: string
                     description: |-
@@ -44152,6 +44150,11 @@ components:
                 yesCount:
                     type: integer
                     format: int32
+                bssCi95:
+                    type: array
+                    items:
+                        type: number
+                        format: double
             description: |-
                 Headline Brier/log score over scored entries that are neither synthetic
                  backfill nor unpromoted shadow streams; count 0 with excluded_scored > 0
@@ -44170,6 +44173,9 @@ components:
                 yesCount:
                     type: integer
                     format: int32
+                bss:
+                    type: number
+                    format: double
         worldmonitor_forecast_v1_ScorecardUncertainty:
             type: object
             properties:
@@ -44196,7 +44202,7 @@ components:
                         description: '[low, high] at 95%.'
                 insufficientSample:
                     type: boolean
-                    description: True when count is under 30.
+                    description: True below the family minimums.
             description: Bootstrap interval on a mean Brier score.
         worldmonitor_forecast_v1_ScorecardFunnel:
             type: object
@@ -44320,7 +44326,7 @@ components:
                 medianLeadTimeMs:
                     type: integer
                     format: int64
-                    description: 'Warning: Values > 2^53 may lose precision in JavaScript'
+                    description: 'Median over hits; omitted below 30 hits.. Warning: Values > 2^53 may lose precision in JavaScript'
             description: One market-alert type's rolling hit rate beside its base rate.
         worldmonitor_forecast_v1_ScorecardFamilyOutcome:
             type: object
@@ -44347,8 +44353,8 @@ components:
                 runId:
                     type: string
                     description: |-
-                        Optional run identifier. The latest package is always returned; when it
-                         differs from this value, note says so.
+                        Optional run identifier. It does not select a package yet: the latest is
+                         always returned, and note says when it differs.
         worldmonitor_forecast_v1_GetSimulationPackageResponse:
             type: object
             properties:
@@ -44364,7 +44370,7 @@ components:
                 generatedAt:
                     type: integer
                     format: int64
-                    description: 'Unix timestamp in milliseconds (from Date.now()). Warning: Values > 2^53 may lose precision in JavaScript.. Warning: Values > 2^53 may lose precision in JavaScript'
+                    description: 'Unix timestamp in milliseconds.. Warning: Values > 2^53 may lose precision in JavaScript'
                 note:
                     type: string
                     description: Set when run_id differs from the returned package's run_id.
@@ -44402,10 +44408,12 @@ components:
                 generatedAt:
                     type: integer
                     format: int64
-                    description: 'Unix timestamp in milliseconds (from Date.now()). Warning: Values > 2^53 may lose precision in JavaScript.. Warning: Values > 2^53 may lose precision in JavaScript'
+                    description: 'Unix timestamp in milliseconds.. Warning: Values > 2^53 may lose precision in JavaScript'
                 note:
                     type: string
-                    description: Set when run_id was supplied but the latest outcome is returned instead.
+                    description: |-
+                        Set when run_id was supplied but the latest outcome is returned instead; the
+                         text says why (run expired or not found, or its by-run record failed).
                 error:
                     type: string
                     description: |-

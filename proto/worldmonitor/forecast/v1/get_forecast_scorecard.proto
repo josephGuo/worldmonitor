@@ -70,6 +70,7 @@ message ScorecardSkill {
   int32 excluded_scored = 4;
   repeated string excluded_origins = 5;
   int32 yes_count = 6;
+  repeated double bss_ci95 = 7;
 }
 
 message ScorecardPublishedDomain {
@@ -77,6 +78,7 @@ message ScorecardPublishedDomain {
   int32 count = 2;
   double brier = 3;
   int32 yes_count = 4;
+  optional double bss = 5;
 }
 
 // Bootstrap interval on a mean Brier score.
@@ -85,7 +87,7 @@ message ScorecardInterval {
   double mean = 2;
   // [low, high] at 95%.
   repeated double ci95 = 3;
-  // True when count is under 30.
+  // True below the family minimums.
   bool insufficient_sample = 4;
 }
 
@@ -141,6 +143,7 @@ message MarketAlertRow {
   optional double base_hit_rate = 5;
   // Hit rate over the rows whose control scored; compare with base_hit_rate.
   optional double paired_hit_rate = 6;
+  // Median over hits; omitted below 30 hits.
   optional int64 median_lead_time_ms = 7 [(sebuf.http.int64_encoding) = INT64_ENCODING_NUMBER];
 }
 
