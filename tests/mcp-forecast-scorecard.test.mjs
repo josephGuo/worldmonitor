@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { executeTool } from '../api/mcp/dispatch.ts';
 import { CACHE_TOOLS } from '../api/mcp/registry/cache-tools.ts';
 import { projectForecastScorecard } from '../api/mcp/registry/cache-tools.ts';
-import { FORECAST_ACCURACY_AUDIT } from '../shared/forecast-accuracy-audit.js';
+import { FORECAST_ACCURACY_AUDIT_OVERRIDE, STANDING_ACCURACY_AUDIT, forecastAccuracyAudit } from '../shared/forecast-accuracy-audit.js';
 
 const tool = CACHE_TOOLS.find((entry) => entry.name === 'get_forecast_scorecard');
 
@@ -32,6 +32,14 @@ const DECLARED = {
   },
   receipts: [{ question: 'Will Brent reach 104.89 USD/bbl?', forecastAt: 1, probability: 0.35, outcome: 'NO', resolvedAt: 2, sourceFeed: 'commodity-prices', observedValue: 100.75 }],
   familyOutcomes: [{ forecastId: 'fc-conflict-1', outcome: 'YES' }, { forecastId: 'fc-conflict-1', outcome: 'VOID', voidReason: 'judge_disagreement' }],
+  // MCP-only (#9057): the public OpenAPI document has no room for it.
+  horizonGrades: {
+    semantics: 'point_in_time',
+    note: 'A projection is not a probability.',
+    minimums: { families: 30, yesFamilies: 5, noFamilies: 5 },
+    unversionedScored: 0,
+    rows: [{ curvesVersion: 1, horizon: 'd7', scored: 1, yes: 1, no: 0, families: 1, yesFamilies: 1, noFamilies: 0, measurable: false }],
+  },
 };
 
 const MARKET_ALERTS_STORED = {
@@ -167,6 +175,15 @@ describe('get_forecast_scorecard MCP projection (#8892)', () => {
     assert.equal(serialized.includes('coveredFromMs'), false);
   });
 
+  it('serves a horizon row below the family minimums as counts only (#9057)', async () => {
+    const stored = { ...DECLARED, horizonGrades: { ...DECLARED.horizonGrades, rows: [{ ...DECLARED.horizonGrades.rows[0], brier: { mean: 0.1, ci95: [0, 0.2] }, realizedRate: { count: 1 }, registered: 9 }] } };
+    const result = await runTool({
+      'forecast:scorecard:v1': { _seed: { fetchedAt: Date.now() }, data: stored },
+      'seed-meta:forecast:scorecard': { fetchedAt: Date.now() },
+    });
+    assert.deepEqual(result.data.scorecard.horizonGrades, DECLARED.horizonGrades);
+  });
+
   it('withholds a median lead time built on fewer than 30 hits (#8985)', () => {
     const fewHits = { ...MARKET_ALERTS_STORED, byType: [{ ...MARKET_ALERTS_STORED.byType[0], hit: 29 }] };
     const [row] = tool._project({ scorecard: DECLARED, marketAlerts: fewHits }).marketAlerts.byType;
@@ -211,8 +228,20 @@ describe('get_forecast_scorecard under the accuracy audit (#8990)', () => {
     assert.deepEqual({ ...audited, underAudit: null }, lifted, 'the flag is the only difference');
   });
 
-  it('projects through the live switch and declares the flag in its output schema', () => {
-    assert.deepEqual(tool._project(structuredClone(data)), projectForecastScorecard(structuredClone(data), FORECAST_ACCURACY_AUDIT));
+  it('derives the flag from the scorecard it serves and declares it in its output schema', () => {
+    assert.deepEqual(tool._project(structuredClone(data)), projectForecastScorecard(structuredClone(data), forecastAccuracyAudit(data.scorecard)));
     assert.deepEqual(tool.outputSchema.properties.data.properties.underAudit.type, ['object', 'null']);
+  });
+
+  it('lifts once the seeder calls the headline measurable, and holds while it does not', () => {
+    const held = FORECAST_ACCURACY_AUDIT_OVERRIDE ?? STANDING_ACCURACY_AUDIT;
+    const withSkill = (measurable, fetchedAt = Date.now()) => ({ ...data, scorecardMeta: { fetchedAt }, scorecard: { ...data.scorecard, skill: { ...data.scorecard.skill, measurable } } });
+    assert.deepEqual(tool._project(withSkill(false)).underAudit, { since: held.since, issue: held.issue, reason: held.reason });
+    assert.deepEqual(tool._project(structuredClone(data)).underAudit, { since: held.since, issue: held.issue, reason: held.reason }, 'no verdict, no lift');
+    if (FORECAST_ACCURACY_AUDIT_OVERRIDE) return;
+    assert.equal(tool._project(withSkill(true)).underAudit, null);
+    assert.deepEqual(tool._project(withSkill(true, Date.now() - 37 * 3_600_000)).underAudit?.issue, held.issue, 'a stale seed cannot lift it');
+    assert.deepEqual(tool._project({ ...withSkill(true), scorecardMeta: null }).underAudit?.issue, held.issue, 'nor can an unknown clock');
+    assert.ok(tool._cacheKeys.includes('seed-meta:forecast:scorecard'), 'the tool reads the seed clock');
   });
 });

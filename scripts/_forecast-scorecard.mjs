@@ -62,17 +62,22 @@ export function generationOriginOf(entry) {
   return entry?.generationOrigin || 'unknown';
 }
 
-// The published-origin population: the headline skill set with bet_engine
-// held out regardless of the promotion flag. Calibration fits and evaluates
-// only this population (#7070).
 // Shadow origins the promotion flag has moved into publication. Promotion
 // (#5525 U14) is the only path; it moves bet_engine and nothing else.
 function promotedShadowOrigins(options) {
   return options.promoteBetEngine === true ? ['bet_engine'] : [];
 }
 
-// An entry users were shown: shadow bets are scored for evidence but never
-// published until promoted. Synthetic and unattributed rows were published.
+// Two populations both called "published" (#8990); keep them apart:
+// - Published forecasts (isPublishedEntry): every entry users were shown.
+//   Shadow bets are scored for evidence but never published until promoted;
+//   synthetic and unattributed rows were published. `totals`, `funnel` and
+//   `goForward` count this population.
+// - Attributable published forecasts (isPublishedOriginEntry): the headline
+//   skill set with bet_engine held out regardless of the promotion flag, so
+//   state_derived and unknown rows are out too. `corpus`, `publishedByDomain`,
+//   receipts, family outcomes and the calibration fit and evaluation (#7070)
+//   count this one.
 function isPublishedEntry(entry, options) {
   const origin = generationOriginOf(entry);
   return !SHADOW_GENERATION_ORIGINS.includes(origin) || promotedShadowOrigins(options).includes(origin);
@@ -132,40 +137,36 @@ export function computeScorecard(ledger, nowMs, options = {}) {
   const resolved = entries.filter((entry) => entry?.status === 'resolved');
   const scored = resolved.filter(isScoredEntry);
   const voided = resolved.filter((entry) => entry?.outcome === 'VOID');
-  const pending = entries.filter((entry) => entry?.status === 'pending');
   const pendingJudge = entries.filter((entry) => entry?.status === 'pending-judge');
+  // The ledger totals, the funnel and the go-forward VOID share describe what
+  // users were shown (#8990). Unpromoted shadow bets settle on market data and
+  // almost never void, so pooling them hid the published VOID rate.
+  const publishedEntries = entries.filter((entry) => isPublishedEntry(entry, options));
 
-  const goForward = summarizeGoForward(entries, minResolvedAt, rollingWindowDays, options);
+  const goForward = summarizeGoForward(publishedEntries, minResolvedAt, rollingWindowDays);
 
   const scorecard = {
-    // 2: carries publishedByDomain (#5092).
-    schemaVersion: 2,
+    // 2: carries publishedByDomain (#5092). 3: totals and funnel count
+    // published forecasts only (#8990).
+    schemaVersion: 3,
     generatedAt: nowMs,
     rollingWindowDays,
-    methodology: `Brier/log score over resolved YES/NO published forecast windows; VOID and pending entries are counted for coverage but excluded from accuracy math. Each window is one question, and it is scored on the probability published when the window opened; a later re-emission of the same question does not change it. While an outcome-fitted calibration gate passes, that probability is calibrated, and the API does not mark which ones are; after a switch between raw and calibrated publication, the rolling window mixes forecasts published under both.${envelopeBugNote(voided)}${placeholderNote(placeholderCount)}${nowMs >= GO_FORWARD_SINCE_MS ? goForwardNote(goForward) : ''}`,
-    totals: {
-      entries: entries.length,
-      resolved: resolved.length,
-      pending: pending.length,
-      pendingJudge: pendingJudge.length,
-      scored: scored.length,
-      void: voided.length,
-      voidRate: resolved.length ? round(voided.length / resolved.length) : 0,
-      // Deprecated (#7072): scored over every ledger entry, which measures
-      // neither publication nor coverage. Still emitted so API and MCP readers
-      // do not break; corpus.registrationCoverage is the publication measure.
-      publicationCoverage: entries.length ? round(scored.length / entries.length) : 0,
-    },
+    methodology: `Brier/log score over resolved YES/NO published forecast windows; VOID and pending entries are counted for coverage but excluded from accuracy math. The ledger totals and the maturity funnel count published forecasts only: shadow bets, scored for evidence but never shown, are left out of them. Each window is one question, and it is scored on the probability published when the window opened; a later re-emission of the same question does not change it. While an outcome-fitted calibration gate passes, that probability is calibrated, and the API does not mark which ones are; after a switch between raw and calibrated publication, the rolling window mixes forecasts published under both.${envelopeBugNote(voided)}${placeholderNote(placeholderCount)}${nowMs >= GO_FORWARD_SINCE_MS ? goForwardNote(goForward) : ''}`,
+    totals: summarizeTotals(publishedEntries),
+    // Internal: every rolling-window entry, the seed-meta record count. The
+    // API, MCP and /accuracy/ select fields by name and leave it out.
+    ledgerEntries: entries.length,
     judgedLane: summarizeJudgedLane(entries, resolved, pendingJudge, nowMs, options),
     goForward,
     specOrigins: summarizeSpecOrigins(entries, options),
     byDomain: summarizeGroups(scored, resolved, 'domain', 'domain'),
     byGenerationOrigin: summarizeGroups(scored, resolved, 'generationOrigin', 'generationOrigin'),
     calibration: calibrationBuckets(scored),
-    funnel: summarizeFunnel(entries, nowMs),
+    funnel: summarizeFunnel(publishedEntries, nowMs),
     corpus: summarizeCorpus(entries, nowMs, options),
     projections: summarizeProjectionHorizons(horizonEntries, nowMs),
   };
+  scorecard.horizonGrades = summarizeHorizonGrades(scorecard.projections);
 
   const overall = summarizeScored(scored);
   if (overall) scorecard.overall = overall;
@@ -179,6 +180,7 @@ export function computeScorecard(ledger, nowMs, options = {}) {
   const excludeOrigins = new Set(options.skillExcludeOrigins ?? defaultExcluded);
   const skill = summarizeSkill(scored, excludeOrigins);
   if (skill) scorecard.skill = skill;
+  scorecard.methodology += preLineageAnchorNote(skill);
   scorecard.publishedByDomain = summarizePublishedByDomain(scored);
   const skillScored = scored.filter((entry) => !excludeOrigins.has(generationOriginOf(entry)));
   scorecard.uncertainty = {
@@ -228,6 +230,25 @@ export function computeScorecard(ledger, nowMs, options = {}) {
     scorecard.betEngine = slice;
   }
   return scorecard;
+}
+
+function summarizeTotals(entries) {
+  const resolved = entries.filter((entry) => entry?.status === 'resolved');
+  const scored = resolved.filter(isScoredEntry);
+  const voided = resolved.filter((entry) => entry?.outcome === 'VOID');
+  return {
+    entries: entries.length,
+    resolved: resolved.length,
+    pending: entries.filter((entry) => entry?.status === 'pending').length,
+    pendingJudge: entries.filter((entry) => entry?.status === 'pending-judge').length,
+    scored: scored.length,
+    void: voided.length,
+    voidRate: resolved.length ? round(voided.length / resolved.length) : 0,
+    // Deprecated (#7072): scored over every ledger entry, which measures
+    // neither publication nor coverage. Still emitted so API and MCP readers
+    // do not break; corpus.registrationCoverage is the publication measure.
+    publicationCoverage: entries.length ? round(scored.length / entries.length) : 0,
+  };
 }
 
 function isEnsembleScored(entry) {
@@ -327,14 +348,12 @@ function windowOpenedAt(entry) {
   return Number.isFinite(generatedAt) && generatedAt > 0 ? generatedAt : NaN;
 }
 
-// The go-forward VOID-share KPI (#4930), over published forecasts only. It
-// starts from the `totals` population, so a row withheld, duplicated or outside
-// the rolling window counts in neither, and then drops unpromoted shadow bets,
-// which are never published and settle on market data that does not void.
-// Once GO_FORWARD_SINCE is older than the window, rows resolved before the
-// window start drop out and `windowTruncated` says so.
-function summarizeGoForward(entries, minResolvedAt, rollingWindowDays, options) {
-  const cohort = entries.filter((entry) => isPublishedEntry(entry, options) && windowOpenedAt(entry) >= GO_FORWARD_SINCE_MS);
+// The go-forward VOID-share KPI (#4930): the `totals` population, published
+// forecasts only, cut to windows opened from GO_FORWARD_SINCE. Once that date
+// is older than the window, rows resolved before the window start drop out and
+// `windowTruncated` says so.
+function summarizeGoForward(publishedEntries, minResolvedAt, rollingWindowDays) {
+  const cohort = publishedEntries.filter((entry) => windowOpenedAt(entry) >= GO_FORWARD_SINCE_MS);
   const resolved = cohort.filter((entry) => entry?.status === 'resolved');
   const voided = resolved.filter((entry) => entry?.outcome === 'VOID');
   const voidByReason = {};
@@ -380,6 +399,15 @@ function goForwardNote(goForward) {
     return ` ${share}. That is too few to compare with the target of ${target}, which needs at least ${goForward.minResolved} resolved. Judged forecasts resolve days after hard ones and have voided more often, so early readings run low.${scope}`;
   }
   return ` ${share}; the target is ${target}.${scope}`;
+}
+
+// The count itself is internal (#9010), so the methodology, which REST, MCP and
+// /accuracy/ all carry, states it beside the headline the audit lift reads (#8990).
+function preLineageAnchorNote(skill) {
+  const count = skill?.preLineageAnchorCount ?? 0;
+  if (!count) return '';
+  const [verb, subject] = count === 1 ? ['was', 'it is'] : ['were', 'they are'];
+  return ` ${COUNT.format(count)} of the ${COUNT.format(skill.count)} headline forecasts scored here ${verb} published after a blend toward a market price chosen by the matcher used before issue #7071, which paired forecasts with unrelated markets; ${subject} scored on the probability published.`;
 }
 
 export function isHorizonEntry(entry) {
@@ -969,10 +997,23 @@ function marketDeltaInterval(scored) {
   };
 }
 
+function familyOutcomeCounts(families) {
+  return {
+    families: families.length,
+    yesFamilies: families.filter((family) => family.yes > 0).length,
+    noFamilies: families.filter((family) => family.yes < family.rows).length,
+  };
+}
+
+/** The measurable rule (#8990, #9032), on counts: every published verdict and horizon grade (#9057) reads it. */
+export function meetsFamilyOutcomeMinimums({ families, yesFamilies, noFamilies }) {
+  return families >= SKILL_MIN_FAMILIES
+    && yesFamilies >= SKILL_MIN_OUTCOME_FAMILIES
+    && noFamilies >= SKILL_MIN_OUTCOME_FAMILIES;
+}
+
 function meetsFamilyMinimums(families) {
-  return families.length >= SKILL_MIN_FAMILIES
-    && families.filter((family) => family.yes > 0).length >= SKILL_MIN_OUTCOME_FAMILIES
-    && families.filter((family) => family.yes < family.rows).length >= SKILL_MIN_OUTCOME_FAMILIES;
+  return meetsFamilyOutcomeMinimums(familyOutcomeCounts(families));
 }
 
 // A family is one forecast id (#8990): its windows ask the same question of
@@ -1185,6 +1226,42 @@ function summarizeProjectionHorizons(entries, nowMs) {
   };
 }
 
+export const HORIZON_GRADE_NOTE = 'A projection is not a probability: it comes from a fixed, hand-set curve per domain, identified by curvesVersion. Each grade scores the projection value as if it were a probability, at the point in time the horizon names. A grade is published only for a curve version and horizon whose scored windows come from enough forecast families; below that the row carries counts only.';
+
+// The public horizon grades (#9057): one row per stamped curve version and
+// horizon, cut from the byCurvesVersion slices so a grade never pools two
+// curve sets. Brier and realized rate appear only when the row meets the
+// headline's family minimums; below them the row carries its counts and
+// measurable: false. Windows with no version stamp cannot name the curves
+// they came from, so they are counted and never graded.
+function summarizeHorizonGrades(projections) {
+  const stamped = projections.byCurvesVersion.filter((slice) => slice.curvesVersion !== null);
+  const unversioned = projections.byCurvesVersion.find((slice) => slice.curvesVersion === null);
+  return {
+    semantics: projections.semantics,
+    note: HORIZON_GRADE_NOTE,
+    minimums: { families: SKILL_MIN_FAMILIES, yesFamilies: SKILL_MIN_OUTCOME_FAMILIES, noFamilies: SKILL_MIN_OUTCOME_FAMILIES },
+    unversionedScored: unversioned ? unversioned.byHorizon.reduce((sum, row) => sum + row.scored, 0) : 0,
+    rows: stamped.flatMap(({ curvesVersion, byHorizon }) => byHorizon.map((row) => {
+      const counts = { families: row.families, yesFamilies: row.yesFamilies, noFamilies: row.noFamilies };
+      const measurable = meetsFamilyOutcomeMinimums(counts) && row.brier !== null;
+      return {
+        curvesVersion,
+        horizon: row.horizon,
+        scored: row.scored,
+        yes: row.yes,
+        no: row.no,
+        ...counts,
+        measurable,
+        ...(measurable && {
+          brier: { mean: row.brier.mean, ci95: row.brier.ci95 },
+          realizedRate: row.realizedRate,
+        }),
+      };
+    })),
+  };
+}
+
 function projectionCurvesVersionOf(entry) {
   return Number.isInteger(entry?.projectionCurvesVersion) ? entry.projectionCurvesVersion : null;
 }
@@ -1211,6 +1288,7 @@ function summarizeHorizonRows(entries, nowMs, scope) {
     const resolved = group.filter((entry) => entry?.status === 'resolved');
     const scored = resolved.filter(isScoredEntry);
     const families = familyTotals(scored);
+    const { yesFamilies, noFamilies } = familyOutcomeCounts(families);
     const yes = scored.filter((entry) => entry.outcome === 'YES').length;
     const maturedPending = group.filter((entry) => {
       if (entry?.status === 'resolved') return false;
@@ -1224,6 +1302,8 @@ function summarizeHorizonRows(entries, nowMs, scope) {
       resolved: resolved.length,
       scored: scored.length,
       families: families.length,
+      yesFamilies,
+      noFamilies,
       yes,
       no: scored.filter((entry) => entry.outcome === 'NO').length,
       unobserved: resolved.filter((entry) => entry?.outcome === 'UNOBSERVED').length,
