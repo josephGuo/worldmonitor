@@ -316,6 +316,8 @@ export const FULL_FEEDS: Record<string, Feed[]> = {
     { name: 'NewsMaker', url: rss('https://newsmaker.md/feed'), lang: 'ru' },
     { name: 'Ziarul de Gardă', url: rss('https://www.zdg.md/feed/'), lang: 'ro' },
     { name: 'Sky News', url: rss('https://news.google.com/rss/search?q=site%3Anews.sky.com%20when%3A1d&hl=en-US&gl=US&ceid=US:en') },
+    { name: 'BBC UK', url: rss('https://feeds.bbci.co.uk/news/uk/rss.xml') },
+    { name: 'BBC Northern Ireland', url: rss('https://feeds.bbci.co.uk/news/northern_ireland/rss.xml') },
   ],
   middleeast: [
     { name: 'BBC Middle East', url: rss('https://feeds.bbci.co.uk/news/world/middle_east/rss.xml') },
@@ -580,6 +582,16 @@ export const FULL_FEEDS: Record<string, Feed[]> = {
     { name: 'Nuclear Energy', url: rss('https://news.google.com/rss/search?q=("nuclear+energy"+OR+"nuclear+power"+OR+uranium+OR+IAEA)+when:3d&hl=en-US&gl=US&ceid=US:en') },
     { name: 'Reuters Energy', url: rss('https://news.google.com/rss/search?q=site:reuters.com+(oil+OR+gas+OR+energy+OR+OPEC)+when:3d&hl=en-US&gl=US&ceid=US:en') },
     { name: 'Mining & Resources', url: rss('https://news.google.com/rss/search?q=(lithium+OR+"rare+earth"+OR+cobalt+OR+mining)+when:3d&hl=en-US&gl=US&ceid=US:en') },
+  ],
+  // Science panel (2026-10-17 Google News World audit: science stories it
+  // carried, such as Nature's coral study and Reuters' Neanderthal report,
+  // reached no feed). Last category, so the free cap reaches it last.
+  science: [
+    { name: 'Reuters Science', url: rss('https://news.google.com/rss/search?q=site%3Areuters.com%20science%20when%3A2d&hl=en-US&gl=US&ceid=US:en') },
+    { name: 'Nature News', url: rss('https://www.nature.com/nature.rss') },
+    { name: 'BBC Science', url: rss('https://feeds.bbci.co.uk/news/science_and_environment/rss.xml') },
+    { name: 'Guardian Science', url: rss('https://www.theguardian.com/science/rss') },
+    { name: 'ScienceDaily', url: rss('https://www.sciencedaily.com/rss/all.xml') },
   ],
 };
 
@@ -1166,7 +1178,7 @@ export const SOURCE_REGION_MAP: Record<string, { labelKey: string; feedKeys: str
   africa: { labelKey: 'header.sourceRegionAfrica', feedKeys: ['africa'] },
   latam: { labelKey: 'header.sourceRegionLatAm', feedKeys: ['latam'] },
   asia: { labelKey: 'header.sourceRegionAsiaPacific', feedKeys: ['asia'] },
-  topical: { labelKey: 'header.sourceRegionTopical', feedKeys: ['energy', 'tech', 'ai', 'finance', 'layoffs', 'thinktanks'] },
+  topical: { labelKey: 'header.sourceRegionTopical', feedKeys: ['energy', 'tech', 'ai', 'finance', 'layoffs', 'thinktanks', 'science'] },
   intel: { labelKey: 'header.sourceRegionIntel', feedKeys: [] },
 
   // Tech variant regions
@@ -1481,6 +1493,27 @@ export const MAJOR_PUBLISHER_DEFAULT_SOURCES = [
   'Japan Times',
 ] as const;
 
+/**
+ * The BBC's UK desk (2026-10-17 audit), default-on in EN like the major
+ * publishers above and, like them, listed last and not cap-protected.
+ * BBC Northern Ireland is in the catalog but opt-in.
+ */
+export const BBC_UK_DEFAULT_SOURCES = ['BBC UK'] as const;
+
+/**
+ * The Science panel's sources (2026-10-17 audit). The panel is opt-in, but its
+ * sources are EN default-on so it has content when enabled. The free-tier cap
+ * picks round-robin across categories, so a default free profile keeps Reuters
+ * Science and Nature News in place of Layoffs News and Foreign Affairs.
+ */
+export const SCIENCE_DEFAULT_SOURCES = [
+  'Reuters Science',
+  'Nature News',
+  'BBC Science',
+  'Guardian Science',
+  'ScienceDaily',
+] as const;
+
 /** Chronological feed introductions used to reconstruct untouched cap states. */
 export const REGIONAL_FEED_ROLLOUT_STAGES = [
   {
@@ -1582,6 +1615,26 @@ export const REGIONAL_FEED_ROLLOUT_STAGES = [
       ...CRISIS_FLOOR_STRATEGIC_DEFAULT_SOURCES,
     ],
   },
+  {
+    introducedNames: [...BBC_UK_DEFAULT_SOURCES],
+    protectedNames: [
+      ...FRONTLINE_EUROPE_PROTECTED_SOURCES,
+      ...REGIONAL_FEED_ROLLOUT_DEFAULT_SOURCES,
+      ...CANADA_EN_DEFAULT_SOURCES,
+      ...CRISIS_FLOOR_EN_DEFAULT_SOURCES,
+      ...CRISIS_FLOOR_STRATEGIC_DEFAULT_SOURCES,
+    ],
+  },
+  {
+    introducedNames: [...SCIENCE_DEFAULT_SOURCES],
+    protectedNames: [
+      ...FRONTLINE_EUROPE_PROTECTED_SOURCES,
+      ...REGIONAL_FEED_ROLLOUT_DEFAULT_SOURCES,
+      ...CANADA_EN_DEFAULT_SOURCES,
+      ...CRISIS_FLOOR_EN_DEFAULT_SOURCES,
+      ...CRISIS_FLOOR_STRATEGIC_DEFAULT_SOURCES,
+    ],
+  },
 ] as const;
 
 /**
@@ -1662,6 +1715,7 @@ export const DEFAULT_ENABLED_SOURCES: Record<string, string[]> = {
     // Periphery packs (#5953) — Caucasus, Belarus/Moldova
     ...CAUCASUS_EN_DEFAULT_SOURCES,
     'Sky News',
+    ...BBC_UK_DEFAULT_SOURCES,
   ],
 
   middleeast: ['BBC Middle East', 'Al Jazeera', 'Al Arabiya', 'Guardian ME', 'BBC Persian', 'Iran International', 'IRNA', 'Mehr News', 'Haaretz', 'Jerusalem Post', 'Ynetnews', 'Asharq News', 'The National', 'Yemen Online', 'Syria Direct', '+972 Magazine', 'Naharnet Lebanon', 'Libya Herald', 'Egypt Independent', 'Times of Israel', 'Middle East Eye'],
@@ -1685,6 +1739,7 @@ export const DEFAULT_ENABLED_SOURCES: Record<string, string[]> = {
   thinktanks: ['Foreign Policy', 'Atlantic Council', 'Foreign Affairs', 'CSIS', 'RAND', 'Brookings', 'Carnegie', 'War on the Rocks', 'ISW'],
   crisis: ['CrisisWatch', 'IAEA', 'WHO', 'UNHCR'],
   energy: ['Oil & Gas', 'Nuclear Energy', 'Reuters Energy', 'Mining & Resources'],
+  science: [...SCIENCE_DEFAULT_SOURCES],
 };
 
 export const DEFAULT_ENABLED_INTEL: string[] = [

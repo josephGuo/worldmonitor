@@ -9,6 +9,12 @@ export interface ServerFeed {
    * default selection.
    */
   deadlinePriority?: number;
+  /**
+   * A deeper feed for the same publisher, fetched with this one in the full
+   * variant and cached under its own URL. Only claim search (/verify,
+   * verify_claim) reads it; the digest and panels never see its items.
+   */
+  depthUrl?: string;
 }
 
 export function isServerFeedReachableForLanguage(
@@ -210,10 +216,18 @@ export const VARIANT_FEEDS: Record<string, Record<string, ServerFeed[]>> = {
       { name: 'Liberal GR', url: gnLocale('site:liberal.gr when:2d', 'el', 'GR', 'GR:el'), lang: 'el' },
       { name: 'CNN Greece', url: gnLocale('site:cnn.gr when:2d', 'el', 'GR', 'GR:el'), lang: 'el' },
       { name: 'Sky News', url: gn('site:news.sky.com when:1d') },
+      // UK domestic and Northern Ireland desks (2026-10-17 audit): stories Google
+      // News World carried that BBC World leaves out.
+      { name: 'BBC UK', url: 'https://feeds.bbci.co.uk/news/uk/rss.xml' },
+      { name: 'BBC Northern Ireland', url: 'https://feeds.bbci.co.uk/news/northern_ireland/rss.xml' },
     ],
     middleeast: [
       { name: 'BBC Middle East', url: 'https://feeds.bbci.co.uk/news/world/middle_east/rss.xml' },
-      { name: 'Al Jazeera', url: 'https://www.aljazeera.com/xml/rss/all.xml' },
+      // The native feed holds 25 entries, about ten hours; the Google News
+      // search holds 100 over two days (2026-10-17 /verify audit).
+      { name: 'Al Jazeera',
+        url: 'https://www.aljazeera.com/xml/rss/all.xml',
+        depthUrl: gn('site:aljazeera.com when:2d') },
       // Theater coverage preset (#5956) - English regional sources.
       { name: 'Al Arabiya', url: gn('site:english.alarabiya.net when:2d') },
       { name: 'Guardian ME', url: 'https://www.theguardian.com/world/middleeast/rss' },
@@ -447,6 +461,14 @@ export const VARIANT_FEEDS: Record<string, Record<string, ServerFeed[]>> = {
       { name: 'Layoffs.fyi', url: gn('tech+company+layoffs+announced when:3d') },
       { name: 'TechCrunch Layoffs', url: 'https://techcrunch.com/tag/layoffs/feed/' },
       { name: 'Layoffs News', url: gn('(layoffs OR "job cuts" OR "workforce reduction") when:3d') },
+    ],
+    // Science panel (2026-10-17 Google News World audit).
+    science: [
+      { name: 'Reuters Science', url: gn('site:reuters.com science when:2d') },
+      { name: 'Nature News', url: 'https://www.nature.com/nature.rss' },
+      { name: 'BBC Science', url: 'https://feeds.bbci.co.uk/news/science_and_environment/rss.xml' },
+      { name: 'Guardian Science', url: 'https://www.theguardian.com/science/rss' },
+      { name: 'ScienceDaily', url: 'https://www.sciencedaily.com/rss/all.xml' },
     ],
   },
 

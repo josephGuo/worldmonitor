@@ -653,5 +653,16 @@
   "Middle East Eye": [],
   "Japan Times": [
     "JP"
-  ]
+  ],
+  "BBC UK": [
+    "GB"
+  ],
+  "BBC Northern Ireland": [
+    "GB"
+  ],
+  "Reuters Science": [],
+  "Nature News": [],
+  "BBC Science": [],
+  "Guardian Science": [],
+  "ScienceDaily": []
 }

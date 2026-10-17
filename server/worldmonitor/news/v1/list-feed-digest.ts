@@ -99,8 +99,10 @@ import {
 } from '../../../../shared/source-provenance';
 import { computeCredibilityScore } from '../../../../shared/news-credibility.js';
 import {
+  STORY_CORROBORATION_FIELD,
   STORY_LABEL_FIELD,
   countLabels,
+  encodeStoryCorroboration,
   encodeStoryLabel,
   keepUnrecordedLabels,
   labelChangeFor,
@@ -183,9 +185,11 @@ function evictOldestIsolateEntry(): void {
 }
 const ITEMS_PER_FEED = 5;
 // Full-variant entries kept past the dashboard cap, for country headlines and
-// /verify claim search. 30 found 49 of 70 Google News World stories on
-// 2026-10-16 (20 found 44; uncapped 54), so the next entries add little.
-const COUNTRY_ITEMS_PER_FEED = 30;
+// /verify claim search. A Google News site: feed returns up to 100 entries and
+// a wire publishes fast: on 2026-10-17 AP's first 30 covered 6.6 hours, and
+// stories Google News World led with sat at AP entries 61, 92 and 95. Keeping
+// the whole feed grows the pool from about 4,400 to 8,300 headlines.
+const COUNTRY_ITEMS_PER_FEED = 100;
 const MAX_ITEMS_PER_CATEGORY = 20;
 const FEED_TIMEOUT_MS = 8_000;
 // Vercel Edge functions have a 25s initial-response ceiling. The digest
@@ -1098,6 +1102,8 @@ function parseRssXml(xml: string, feed: ServerFeed, variant: string): ParseResul
   const droppedFeedCap = Math.max(0, matches.length - ITEMS_PER_FEED);
 
   const parseLimit = retainCountryItems ? COUNTRY_ITEMS_PER_FEED : ITEMS_PER_FEED;
+  // One log line per feed for gated pool links: a deep pool can drop dozens.
+  const poolLinkDrops = new Map<string, number>();
   for (const [index, match] of matches.slice(0, parseLimit).entries()) {
     const block = match[1]!;
     const forDigest = index < ITEMS_PER_FEED;
@@ -1174,10 +1180,8 @@ function parseRssXml(xml: string, feed: ServerFeed, variant: string): ParseResul
           feed,
         )
       ) {
-        console.warn(
-          `[digest] publisher-link-gate drop feed="${feed.name}" variant=${variant} ` +
-            `host="${linkHostnameForLog(link)}"`,
-        );
+        const host = linkHostnameForLog(link);
+        poolLinkDrops.set(host, (poolLinkDrops.get(host) ?? 0) + 1);
         continue;
       }
       if (title.length <= 1000 && link.length <= 2048 && originPublisher.length <= 200) {
@@ -1256,6 +1260,15 @@ function parseRssXml(xml: string, feed: ServerFeed, variant: string): ParseResul
     console.warn(
       `[digest] partial-undated feed="${feed.name}" variant=${variant} ` +
         `parsed=${parsedTotal} dropped=${droppedUndated} kept=${items.length}`,
+    );
+  }
+
+  if (poolLinkDrops.size > 0) {
+    const byHost = [...poolLinkDrops].sort(([a, x], [b, y]) => y - x || a.localeCompare(b));
+    console.warn(
+      `[digest] publisher-link-gate drop feed="${feed.name}" variant=${variant} ` +
+        `hosts="${byHost.map(([host, n]) => `${host}:${n}`).join(',')}" ` +
+        `count=${byHost.reduce((sum, [, n]) => sum + n, 0)}`,
     );
   }
 
@@ -2627,6 +2640,24 @@ function storyLabelChanges(
   return { labelByHash, labelChanges, labelCounts: countLabels(states, now) };
 }
 
+/**
+ * #9213: the verdict every served story carries this cycle, encoded for its
+ * track row. Read like storyLabelChanges, over the story's whole servable
+ * cluster, but for every variant and all four states: alert and digest text
+ * show it, and an untracked tier4-only story still needs saying so.
+ */
+function storyCorroborationByHash(
+  served: readonly ParsedItem[],
+  servable: readonly ParsedItem[],
+): Map<string, string> {
+  const clusterByHash = groupByTitleHash(servable);
+  const byHash = new Map<string, string>();
+  for (const [hash, members] of groupByTitleHash(served)) {
+    byHash.set(hash, encodeStoryCorroboration(storyLabel(clusterByHash.get(hash) ?? members)));
+  }
+  return byHash;
+}
+
 async function writeStoryTracking(
   items: ParsedItem[],
   variant: string,
@@ -2638,6 +2669,8 @@ async function writeStoryTracking(
   // #9093: this cycle's corroboration label per story, persisted on the track
   // row so the next cycle can tell whether it changed. Absent → not written.
   labelByHash?: ReadonlyMap<string, string>,
+  // #9213: this cycle's verdict per story for this variant, read by digest text.
+  corroborationByHash?: ReadonlyMap<string, string>,
 ): Promise<void> {
   if (items.length === 0) return;
   if (redisTimeoutForDeadline(deadlineAt) === undefined) {
@@ -2739,6 +2772,7 @@ async function writeStoryTracking(
         const anchorEligible = anchorFieldAt >= 0
           && hsetFieldsWithEligibility[anchorFieldAt + 1] === '1';
         const label = labelByHash?.get(hash);
+        const corroboration = corroborationByHash?.get(hash);
         const hsetFields = [
           ...(anchorFieldAt >= 0
             ? [
@@ -2747,6 +2781,7 @@ async function writeStoryTracking(
             ]
             : hsetFieldsWithEligibility),
           ...(label ? [STORY_LABEL_FIELD, label] : []),
+          ...(corroboration ? [STORY_CORROBORATION_FIELD(variant, lang), corroboration] : []),
         ];
         commands.push(
           ['HINCRBY', trackKey, 'mentionCount', '1'],
@@ -3021,6 +3056,19 @@ async function writeStoryTracking(
   }
 }
 
+/**
+ * Fetches each full-variant feed's depthUrl so its cache entry stays warm for
+ * claim search. It runs beside the feed batches rather than in a batch slot,
+ * so a slow depth fetch never holds back a digest feed; the build's deadline
+ * signal bounds it, and a failure is ignored. Its items never reach the digest.
+ */
+async function warmDepthFeeds(entries: DigestFeedEntry[], variant: string, signal: AbortSignal): Promise<void> {
+  if (variant !== 'full') return;
+  await Promise.allSettled(entries.flatMap(({ feed }) => feed.depthUrl
+    ? [fetchAndParseRss({ name: feed.name, url: feed.depthUrl, ...(feed.lang ? { lang: feed.lang } : {}) }, variant, signal)]
+    : []));
+}
+
 function buildDigestFeedBatches(variant: string, lang: string): {
   allEntries: DigestFeedEntry[];
   batches: DigestFeedEntry[][];
@@ -3050,9 +3098,17 @@ function buildDigestFeedBatches(variant: string, lang: string): {
   // behind the global deadline.
   const priorityOrdered = orderServerFeedEntries(allEntries);
   const priorityHead = priorityOrdered.filter((entry) => (entry.feed.deadlinePriority ?? 0) > 0);
+  // A category the priority head already starts takes its interleave turn
+  // last, so the first wave spends its slots on categories with no feed in
+  // flight yet (the China trio is all asia).
+  const headCategories = new Set(priorityHead.map((entry) => entry.category));
+  const rest = priorityOrdered.filter((entry) => (entry.feed.deadlinePriority ?? 0) <= 0);
   const orderedEntries = [
     ...priorityHead,
-    ...interleaveByCategory(priorityOrdered.filter((entry) => (entry.feed.deadlinePriority ?? 0) <= 0)),
+    ...interleaveByCategory([
+      ...rest.filter((entry) => !headCategories.has(entry.category)),
+      ...rest.filter((entry) => headCategories.has(entry.category)),
+    ]),
   ];
   const batches: DigestFeedEntry[][] = [];
   for (let i = 0; i < orderedEntries.length; i += BATCH_CONCURRENCY) {
@@ -3083,6 +3139,7 @@ async function buildDigest(
 
   try {
     const { allEntries, batches } = buildDigestFeedBatches(variant, lang);
+    const depthWarming = warmDepthFeeds(allEntries, variant, deadlineController.signal);
 
     const results = new Map<string, ParsedItem[]>();
     const buildStart = Date.now();
@@ -3125,6 +3182,8 @@ async function buildDigest(
         };
       },
     );
+
+    await depthWarming;
 
     for (const { value } of attempts.fulfilled) {
       const { category, items, droppedUndated, droppedFeedCap } = value;
@@ -3408,6 +3467,8 @@ async function buildDigest(
     const { labelByHash, labelChanges, labelCounts } = variant === 'full' && lang === 'en'
       ? storyLabelChanges(allSliced, servableItems, storyTracks, now, unreadTracks)
       : { labelByHash: undefined, labelChanges: [], labelCounts: undefined };
+    // #9213: every variant persists the verdict it served, for digest text.
+    const corroborationByHash = storyCorroborationByHash(allSliced, servableItems);
 
     // Record changes before persisting the new labels: a story whose entry
     // was not written keeps its previous label, so the change is detected
@@ -3433,6 +3494,7 @@ async function buildDigest(
       storyTrackingDeadlineAt,
       clusterAnchorEligibleByFinalHash,
       labelByHash,
+      corroborationByHash,
     ).catch((err: unknown) =>
       console.warn('[digest] story tracking write failed:', err),
     );
@@ -3545,6 +3607,7 @@ async function publishAcceptedLabelCounts(response: ListFeedDigestResponse, dead
 
 /** Internal exports for unit tests only — do not import in production code. */
 export const __testing__ = {
+  storyCorroborationByHash,
   // #7084 serving path. Exported so the wiring can be EXECUTED in tests rather
   // than asserted against this file's own source text — a grep for
   // `serveLastGood(...)` passes whether or not the function behaves.
@@ -3566,6 +3629,7 @@ export const __testing__ = {
   recoverFailedAttempt,
   shouldStartDigestAttempt,
   buildDigestFeedBatches,
+  warmDepthFeeds,
   parseRssXml,
   isTrustedOriginAggregator,
   decodeXmlEntities,

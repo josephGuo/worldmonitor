@@ -18,7 +18,7 @@ import MINING_SITES_RAW from '../../../shared/mining-sites.js';
 import { readJsonFromUpstash } from '../../_upstash-json.js';
 import { argStr } from '../filters';
 import { buildAuthHeaders } from '../auth';
-import { assertToolFetchOk, BillingDenialError, RpcValidationError, throwIfBillingDenial } from '../billing-denial';
+import { assertToolFetchOk, BillingDenialError, parseSafeRpcViolations, RpcValidationError, throwIfBillingDenial } from '../billing-denial';
 import { SUPPORTED_CONSUMER_PRICES_COUNTRIES } from '../constants';
 import {
   assertMcpToolFetchOk,
@@ -1747,6 +1747,13 @@ export const RPC_TOOLS: ToolDef[] = [
         // groups the failure by root cause, not just status. Body reads are
         // best-effort; a read failure must not mask the HTTP status.
         const detail = await res.text().catch(() => '');
+        // An unassigned country_code is a caller error: keep its violations so
+        // dispatch answers -32602 instead of "data fetch failed".
+        if (res.status === 400) {
+          let violations: ReturnType<typeof parseSafeRpcViolations> = [];
+          try { violations = parseSafeRpcViolations(JSON.parse(detail)); } catch { /* not a proto 400 body */ }
+          if (violations.length > 0) throw new RpcValidationError('get-country-intel-brief', violations);
+        }
         let code = '';
         // `error` is usually a string (for example,
         // `invalid_internal_mcp_signature`), but stringify non-string shapes so
@@ -1913,6 +1920,17 @@ export const RPC_TOOLS: ToolDef[] = [
               source: { type: 'string', description: 'Publisher name as the aggregator reported it. Also untrusted.' },
               publishedAt: { type: 'string', description: 'Publication time, ISO-8601 UTC.' },
               publishedAtMs: { type: 'number', description: 'Publication time, Unix epoch milliseconds.' },
+              threat: {
+                type: 'object',
+                description: 'Shared keyword classification of the raw headline before publisher normalization.',
+                required: ['level', 'category', 'confidence', 'source'],
+                properties: {
+                  level: { type: 'string', enum: ['THREAT_LEVEL_UNSPECIFIED', 'THREAT_LEVEL_LOW', 'THREAT_LEVEL_MEDIUM', 'THREAT_LEVEL_HIGH', 'THREAT_LEVEL_CRITICAL'] },
+                  category: { type: 'string', enum: ['conflict', 'protest', 'disaster', 'diplomatic', 'economic', 'terrorism', 'cyber', 'health', 'environmental', 'military', 'crime', 'infrastructure', 'tech', 'general'] },
+                  confidence: { type: 'number', minimum: 0, maximum: 1 },
+                  source: { type: 'string', enum: ['keyword', 'ml', 'llm'] },
+                },
+              },
             },
           },
         },

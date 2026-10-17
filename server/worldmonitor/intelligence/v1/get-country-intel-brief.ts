@@ -5,7 +5,10 @@ import type {
   GetCountryIntelBriefRequest,
   GetCountryIntelBriefResponse,
 } from '../../../../src/generated/server/worldmonitor/intelligence/v1/service_server';
+import { ValidationError } from '../../../../src/generated/server/worldmonitor/intelligence/v1/service_server';
 
+import { isAssignedCountryCode } from '../../../../shared/country-code-resolve';
+import { countryDisplayName } from '../../../../shared/country-mention.js';
 import { cachedFetchJson, getCachedJson } from '../../../_shared/redis';
 import { displayNameForIso2 } from '../../../_shared/country-normalize';
 import { UPSTREAM_TIMEOUT_MS, TIER1_COUNTRIES, sha256Hex } from './_shared';
@@ -18,7 +21,7 @@ import { ENERGY_SPINE_KEY_PREFIX } from '../../../_shared/cache-keys';
 import { deriveCountryIntelCacheKey, fetchSharedCountryContext } from './_country-brief-context';
 import { buildCountryBriefEvidence } from './_country-brief-evidence';
 import { isBriefRelevantTitle } from '../../../../shared/brief-relevance.js';
-import { evidenceNumbersGrounded, isEvidenceLimitClaim, sanctionsEvidenceGrounded } from '../../../../shared/brief-claim-rules.js';
+import { energyEvidenceGrounded, evidenceNumbersGrounded, isEvidenceLimitClaim, sanctionsEvidenceGrounded } from '../../../../shared/brief-claim-rules.js';
 import { briefSectionHeading, type BriefSectionKey } from '../../../../shared/brief-sections.js';
 import {
   resolveEnergyImportDependency,
@@ -28,9 +31,8 @@ import {
 const INTEL_CACHE_TTL = 21600;
 
 // Anonymous cache keys are minted from caller-controlled inputs, so both
-// dimensions must be bounded: ISO-2 country code and a well-formed BCP-47-ish
-// lang tag. Anything else gets the empty response / the 'en' brief.
-const COUNTRY_CODE_RE = /^[A-Za-z]{2}$/;
+// dimensions must be bounded: an assigned ISO-2 country code and a
+// well-formed BCP-47-ish lang tag. Any other lang gets the 'en' brief.
 const LANG_RE = /^[a-z]{2}(-[a-z]{2})?$/;
 
 
@@ -178,6 +180,7 @@ function urgingRolesGrounded(text: string, titles: string[]): boolean {
 function claimIsGrounded(text: string, titles: string[], evidence: CountryBriefEvidenceInput[]): boolean {
   if (isEvidenceLimitClaim(text)) return false;
   if (!sanctionsEvidenceGrounded(text, titles.length, evidence)) return false;
+  if (!energyEvidenceGrounded(text, titles.length, evidence)) return false;
   if (!ciiClaimGrounded(text, titles, evidence) || !urgingRolesGrounded(text, titles)) return false;
   const factTexts = evidence.map((item) => item.factText);
   const grounds = [...titles, ...factTexts];
@@ -337,7 +340,14 @@ export async function getCountryIntelBrief(
     return empty;
   };
 
-  if (!req.countryCode || !COUNTRY_CODE_RE.test(req.countryCode)) return unserved();
+  // The proto checks shape only. An unassigned code such as ZZ would otherwise
+  // read Redis, mint a cache key, and reach the LLM with the code as the name.
+  if (!isAssignedCountryCode(req.countryCode?.toUpperCase() ?? '')) {
+    throw new ValidationError([{
+      field: 'country_code',
+      description: 'country_code must be an assigned ISO 3166-1 alpha-2 code, e.g. "IQ".',
+    }]);
+  }
 
   const isPremium = await isCallerPremium(ctx.request);
 
@@ -397,15 +407,18 @@ export async function getCountryIntelBrief(
   const energyYear = typeof energyMixData?.year === 'number' ? String(energyMixData.year) : '';
   const energyImportYear = importDependency.available ? String(importDependency.year) : '';
 
+  const cacheContext = isPremium && lang === 'en' && !frameworkRaw
+    ? JSON.stringify(sources.filter(source => isBriefRelevantTitle(source.title)))
+    : contextSnapshot;
   const [contextHashFull, frameworkHashFull] = await Promise.all([
-    contextSnapshot ? sha256Hex(contextSnapshot) : Promise.resolve('base'),
+    cacheContext ? sha256Hex(cacheContext) : Promise.resolve('base'),
     frameworkRaw    ? sha256Hex(frameworkRaw)    : Promise.resolve(''),
   ]);
   const cacheKey = deriveCountryIntelCacheKey({
     countryCode: req.countryCode.toUpperCase(),
     lang,
     isPremium,
-    contextHash: contextSnapshot ? contextHashFull.slice(0, 16) : 'base',
+    contextHash: cacheContext ? contextHashFull.slice(0, 16) : 'base',
     // Full digest: the framework is caller-supplied text, and a truncated hash
     // would let a crafted framework collide with another user's cache entry.
     frameworkHash: frameworkRaw ? frameworkHashFull : '',
@@ -415,7 +428,8 @@ export async function getCountryIntelBrief(
   const countryCode = req.countryCode.toUpperCase();
   const countryName = TIER1_COUNTRIES[countryCode]
     || displayNameForIso2(countryCode)
-    || req.countryCode;
+    || countryDisplayName(countryCode)
+    || countryCode;
   const dateStr = new Date().toISOString().split('T')[0];
 
   const fallbackSystemPrompt = `You are a senior intelligence analyst. Current date: ${dateStr}.
@@ -510,6 +524,7 @@ Sections:
 
 Rules:
 - A sanctions data point supports only its exact factText, cited alone without a headline or another data point. Do not use it for an implication or infer a sanctioning actor, target, cause or impact.
+- An energy data point supports only its complete exact factText, cited alone without a headline or another data point. Keep its provenance, year and any negative-value exporter explanation. Do not paraphrase it or use it for an implication.
 - A Country Instability Index data point supports only its descriptive factText, cited alone. Do not infer drivers or changes from a headline. You may omit its trailing band or as-of disclosure.
 - Preserve who urges whom. For a headline saying A urges B to act, keep that direction or write "Whether B will act as urged by A" using the exact supplied names and action. Do not paraphrase an ambiguous urging relation.
 - In a sentence that cites a data point, copy every number, percentage and date exactly from the cited data points; never use a number from a headline in that sentence.
