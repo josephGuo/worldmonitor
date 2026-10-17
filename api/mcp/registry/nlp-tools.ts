@@ -40,6 +40,7 @@ import {
 import { CLAIM_CARD_MAX_HEADLINES, CLAIM_CARD_STATES, CLAIM_MAX_CHARS, buildClaimCard } from '../../../server/_shared/claim-match';
 import { FACT_CHECK_CAVEAT, FACT_CHECK_LABEL } from '../../../server/_shared/fact-checks';
 import { lookupFactChecks, type FactCheckLookup } from '../../../server/_shared/fact-check-search';
+import { searchClaimPool } from '../../../server/worldmonitor/news/v1/search-claim-headlines';
 import { buildAuthHeaders } from '../auth';
 import { fetchMcpDownstream } from '../downstream';
 import { assertToolFetchOk } from '../billing-denial';
@@ -81,6 +82,8 @@ async function factCheckBlock(claim: string): Promise<FactCheckBlock> {
 const NLP_DIGEST_SOURCE_MAX_BYTES = 160;
 const NLP_DIGEST_TITLE_MAX_BYTES = 512;
 const NLP_DIGEST_LINK_MAX_BYTES = 2_048;
+// Lead text for same-copy detection (#9095): it compares the first ~60 words.
+const NLP_DIGEST_SNIPPET_MAX_BYTES = 2_048;
 const NLP_DIGEST_METADATA_MAX_BYTES = 64;
 const NLP_DIGEST_NOTE_MAX_BYTES = 2_048;
 const KEYWORD_SPIKE_BASELINE_MS = 48 * 60 * 60 * 1000; // digest:accumulator retention
@@ -168,7 +171,7 @@ function patternEntityKind(value: string): 'cve' | 'apt' | 'fin' | 'leader' {
 
 type NlpDigestCategoryGroup = {
   items?: Array<{
-    source?: string; title?: string; link?: string; publishedAt?: number;
+    source?: string; title?: string; snippet?: string; link?: string; publishedAt?: number;
     isAlert?: boolean; credibilityScore?: number; corroborationCount?: number;
     threat?: { level?: string; category?: string; confidence?: number; source?: string };
   }>;
@@ -395,6 +398,11 @@ async function fetchNlpDigestItems(
       items.push({
         source,
         title,
+        // #9095: without the lead, same-copy detection cannot merge reprints and
+        // max(seen, reported) restores the count the digest already lowered.
+        ...(typeof raw.snippet === 'string' && raw.snippet.trim() !== ''
+          ? { snippet: nlpTruncateUtf8(raw.snippet, NLP_DIGEST_SNIPPET_MAX_BYTES) }
+          : {}),
         link,
         pubDate: new Date(Number(raw.publishedAt) || 0),
         isAlert: raw.isAlert === true,
@@ -952,10 +960,22 @@ export const NLP_TOOLS: ToolDef[] = [
       if (!claim) return { ...empty, error: 'claim is required' };
       if (!variant) return { ...empty, error: `variant must be one of: ${NLP_DIGEST_VARIANTS.join(', ')}` };
 
-      const [digest, factChecks] = await Promise.all([
-        fetchNlpDigestItems(base, context, variant, '', execution),
+      // full searches every fresh headline in the feed caches, in-process like
+      // the fact-checks, not only the ~280 the digest serves. Other variants,
+      // and a search that could not run, use the variant's digest.
+      const [search, factChecks] = await Promise.all([
+        variant === 'full' ? searchClaimPool(claim).catch(() => null) : null,
         factCheckBlock(claim),
       ]);
+      if (search && search.state !== 'unavailable') {
+        return {
+          ...buildClaimCard(claim, search.candidates, search.searchedHeadlines),
+          factChecks,
+          generatedAt: search.readAt,
+          variant,
+        };
+      }
+      const digest = await fetchNlpDigestItems(base, context, variant, '', execution);
       return {
         ...buildClaimCard(claim, digest.items),
         factChecks,
@@ -964,10 +984,12 @@ export const NLP_TOOLS: ToolDef[] = [
         ...(digest.digestCoverage ? { digestCoverage: digest.digestCoverage } : {}),
       };
     },
-    // search-fact-checks: covered by the same in-process lookup it serves.
+    // search-fact-checks and search-claim-headlines: covered by the same
+    // in-process lookups they serve.
     _apiPaths: [
       'GET /api/news/v1/list-feed-digest',
       'GET /api/news/v1/search-fact-checks',
+      'GET /api/news/v1/search-claim-headlines',
     ],
   },
   {

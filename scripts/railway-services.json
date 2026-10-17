@@ -606,6 +606,7 @@
       "scripts/shared/physical-divergence-staleness.js",
       "scripts/shared/publisher-families.js",
       "scripts/shared/source-tiers.json",
+      "scripts/shared/syndication.js",
       "scripts/shared/text-analysis-core.js",
       "shared/country-names.json",
       "shared/iso3-to-iso2.json"
@@ -1698,7 +1699,8 @@
       "scripts/shared/geo-extract.mjs",
       "scripts/shared/publisher-families.js",
       "scripts/shared/source-tiers.json",
-      "scripts/shared/story-identity.js"
+      "scripts/shared/story-identity.js",
+      "scripts/shared/syndication.js"
     ],
     "documentedAt": "tests/scripts-railway-nixpacks-no-escape-import.test.mts (added PR #3836)"
   },
@@ -2039,6 +2041,7 @@
       "shared/source-provenance-declarations.ts",
       "shared/source-provenance.ts",
       "shared/source-tiers.json",
+      "shared/syndication.js",
       "shared/telegram-channel-trust.ts",
       "shared/x-account-source-tiers.json",
       "shared/x-account-trust.ts"
