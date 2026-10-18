@@ -7,15 +7,15 @@
   "totalTolerancePct": 0.25,
   "totalToleranceBytes": 16384,
   "total": {
-    "raw": 450738
+    "raw": 451859
   },
   "chunks": {
     "analytics": {
-      "raw": 47621,
+      "raw": 47753,
       "files": 1
     },
     "clerk": {
-      "raw": 18191,
+      "raw": 18230,
       "files": 1
     },
     "convex-client": {
@@ -24,6 +24,10 @@
     },
     "debugbear-rum": {
       "raw": 2929,
+      "files": 1
+    },
+    "desktop-runtime": {
+      "raw": 1186,
       "files": 1
     },
     "dom-utils": {
@@ -55,23 +59,27 @@
       "files": 1
     },
     "main": {
-      "raw": 131389,
+      "raw": 123139,
       "files": 1
     },
     "map-layer-definitions": {
-      "raw": 27251,
+      "raw": 27292,
       "files": 1
     },
     "panels": {
-      "raw": 37652,
+      "raw": 37697,
       "files": 1
     },
     "runtime-config": {
-      "raw": 10194,
+      "raw": 10232,
       "files": 1
     },
     "safe-storage": {
       "raw": 1212,
+      "files": 1
+    },
+    "tab-store": {
+      "raw": 8979,
       "files": 1
     },
     "tauri-bridge": {
@@ -79,7 +87,7 @@
       "files": 1
     },
     "theme-colors": {
-      "raw": 72013,
+      "raw": 70924,
       "files": 1
     },
     "theme-manager": {
@@ -93,23 +101,23 @@
   },
   "deferred": {
     "total": {
-      "raw": 1433866
+      "raw": 1446871
     },
     "chunks": {
       "App": {
-        "raw": 906077,
+        "raw": 911076,
         "files": 1
       },
       "ai-flow-settings": {
-        "raw": 2155,
+        "raw": 2193,
         "files": 1
       },
       "analysis-framework-store": {
-        "raw": 9675,
+        "raw": 9713,
         "files": 1
       },
       "base": {
-        "raw": 2460,
+        "raw": 2458,
         "files": 1
       },
       "cached-risk-scores": {
@@ -117,11 +125,11 @@
         "files": 1
       },
       "checkout": {
-        "raw": 13661,
+        "raw": 13742,
         "files": 1
       },
       "cloud-prefs-sync": {
-        "raw": 6944,
+        "raw": 6955,
         "files": 1
       },
       "continuous": {
@@ -137,15 +145,15 @@
         "files": 1
       },
       "feeds": {
-        "raw": 97009,
+        "raw": 97052,
         "files": 1
       },
       "gdelt-intel": {
-        "raw": 121828,
+        "raw": 121971,
         "files": 1
       },
       "index": {
-        "raw": 38891,
+        "raw": 39221,
         "files": 2
       },
       "layout-batch": {
@@ -169,7 +177,7 @@
         "files": 1
       },
       "persistent-cache": {
-        "raw": 3936,
+        "raw": 3974,
         "files": 1
       },
       "pinned-webcams": {
@@ -178,6 +186,10 @@
       },
       "sanitize": {
         "raw": 1280,
+        "files": 1
+      },
+      "settings-persistence": {
+        "raw": 7866,
         "files": 1
       },
       "source-provenance": {
@@ -196,16 +208,12 @@
         "raw": 20925,
         "files": 1
       },
-      "sync-keys": {
-        "raw": 1178,
-        "files": 1
-      },
       "user-location": {
-        "raw": 4696,
+        "raw": 4744,
         "files": 1
       },
       "widget-store": {
-        "raw": 22465,
+        "raw": 23015,
         "files": 1
       }
     }

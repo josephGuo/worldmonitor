@@ -118,7 +118,7 @@ Reach for World Monitor when a task needs live, correlated, machine-readable glo
 - **"Does this event move markets?"** — check whether a conflict, sanction, or chokepoint disruption has a plausible market-transmission path. MCP tools `get_conflict_events`, `get_sanctions_data`, `get_chokepoint_status`, `get_market_data`, `get_maritime_activity`.
 - **Commodity & supply-chain disruption** — correlate physical supply signals with traded prices. MCP tools `get_supply_chain_data`, `get_energy_intelligence`, `get_commodity_geo`, `get_maritime_activity`.
 - **Live situational awareness** — the current world brief plus classified live signals. MCP tools `get_world_brief`, `get_news_intelligence`, `get_natural_disasters`, `get_cyber_threats`, `get_aviation_status`.
-- **Forecasting & prediction-market context** — generate or fetch scenario forecasts. MCP tools `generate_forecasts`, `get_forecast_predictions`, `get_prediction_markets`.
+- **Forecasting & prediction-market context** — published scenario forecasts and their scored accuracy record. MCP tools `get_forecast_predictions`, `get_forecast_scorecard`, `get_prediction_markets`.
 
 **When NOT to use:** World Monitor is not a general web-search engine, a historical archive, or a trading-execution venue — it places no orders and stores no user documents. For a one-off narrative that needs no correlation across live layers, a plain LLM is cheaper and faster.
 
@@ -435,7 +435,7 @@ The sections below are produced by `npm run build:llms-full` from the source cat
 
 World Monitor publishes 770 named providers across 18 source catalog pages. Each linked page contains provider names, source hosts, origins and coverage in static HTML; no search or JavaScript is required.
 
-- [Geopolitics & Conflict](https://www.worldmonitor.app/sources/geopolitics/): 38 providers.
+- [Geopolitics & Conflict](https://www.worldmonitor.app/sources/geopolitics/): 37 providers.
 - [Military & Strategic](https://www.worldmonitor.app/sources/military/): 22 providers.
 - [News & OSINT](https://www.worldmonitor.app/sources/news/): 60 providers.
 - [News & OSINT — page 2](https://www.worldmonitor.app/sources/news/page/2/): 60 providers.
@@ -446,7 +446,7 @@ World Monitor publishes 770 named providers across 18 source catalog pages. Each
 - [News & OSINT — page 7](https://www.worldmonitor.app/sources/news/page/7/): 60 providers.
 - [News & OSINT — page 8](https://www.worldmonitor.app/sources/news/page/8/): 52 providers.
 - [Finance & Economics](https://www.worldmonitor.app/sources/finance/): 60 providers.
-- [Finance & Economics — page 2](https://www.worldmonitor.app/sources/finance/page/2/): 5 providers.
+- [Finance & Economics — page 2](https://www.worldmonitor.app/sources/finance/page/2/): 6 providers.
 - [Energy & Commodities](https://www.worldmonitor.app/sources/energy/): 23 providers.
 - [Infrastructure & Cyber](https://www.worldmonitor.app/sources/infrastructure/): 52 providers.
 - [Environment & Disasters](https://www.worldmonitor.app/sources/environment/): 46 providers.
@@ -1022,7 +1022,7 @@ If a canonical chokepoint lacks upstream transit coverage for the current cycle,
 Refresh cadence:
 
 - `energy:chokepoint-flows:v1`: Railway seed loop every 6 hours.
-- `supply_chain:chokepoints:v4`: status warm-ping every 30 minutes.
+- `supply_chain:chokepoints:v4`: status warm-ping every 6 minutes.
 - `supply_chain:transit-summaries:v1`: AIS relay compact transit summary.
 
 <a id="corpus-known-limits"></a>

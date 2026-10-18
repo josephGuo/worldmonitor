@@ -983,15 +983,10 @@
       "host": "api.opensanctions.org",
       "provider": "OpenSanctions",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "OpenSanctions terms; dataset-specific license varies by source",
       "attribution": "OpenSanctions; link to the matching entity/dataset.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "server/worldmonitor/sanctions/v1/lookup-entity.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "api.ossinsight.io",
@@ -3026,6 +3021,20 @@
       "references": [
         {
           "path": "scripts/lib/tps-open-data.mjs"
+        }
+      ]
+    },
+    {
+      "host": "data.trade.gov",
+      "provider": "International Trade Administration (US Consolidated Screening List)",
+      "kind": "structured",
+      "observed": true,
+      "license": "US government work. The ITA Data API terms of service (developer.trade.gov/terms-of-service) require the notice: This product uses the International Trade Administration's Data API but is not endorsed or certified by the International Trade Administration.",
+      "attribution": "This product uses the International Trade Administration's Data API but is not endorsed or certified by the International Trade Administration. Verify listings against the Federal Register and the issuing agency.",
+      "status": "terms-review",
+      "references": [
+        {
+          "path": "scripts/_csl-sanctions.mjs"
         }
       ]
     },
@@ -6204,7 +6213,7 @@
           "path": "server/worldmonitor/research/v1/list-tech-events.ts"
         },
         {
-          "path": "src/services/desktop-runtime.ts"
+          "path": "src/config/desktop-runtime.ts"
         },
         {
           "path": "src/services/wm-session.ts"
@@ -10822,9 +10831,6 @@
           "path": "scripts/measure-mobile-mainthread.mjs"
         },
         {
-          "path": "scripts/measure-tools-list-compression.mjs"
-        },
-        {
           "path": "scripts/publish-mcp-registry.mjs"
         },
         {
@@ -15076,6 +15082,9 @@
         },
         {
           "path": "scripts/lib/internal-links.mjs"
+        },
+        {
+          "path": "scripts/live-pages/common.mjs"
         },
         {
           "path": "scripts/mcp-proxy-live-smoke.mjs"

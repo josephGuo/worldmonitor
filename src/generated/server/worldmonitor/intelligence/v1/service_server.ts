@@ -873,6 +873,7 @@ export interface PortActivityEntry {
   importTankerDwt: number;
   exportTankerDwt: number;
   anomalySignal: boolean;
+  prevTankerCalls30d?: number;
 }
 
 export interface GetChinaDecisionSignalsRequest {
@@ -1149,12 +1150,14 @@ export interface GetIntelTimelineRequest {
   from: number;
   to: number;
   limit: number;
+  cursor?: string;
 }
 
 export interface GetIntelTimelineResponse {
   records: IntelHistoryRecord[];
   partial: boolean;
   upstreamUnavailable: boolean;
+  nextCursor: string;
 }
 
 export interface GetSimilarEventsRequest {
@@ -2760,6 +2763,7 @@ export function createIntelligenceServiceRoutes(
             from: Number(params.get("from") ?? "0"),
             to: Number(params.get("to") ?? "0"),
             limit: Number(params.get("limit") ?? "0"),
+            cursor: params.get("cursor") ?? "",
           };
           if (options?.validateRequest) {
             const bodyViolations = options.validateRequest("getIntelTimeline", body);
