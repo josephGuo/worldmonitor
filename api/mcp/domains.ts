@@ -75,6 +75,7 @@ export const TOOL_CATEGORY_BY_NAME: Readonly<Record<string, McpToolCategoryId>> 
   get_supply_chain_cost_shock: 'energy',
   get_energy_intelligence: 'energy',
   get_energy_storage: 'energy',
+  get_oil_trade_series: 'energy',
   // Geopolitical & security
   get_conflict_events: 'geopolitical-security',
   get_toronto_reported_occurrences: 'geopolitical-security',
@@ -138,6 +139,7 @@ export const TOOL_CATEGORY_BY_NAME: Readonly<Record<string, McpToolCategoryId>> 
   // Meta: server utilities and NLP helpers, never quoted as a data domain
   get_sources: 'meta',
   get_mcp_allowance: 'meta',
+  start_upgrade: 'meta',
   describe_tool: 'meta',
   open_news_dashboard: 'meta',
   analyze_news_headlines: 'meta',

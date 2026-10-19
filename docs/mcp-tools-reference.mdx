@@ -1158,6 +1158,32 @@ The envelope checks every source even when selecting a subset. A missing timesta
 
 For example, call `get_energy_storage` with `{"dataset":["eu-gas-storage","nat-gas-storage"],"limit":5}` to compare the latest available gas-storage reports.
 
+### `get_oil_trade_series`
+
+Monthly oil supply and export series for 24 major exporting countries over the last 24 complete months, with a comparison of the last N complete months against the N before and against the same months a year earlier. It answers questions such as "UAE oil exports, last 6 months vs the 6 before".
+
+**Parameters (tool-specific):**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `country` | `array<string>` | Countries as ISO alpha-2, alpha-3 or English names (e.g. ["AE"], ["Saudi Arabia"]). Selected countries include their monthly rows. Omit for every covered country, comparison only. Unresolved inputs return Invalid params; a resolvable country outside the 24 covered returns no row. |
+| `window_months` | integer | Months per comparison window, ending at the last complete month (default 6: the last 6 complete months vs the 6 before, plus the same 6 months a year earlier). |
+
+The response uses the standard `cached_at`, `stale`, and `data` envelope. Its sources are reported side by side and never blended or summed:
+
+- **production:** EIA Short-Term Energy Outlook crude oil and liquid fuels supply. Current to the last complete month; the two newest months are marked `provisional` because EIA revises them.
+- **jodi:** the country's own JODI-Oil filing of crude and total product exports. Values JODI has not assessed (assessment code 3) are reported values. The UAE has filed only placeholders since 2019, so its status is `not_reported`.
+- **mirror:** UN Comtrade imports from the country as declared by each buyer, converted at 7.33 bbl/t (crude) and 7.6 bbl/t (products). Buyers file one to four months late and some file no monthly partner data. Each country keeps its largest buyers by volume over the last 12 complete months as named `reporters`; smaller buyers are summed in `otherKbd`. Window comparisons use only named buyers that filed throughout the earlier window, and drop a recent month a buyer has not filed yet rather than the buyer. The buyers used are listed in `basis.reporters`, and in `basis.yoyReporters` for the year-ago comparison.
+- **ais:** IMF PortWatch AIS-derived tanker export tonnes across the country's ports. This index undercounts real exports and is not an export total.
+
+Each source carries `status` (`ok`, `stale`, `not_reported` or `unavailable`) and `lastObserved`, the newest month with an actual value. When a source fails on a run, it keeps the months from the previous publish with status `unavailable` and `carriedForward: true`. A month a source does not cover is null, never zero. Window averages are day-weighted over covered months; `monthsCovered` and `complete` say how much of each window a source covers. `yoyPct` compares `currentForYoy` with `yearAgo`; for mirror metrics `currentForYoy` can differ from `current` because the year-ago buyer basis can differ.
+
+- **API endpoints:** none. The seeded cache is read directly.
+- **Access:** `free-account`. Authentication and the existing daily allowance apply. Pro calls spend the daily quota. This tool only reads seeded caches and accepts the universal `summary` and `jmespath` arguments.
+- **Freshness budget:** 14 days for the weekly seed, plus a content-age check on the newest EIA month.
+
+For example, call `get_oil_trade_series` with `{"country":["AE"],"window_months":6}` to compare UAE production, buyer-declared imports and tanker loadings for the last six complete months against the six before.
+
 ## Geopolitical & security
 
 ### `get_conflict_events`
@@ -3092,6 +3118,23 @@ Reads the existing allowance snapshot for the current verified account. Use this
 - **Quota:** no daily allowance, free-account call/window, panel admission or internal reader reservation. Status stays available at the daily cap and uses the shared 192/minute protocol bucket across both credential doors.
 - **API sharing:** `sharedWithRestApi` reports whether the counter includes REST requests. Shadow-mode API counters retain the sold API ceiling. Account totals do not identify individual callers.
 - **API endpoints:** none. The tool and account resource use one shared enforcement-counter reader. Responses are `no-store`.
+
+### `start_upgrade`
+
+Creates a personal checkout link for a paid plan, bound to the signed-in account. Call it after a denial whose `error.data` carries `checkoutTool: "start_upgrade"`, passing that denial's `recommendedPlan`. Only free accounts get `checkoutTool`; a paid caller's denial names `recommendedPlan` alone, because moving up within the same plan family goes through the billing portal. The user opens the link and pays in a browser; the tool never charges and the agent never handles payment details.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `plan` | string | yes | One of `pro_monthly`, `pro_annual`, `pro_business_monthly`, `pro_business_annual`, `api_starter`, `api_starter_annual`, `api_business`, `api_business_annual`. Any other value returns `-32602` with the accepted list in `error.data.plans`. |
+
+**Response:** `{ checkoutUrl, plan, nextStep }`. Each call creates a new checkout session. The tool takes no `jmespath` projection (`-32602`): the session exists before a projection would run, so a projection could drop the only copy of `checkoutUrl`.
+
+- **Access:** `free-account`. Requires user-bound OAuth or `wm_…` credentials. Anonymous callers get the usual `-32001` `no-account` denial; operator keys get `-32002`.
+- **Quota:** spends no daily allowance and no free-account call, so it works after the allowance is exhausted. The per-minute limit still applies.
+- **Checkout path:** the same one the pricing page uses, so the per-account checkout limit and the existing-subscription and pending-payment guards apply. An account that already holds a plan in the same family gets `-32002` with `error.data.reason: "already-subscribed"`; Pro to Pro Business means cancelling Pro first, and API Starter to API Business is a prorated change in the billing portal. A payment pending for under 15 minutes returns `reason: "payment-in-progress"`. The checkout limit, 5 sessions per account per 10 minutes and shared with the pricing page, returns `-32029` at HTTP 429 with `Retry-After`.
+- **Terms of Service:** creating a session records the account's acceptance of the Terms, as the pricing page does. The [Terms](/terms) count an MCP request as acceptance.
+- **After payment:** once the payment webhook lands, the next `get_mcp_allowance` call reports the paid plan's limit. No re-authorization is needed.
+- **API endpoints:** none. Responses are `no-store`.
 
 ### `describe_tool`
 
