@@ -57,7 +57,7 @@ import { COUNTRY_BRIEF_UI_URI, COUNTRY_RISK_UI_URI, WORLD_BRIEF_UI_URI } from '.
 import { CII_HISTORY_OUTPUT_SCHEMA, ciiHistoryDays, readCountryCiiHistory } from '../_cii-history';
 import { CII_FORMULA_VERSION } from '../../../server/worldmonitor/intelligence/v1/_risk-config';
 import { ANALYSIS_TOOLS } from './analysis-tools';
-import { buildPublicTool, TOOL_REGISTRY } from './index';
+import { buildPublicTool, TOOL_ALIASES, TOOL_REGISTRY } from './index';
 import { COMPANY_INTEL_TOOL } from './company-intel-tools';
 import { tradeCountryCode } from './tariff-tools';
 
@@ -1547,7 +1547,7 @@ export const RPC_TOOLS: ToolDef[] = [
     // Two downstream fetches (brief + news digest for grounding).
     _weight: 3,
     _outputBudgetBytes: 65536,
-    description: 'Generate a text-only AI assessment of one country: an LLM-written geopolitical and economic brief plus sources, groundingStories and digestCoverage. The brief is grounded on the live English news digest; each grounding story carries corroborationCount, corroboration.state (single-publisher, tier4-only, corroborated, unknown; coverage, not accuracy), mentionCount and storyPhase. When the digest is serving a retained (stale) snapshot the grounding is dropped and the brief is generated ungrounded unless allow_stale=true; digestCoverage reports which happened. Output is narrative prose that differs between calls: no numeric scores, no per-section datasets and no interactive view. Requires a paid plan; two downstream fetches (digest and brief), weight 3 on API plans, 5-25 s. On a dedicated Pro allowance a call shares the same-country panel allocation; refresh with request_id starts a new one. Read-only.',
+    description: 'Return a text-only AI assessment of one country with sources, groundingStories and digestCoverage. The default shares the server-accepted assessment, citations and original generation time with the website. Explicit framework or allow_stale requests can use personalized digest context. groundingStories and digestCoverage describe the separately read English digest, not the identity of the accepted assessment. Each story carries corroborationCount, corroboration.state (single-publisher, tier4-only, corroborated, unknown; coverage, not accuracy), mentionCount and storyPhase. Stale local digest context is withheld unless allow_stale=true. No per-section datasets or interactive view. Requires a paid plan; two downstream fetches (digest and brief), weight 3 on API plans, 5-25 s. On a dedicated Pro allowance a call shares the same-country panel allocation; refresh with request_id starts a new one but does not force AI generation. Read-only.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1736,7 +1736,8 @@ export const RPC_TOOLS: ToolDef[] = [
         country_code: countryCode,
         framework: String(params.framework ?? ''),
       };
-      if (contextSnapshot) briefPayload.context = contextSnapshot;
+      const personalized = !!briefPayload.framework || params.allow_stale === true;
+      if (personalized && contextSnapshot) briefPayload.context = contextSnapshot;
       const briefBody = JSON.stringify(briefPayload);
       const briefAuth = await buildAuthHeaders(context, 'POST', briefUrl, briefBody);
       const res = await fetchMcpDownstream(briefUrl, {
@@ -1773,11 +1774,9 @@ export const RPC_TOOLS: ToolDef[] = [
       }
       const result = await res.json() as Record<string, unknown>;
       const resultSources = collectMcpBriefSources(Array.isArray(result.sources) ? result.sources as DigestItemForBrief[] : [], 6);
-      // groundingStories stays [] when the 2 s digest fetch failed above, which
-      // is the honest signal: the brief was written without that grounding.
       return {
         ...result,
-        sources: (resultSources.length > 0 ? resultSources : sources).map(source => ({
+        sources: (resultSources.length > 0 || !personalized ? resultSources : sources).map(source => ({
           ...source,
           sourceProvenance: briefSourceProvenance(source.source),
         })),
@@ -3618,9 +3617,10 @@ export const RPC_TOOLS: ToolDef[] = [
         inputSchema: { type: 'object' },
         outputSchema: { type: 'object' },
         annotations: { type: 'object' },
-        error: { type: 'string', enum: ['missing_tool_name', 'unknown_tool'], description: 'Present only on user-input failure.' },
+        error: { type: 'string', enum: ['missing_tool_name', 'unknown_tool', 'retired_alias'], description: 'Present only on user-input failure.' },
         hint: { type: 'string' },
         requested: { type: 'string' },
+        replacements: { type: 'array', items: { type: 'string' } },
         available: { type: 'array', items: { type: 'string' } },
       },
     },
@@ -3629,6 +3629,15 @@ export const RPC_TOOLS: ToolDef[] = [
       const name = params.tool_name;
       if (typeof name !== 'string' || name.length === 0) {
         return { error: 'missing_tool_name', hint: 'Pass tool_name as a non-empty string matching a tool from tools/list.' };
+      }
+      const alias = TOOL_ALIASES.describe(name);
+      if (alias) {
+        return {
+          error: 'retired_alias',
+          requested: name,
+          replacements: [...alias.replacements],
+          hint: alias.hint,
+        };
       }
       const tool = TOOL_REGISTRY.find((t) => t.name === name);
       if (!tool) {
@@ -3644,11 +3653,6 @@ export const RPC_TOOLS: ToolDef[] = [
   },
 ];
 
-// Retired tools stay callable under their old name but are absent from
-// tools/list, describe_tool, the server card and the docs (dispatch resolves
-// them through findCallableTool). generate_forecasts read the same published
-// list as get_forecast_predictions (both reach forecast:predictions:v2) while
-// its name claimed it started a forecast run; retired in MCP server 1.37.0.
 export const RETIRED_RPC_TOOLS: ToolDef[] = [
   {
     name: 'generate_forecasts',

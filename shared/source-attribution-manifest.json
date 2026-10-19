@@ -17,6 +17,9 @@
           "path": "scripts/profile-news-hybrid-clustering-7782-dashboard.mjs"
         },
         {
+          "path": "src/services/desktop-sign-in-page.ts"
+        },
+        {
           "path": "src/services/runtime.ts"
         }
       ]
@@ -580,6 +583,9 @@
       "status": "excluded",
       "references": [
         {
+          "path": "api/_desktop-auth.ts"
+        },
+        {
           "path": "api/user/passkey-offer.ts"
         },
         {
@@ -931,6 +937,12 @@
       "references": [
         {
           "path": "scripts/_seed-utils.mjs"
+        },
+        {
+          "path": "scripts/backtest-capital-flow-episodes.mjs"
+        },
+        {
+          "path": "scripts/seed-capital-flows.mjs"
         },
         {
           "path": "scripts/seed-gold-cb-reserves.mjs"
@@ -1396,6 +1408,9 @@
         },
         {
           "path": "scripts/seed-bis-lbs.mjs"
+        },
+        {
+          "path": "scripts/seed-capital-flows.mjs"
         },
         {
           "path": "scripts/seed-education-attainment.mjs"
@@ -9068,6 +9083,9 @@
         },
         {
           "path": "scripts/seed-bis-lbs.mjs"
+        },
+        {
+          "path": "scripts/seed-capital-flows.mjs"
         },
         {
           "path": "server/worldmonitor/economic/v1/_bis-shared.ts"
