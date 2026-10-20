@@ -1109,19 +1109,7 @@ The response retains source fields and optional enrichment. Prices are USD per t
 
 ### `get_internet_activity`
 
-Read seeded Cloudflare Radar traffic anomalies or global DDoS summaries. Missing caches return an error; valid empty snapshots retain empty lists.
-
-| Name | Type | Description |
-|------|------|-------------|
-| `dataset` | string: traffic / ddos | Required. Select one dataset. |
-| `country` | string | Traffic only. Optional ISO code or country name. Rejected for global DDoS summaries. |
-| `limit` | integer | Cap each list independently. Default 30; range 1 through 100. |
-
-The result is `{dataset, data, truncated}`. Traffic `totalCount` remains global before filtering; it is not the number of selected matches or shown rows. Traffic dates are epoch milliseconds and `endDate: 0` means ongoing. Global DDoS protocol/vector percentages and target locations retain `dateRangeStart` and `dateRangeEnd`. `truncated: true` means at least one list was capped. Loading a snapshot does not establish its source freshness.
-
-- **API endpoints:** `GET /api/infrastructure/v1/list-internet-traffic-anomalies`, `GET /api/infrastructure/v1/list-internet-ddos-attacks`.
-- **Access:** subscription. One signed downstream GET uses the standard API allowance weight of 2; a dedicated MCP allowance charges one call. Billing denial and retry/backoff contracts remain active.
-- **Output budget:** 128 KiB. The tool is read-only.
+Retired. Cloudflare Radar traffic anomalies and the global DDoS summary are the `traffic` and `ddos` datasets of [`get_infrastructure_status`](#get_infrastructure_status), now read from the seeded cache at weight 1 and open to signed-in free accounts. Calls to the old name still work: they run `get_infrastructure_status` with that dataset (both when `dataset` is omitted) and return a `deprecation` notice. The response is the cache envelope rather than `{dataset, data, truncated}`, and `limit` follows the replacement tool (default 30, 0 for no cap). A dataset the old tool never served is rejected.
 
 ### `get_macro_history`
 
@@ -1144,20 +1132,22 @@ Dates use Unix milliseconds. Interest rates and yields use percentages. CPI inde
 
 ### `get_energy_intelligence`
 
-Energy supply, prices, storage, disruptions, and policy: EIA petroleum stocks, electricity prices (Ember), gas storage (GIE), fuel shortages, fossil & renewable shares, active energy disruptions, government crisis policies.
+Energy supply, prices, storage, disruptions, and policy: EIA petroleum stocks, electricity prices (Ember), national gas storage (GIE), fuel shortages, fossil & renewable shares, active energy disruptions, government crisis policies, and dated histories of EU aggregate gas storage, US natural-gas storage and US commercial crude inventories.
 
 **Parameters (tool-specific):**
 
 | Name | Type | Description |
 |------|------|-------------|
-| `dataset` | `array<string: eia-petroleum / electricity / ember / gas-storage / fuel-shortages / disruptions / crisis-policies / fossil-share / renewable>` | Restrict the response to one or more energy sub-datasets. Omit for the full bundle. |
+| `dataset` | `array<string: eia-petroleum / electricity / ember / gas-storage / fuel-shortages / disruptions / crisis-policies / fossil-share / renewable / eu-gas-storage / nat-gas-storage / crude-inventories>` | Restrict the response to one or more energy sub-datasets. Omit for the full bundle. |
 | `country` | string | Filter the country-keyed datasets (Ember electricity mix, gas storage, fuel shortages, energy disruptions, fossil-share) to one ISO 3166-1 alpha-2 code. Country names and alpha-3 codes are accepted; unresolved inputs return Invalid params. |
-| `limit` | number | Cap each list-bearing energy slice (crisis-policies, electricity regions, gas-storage countries, World Bank renewable history/regions) to at most this many items (default 30, pass 0 for no cap). |
+| `limit` | integer | Cap each list-bearing energy slice (crisis-policies, electricity regions, gas-storage countries, World Bank renewable history/regions, newest-first storage and inventory histories) to at most this many items (default 30, pass 0 for no cap). |
 
-- **API endpoints:** `GET /api/economic/v1/get-energy-crisis-policies`, `GET /api/supply-chain/v1/get-fuel-shortage-detail`, `GET /api/supply-chain/v1/list-energy-disruptions`, `GET /api/supply-chain/v1/list-fuel-shortages`
+- **API endpoints:** `GET /api/economic/v1/get-energy-crisis-policies`, `GET /api/supply-chain/v1/get-fuel-shortage-detail`, `GET /api/supply-chain/v1/list-energy-disruptions`, `GET /api/supply-chain/v1/list-fuel-shortages`, `GET /api/economic/v1/get-eu-gas-storage`, `GET /api/economic/v1/get-nat-gas-storage`, `GET /api/economic/v1/get-crude-inventories`
 - **Access:** `free-account` — callable by any signed-in account; free accounts spend the daily free allowance, Pro calls spend the daily quota. Accepts the universal `summary` argument.
 - **Kind:** cache read — sub-second response from Redis bootstrap cache.
-- **Freshness budget:** per slice — most daily-seeded slices (electricity prices, Ember, gas storage, fuel shortages) allow **48 h** and EIA petroleum **72 h**; slower registries (disruptions, renewable/fossil shares, crisis policies) allow 7 d to ~400 d. The single `stale` flag ORs every check, so it flips as soon as any one slice exceeds its own budget.
+- **Freshness budget:** per slice — most daily-seeded slices (electricity prices, Ember, gas storage, EU aggregate gas storage, fuel shortages) allow **48 h** and EIA petroleum **72 h**; weekly US gas and crude inventories allow **14 d**; slower registries (disruptions, renewable/fossil shares, crisis policies) allow 7 d to ~400 d. The single `stale` flag ORs every check, so it flips as soon as any one slice exceeds its own budget, even when `dataset` selects a subset.
+
+The storage histories keep their own units: EU gas in TWh (`gasTwh`), US gas in billion cubic feet (`storBcf`), US commercial crude in million barrels (`stocksMb`). `eia-petroleum` stays in thousand barrels. Each history is newest first and carries its observation date; a null dataset or weekly change means unavailable, not zero. For example, `{"dataset":["eu-gas-storage","nat-gas-storage"],"limit":5}` compares the latest gas-storage reports.
 
 <CodeGroup>
 
@@ -1176,24 +1166,7 @@ curl -s https://worldmonitor.app/mcp \
 
 ### `get_energy_storage`
 
-EU aggregate gas storage and US natural-gas storage and commercial crude inventories from seeded GIE AGSI+ and EIA observations. These are dated reports, not live quotes.
-
-**Parameters (tool-specific):**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `dataset` | `array<string: eu-gas-storage / nat-gas-storage / crude-inventories>` | Select EU gas storage, US natural gas storage, or US crude inventories. Omit for all three. |
-| `limit` | integer | Maximum observations per history, newest first. Default 30; 0 returns all available seeded observations. |
-
-The response uses the standard `cached_at`, `stale`, and `data` envelope. EU storage includes fill percentage, daily change, a consumption-days heuristic, and history in TWh. US gas history uses billion cubic feet. US crude history uses million barrels. Each history retains its observation date. A null dataset or weekly change means unavailable, not zero.
-
-- **API endpoints:** `GET /api/economic/v1/get-eu-gas-storage`, `GET /api/economic/v1/get-nat-gas-storage`, `GET /api/economic/v1/get-crude-inventories`
-- **Access:** `free-account`. Authentication and the existing daily allowance apply. Pro calls spend the daily quota. This tool only reads seeded caches and accepts the universal `summary` and `jmespath` arguments.
-- **Freshness budget:** 48 hours for daily EU storage and 14 days for weekly US observations.
-
-The envelope checks every source even when selecting a subset. A missing timestamp makes `cached_at` null and `stale` true. A missing source remains null; if every source is missing the call returns a tool error.
-
-For example, call `get_energy_storage` with `{"dataset":["eu-gas-storage","nat-gas-storage"],"limit":5}` to compare the latest available gas-storage reports.
+Retired. Its EU gas storage, US natural-gas storage and US crude inventory histories are the `eu-gas-storage`, `nat-gas-storage` and `crude-inventories` datasets of [`get_energy_intelligence`](#get_energy_intelligence), with the same fields and units. Calls to the old name still work: they run `get_energy_intelligence` with those datasets (all three when `dataset` is omitted) and return a `deprecation` notice that names the replacement. A dataset the old tool never served is rejected.
 
 ### `get_oil_trade_series`
 
@@ -1237,8 +1210,14 @@ Active armed conflict events (UCDP, Iran), unrest events with geo-coordinates, a
 | `panel_request` | string | Paid conflict panel receipt for bounded internal filtered reads without another daily allocation. |
 | `refresh` | boolean | Request one new paid conflict panel allocation. Requires request_id and no panel_request. |
 | `request_id` | string | Retry identity for an explicit paid refresh. Reuse the ID to avoid another allocation. |
+| `bbox` | object | Keep events inside this box. sw_lon > ne_lon crosses the antimeridian. Not combinable with lat/lon/radius_km. |
+| `lat` | number | Centre latitude for radius_km; requires lon and radius_km. |
+| `lon` | number | Centre longitude for radius_km; requires lat and radius_km. |
+| `radius_km` | number | Keep events within this great-circle distance of lat/lon (max 2000). |
+| `since_days` | integer | Keep events dated within the last N days. |
 
 - **API endpoints:** `GET /api/conflict/v1/list-iran-events`, `GET /api/conflict/v1/list-ucdp-events`, `GET /api/unrest/v1/list-unrest-events`
+- **Area and age filters:** `bbox` takes `sw_lat`, `sw_lon`, `ne_lat` and `ne_lon` (all required). Pass either `bbox` or all three of `lat`, `lon` and `radius_km`; mixing them or passing part of the radius returns Invalid params before any allowance is spent. The filters apply to UCDP, Iran and unrest events after `country` and `min_fatalities` and before `limit`; country risk scores are not geolocated and are returned unfiltered. An event without valid coordinates (or, with `since_days`, without a date) is dropped, and `data.geo_filter.excluded` counts those rows per list so an empty result is not mistaken for no nearby events. When `since_days` reaches further back than a list's oldest dated row, `data.geo_filter.oldest_held` gives that row's time in epoch milliseconds, so a wide window is not mistaken for full coverage. Without these arguments the response has no `geo_filter` key.
 - **Access:** `free-account` — callable by any signed-in account; free accounts spend the daily free allowance, Pro calls spend the daily quota. Accepts the universal `summary` argument.
 - **Paid panel accounting:** Pro and Pro Business spend one allocation for an opening. Canonical filters and repeated opens share the Conflict Events admission within five minutes. Each admission permits up to 64 uncached tool executions, with separate 64-per-minute uncached and successful cached-replay limits. Each execution reads five fixed Redis keys, or six with Iran enabled; these reads do not each spend an allocation.
 - **Reuse and refresh:** Successful filtered originals replay before summary or JMESPath presentation. Explicit refresh with a new UUID spends one new allocation; the same UUID retries it. An authorized receipt read queries current usage without reserving another unit. Unknown counters preserve data and omit the numeric notice. Paid calls reject unknown arguments and non-finite numeric filters before reservation. Ordinary API and free calls retain existing filter coercion and reject paid receipts or refresh controls.
@@ -1361,6 +1340,23 @@ curl -s https://worldmonitor.app/mcp \
 ```
 
 </CodeGroup>
+
+### `get_country_history`
+
+Daily country snapshots with optional CII and resilience scores, their source versions and observation times, and up to five linked headlines per date. The archive starts at activation without backfill. Missing dates and scores remain absent; formula changes and observation gaps break chart continuity. No headline does not prove that no event occurred.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|---------:|-------------|
+| `country_code` | string | **yes** | Assigned ISO alpha-2 country code, such as `US` or `FR` |
+| `days` | integer | no | 1–365 UTC days including today; defaults to 7 and is clamped to the verified account limit |
+
+- **API endpoints:** `GET /api/intelligence/v1/get-country-history`
+- **Access:** `subscription` — Pro 90 days, API and Enterprise 365 days. Anonymous/free REST callers can read seven days; the MCP subscription requirement still applies.
+- **Kind:** RPC tool with an 8-second downstream timeout. Use `jmespath` to trim output; no `summary` argument.
+
+Read `upstreamUnavailable` before interpreting an empty response. `stale` means the archive is unavailable or the last successful daily capture is over 36 hours old. `allowedDays`, `effectiveDays` and `returnedDays` distinguish the account limit, the requested window after clamping, and actual observations. Large outputs retain score dates and reduce selected headlines first, marked `events_reduced_for_output_budget`.
 
 ### `get_country_coverage`
 
@@ -2578,20 +2574,23 @@ curl -s https://worldmonitor.app/mcp \
 
 ### `get_infrastructure_status`
 
-Return the seeded Internet infrastructure snapshot: Cloudflare Radar national and regional outages with start time, severity and cause, plus service status for major cloud providers and Internet services. Flagged stale after 30 minutes. Connectivity incidents only; no traffic volumes, DDoS data or physical infrastructure. Seeded-cache read with no live fetch: weight 1 on API plans, included in the signed-in free allowance. country and severity are case-insensitive substring filters; limit caps the outage list (default 30, 0 for no cap).
+Seeded Cloudflare Radar Internet snapshot in three datasets: `outages` (national and regional outages with start time, severity and cause, plus cloud and Internet service status), `traffic` (traffic anomalies) and `ddos` (the global DDoS protocol, vector and target-country summary). Physical infrastructure is not covered.
 
 **Parameters (tool-specific):**
 
 | Name | Type | Description |
 |------|------|-------------|
-| `country` | string | Filter to one country by name (case-insensitive substring). |
+| `dataset` | `array<string: outages / traffic / ddos>` | Restrict the response to outages, traffic anomalies or the DDoS summary. Omit for all three. |
+| `country` | string | Filter outages and traffic anomalies to one country. Pass an ISO 3166-1 alpha-2 code (e.g. "IQ"), an alpha-3 code ("IRQ"), or an English country name ("Iraq"). Unresolved inputs return Invalid params. DDoS summaries are global, so a DDoS-only call with country returns Invalid params. |
 | `severity` | string | Filter to one outage severity (case-insensitive substring). |
-| `limit` | number | Cap the outage list to at most this many items (default 30, pass 0 for no cap). |
+| `limit` | integer | Cap each list (outages, anomalies, DDoS protocols, vectors and target countries) to at most this many items (default 30, pass 0 for no cap). |
 
-- **API endpoints:** `GET /api/infrastructure/v1/list-internet-outages`
+Traffic anomalies carry epoch-millisecond `startDate` and `endDate`; `endDate: 0` means ongoing. `totalCount` is the global anomaly count before the country filter and the limit, not the number of rows shown. The DDoS summary keeps `dateRangeStart` and `dateRangeEnd`. A valid empty list means no recorded rows; a missing cache surfaces as a null dataset.
+
+- **API endpoints:** `GET /api/infrastructure/v1/list-internet-outages`, `GET /api/infrastructure/v1/list-internet-traffic-anomalies`, `GET /api/infrastructure/v1/list-internet-ddos-attacks`
 - **Access:** `free-account` — callable by any signed-in account; free accounts spend the daily free allowance, Pro calls spend the daily quota. Accepts the universal `summary` argument.
 - **Kind:** cache read — sub-second response from Redis bootstrap cache.
-- **Freshness budget:** up to **30 min** before `stale: true` is flagged (set by the seeder cron's expected interval).
+- **Freshness budget:** **30 min** for outages and **60 min** for traffic anomalies and DDoS. The single `stale` flag ORs every check.
 
 <CodeGroup>
 
@@ -2602,7 +2601,7 @@ curl -s https://worldmonitor.app/mcp \
   -d '{
     "jsonrpc":"2.0","id":1,
     "method":"tools/call",
-    "params":{"name":"get_infrastructure_status","arguments":{}}
+    "params":{"name":"get_infrastructure_status","arguments":{"dataset":["traffic"],"country":"IR"}}
   }'
 ```
 
@@ -2761,8 +2760,14 @@ Recent M4.5+ earthquakes (USGS and Earthquakes Canada / NRCan), active wildfires
 | `min_magnitude` | number | Drop earthquakes and natural events below this magnitude. |
 | `active_only` | boolean | Keep only natural events that are still active (not closed). |
 | `limit` | number | Cap each hazard list to at most this many items (default 30, pass 0 for no cap). |
+| `bbox` | object | Keep events inside this box. sw_lon > ne_lon crosses the antimeridian. Not combinable with lat/lon/radius_km. |
+| `lat` | number | Centre latitude for radius_km; requires lon and radius_km. |
+| `lon` | number | Centre longitude for radius_km; requires lat and radius_km. |
+| `radius_km` | number | Keep events within this great-circle distance of lat/lon (max 2000). |
+| `since_days` | integer | Keep events dated within the last N days. |
 
 - **API endpoints:** `GET /api/natural/v1/list-natural-events`, `GET /api/seismology/v1/list-earthquakes`, `GET /api/wildfire/v1/list-fire-detections`
+- **Area and age filters:** `bbox` takes `sw_lat`, `sw_lon`, `ne_lat` and `ne_lon` (all required). Pass either `bbox` or all three of `lat`, `lon` and `radius_km`; mixing them or passing part of the radius returns Invalid params before any allowance is spent. The filters apply to earthquakes, fire detections and natural events, including the regional `events.westernPacific.events` and `events.hkoWarnings.warnings` lists, after `min_magnitude` and `active_only` and before `limit`. A row without valid coordinates (or, with `since_days`, without a date) is dropped, and `data.geo_filter.excluded` counts those rows per dataset so an empty result is not mistaken for no nearby events. When `since_days` reaches further back than a list's oldest dated row, `data.geo_filter.oldest_held` gives that row's time in epoch milliseconds, so a wide window is not mistaken for full coverage. Without these arguments the response has no `geo_filter` key.
 - **Access:** `free-account` — callable by any signed-in account; free accounts spend the daily free allowance, Pro calls spend the daily quota. Accepts the universal `summary` argument.
 - **Kind:** cache read — sub-second response from Redis bootstrap cache.
 - **Freshness budget:** up to **30 min** before `stale: true` is flagged (set by the seeder cron's expected interval).
@@ -2906,19 +2911,25 @@ Call `get_cross_border_arrivals({})` for the full public snapshot. `summary: tru
 
 ### `get_displacement_data`
 
-UNHCR annual displacement statistics for one reporting year: global totals, per-country refugees, asylum seekers, IDPs and stateless people by origin, totals hosted by each asylum country, and the largest origin-to-asylum refugee flows. Annual stock figures only, with no monthly arrivals or crisis-situation updates. Until UNHCR publishes the current year, the snapshot holds the prior year; `summary.year` names it.
+Defaults to UNHCR annual displacement statistics for one reporting year: global totals, per-country refugees, asylum seekers, IDPs and stateless people by origin, totals hosted by each asylum country, and the largest origin-to-asylum refugee flows. Until UNHCR publishes the current year, the annual snapshot holds the prior year; `summary.year` names it.
+
+Use `view: "movements"` for source-dated UNHCR operational reports, UK daily arrivals, CBP monthly encounters, Frontex monthly detections and Panama monthly Darién arrivals. Each row keeps its source, measure, report date, license and transformation notice. Encounter and detection counts are events, not unique people. Sources can overlap; do not add their counts. Source status distinguishes missing, partial and stale data; absent windows do not mean zero. Retain the attribution rider when projecting results. No provider endorsement is implied.
+
+Use `view: "events"` for IDMC Internal Displacement Updates in `iduEvents`: per-country people displaced inside their country in the last 30 days (split into conflict and disaster), `newlyReported7d` (figures IDMC published in the last 7 days, whatever the displacement date), a `surge` flag (at least 5,000 people and three times the monthly mean of the 150 days before), and the located IDMC figures from the last 180 days, newest first, at most 100 per call. IDMC publishes a figure a median of three weeks after the displacement, so the latest weeks are incomplete.
 
 **Parameters (tool-specific):**
 
 | Name | Type | Description |
 |------|------|-------------|
+| `view` | string: annual / movements / events | Default annual. movements returns source-dated operational movement reports. events returns IDMC internal displacement in iduEvents. |
+| `route` | string | Exact route or situation ID in the movements view. |
 | `countries` | `array<string>` | Country names, ISO alpha-2, or alpha-3 codes to keep (e.g. ["Syria","UA","AFG"]). Matches both per-country totals and origin/asylum flows. Omit for all. Unresolved inputs return Invalid params. |
 | `limit` | number | Cap the per-country and top-flow lists to at most this many items (default 30, pass 0 for no cap). |
 
-- **API endpoints:** `GET /api/displacement/v1/get-displacement-summary`
+- **API endpoints:** `GET /api/displacement/v1/get-displacement-summary`, `GET /api/displacement/v1/get-cross-border-movements`
 - **Access:** `free-account` — callable by any signed-in account; free accounts spend the daily free allowance, Pro calls spend the daily quota. Accepts the universal `summary` argument.
 - **Kind:** cache read — sub-second response from Redis bootstrap cache.
-- **Freshness budget:** up to **2.5 d** before `stale: true` is flagged (set by the seeder cron's expected interval).
+- **Freshness budget:** annual data is stale after **2.5 d**. Movement feeds have a 48-hour fetch budget, plus independent report-age budgets: 45 days for ODP, 3 days for UK arrivals and 75 days for CBP, Frontex and Panama monthly reports. Sources proven never activated do not stale the aggregate; unreadable activation markers fail closed. Check each row and source status. IDMC events are stale after **2 d**.
 
 <CodeGroup>
 

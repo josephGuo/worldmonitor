@@ -397,7 +397,7 @@ describe('MCP tool aliases', { concurrency: false }, () => {
 
     seedPriceBundle();
     const list = await call('get_tariff_trends', { dataset: 'bigmac', jmespath: 'data.bigmac.countries[].code' });
-    const direct = await call('get_price_and_debt_indicators', { dataset: 'bigmac', jmespath: 'data.bigmac.countries[].code' });
+    const direct = await call('get_price_and_debt_indicators', { dataset: ['bigmac'], jmespath: 'data.bigmac.countries[].code' });
     assert.equal(list.body.result.content[0].text, direct.body.result.content[0].text);
     assert.deepEqual(JSON.parse(list.body.result.content[0].text), ['US', 'DE']);
     assert.equal(list.body.result.structuredContent.deprecation.replacement, 'get_price_and_debt_indicators');
@@ -423,9 +423,9 @@ describe('MCP tool aliases', { concurrency: false }, () => {
     seedPriceBundle();
     const direct = await call('get_price_and_debt_indicators', { dataset: ['tariffs'] });
     assert.equal(direct.body.error.code, -32602);
-    assert.equal(direct.body.error.data.violations[0].field, 'dataset');
-    assert.match(direct.body.error.data.violations[0].description, /moved/);
-    assert.match(direct.body.error.data.violations[0].description, /get_tariff_averages/);
+    assert.equal(direct.body.error.data.violations[0].field, 'dataset.0');
+    assert.match(direct.body.error.data.violations[0].description, /bigmac, fao-ffpi, national-debt/);
+    assert.equal(direct.pipe.count, 0);
     assert.equal(calls.length, 0);
   });
 
@@ -539,6 +539,7 @@ describe('sealAliases', () => {
     assert.equal(resolved.kind, 'alias');
     assert.equal(resolved.tool, registry[0]);
     assert.deepEqual(resolved.arguments, { reporter: '840', years: 12 });
+    assert.equal(resolved.argumentsShape, 'legacy');
   });
 
   it('throws when a target is unregistered, not the tariff subscription, or still serves the old cache', () => {
@@ -576,6 +577,39 @@ describe('sealAliases', () => {
     for (const [family, pattern, access = accessOf, tools = registry] of cases) {
       assert.throws(() => sealAliases(tools, [], [family], [], access), pattern);
     }
+  });
+});
+
+describe('sealAliases merge family', () => {
+  const target = (datasets = ['traffic', 'ddos', 'outages']) => miniTool('get_infrastructure_status', {
+    inputSchema: { type: 'object', properties: { dataset: { type: 'array', items: { type: 'string', enum: datasets } } } },
+  });
+  const merge = { kind: 'merge', name: 'get_internet_activity', target: 'get_infrastructure_status', datasets: ['traffic', 'ddos'] };
+
+  it('translates the old dataset forms and keeps every other argument', () => {
+    const sealed = sealAliases([target()], [], [merge], [], accessOf);
+    for (const [dataset, expected] of [['traffic', ['traffic']], [['ddos', 'traffic'], ['ddos', 'traffic']], [undefined, ['traffic', 'ddos']], [[], ['traffic', 'ddos']]]) {
+      const resolved = sealed.resolve('get_internet_activity', { dataset, country: 'DE', limit: 5 });
+      assert.equal(resolved.kind, 'alias');
+      assert.equal(resolved.tool.name, 'get_infrastructure_status');
+      assert.deepEqual(resolved.arguments, { dataset: expected, country: 'DE', limit: 5 });
+      assert.equal(resolved.notice.replacement, 'get_infrastructure_status');
+      assert.equal(resolved.argumentsShape, 'target', 'merged arguments must meet the target input schema');
+    }
+    assert.equal(sealed.resolve('get_internet_activity', null).kind, 'invalid');
+    assert.deepEqual(sealed.describe('get_internet_activity').replacements, ['get_infrastructure_status']);
+  });
+
+  it('rejects datasets the retired tool never served instead of widening the call', () => {
+    const sealed = sealAliases([target()], [], [merge], [], accessOf);
+    for (const dataset of ['outages', ['traffic', 'outages'], 7, [7]]) {
+      assert.equal(sealed.resolve('get_internet_activity', { dataset }).kind, 'invalid', JSON.stringify(dataset));
+    }
+  });
+
+  it('refuses to seal when the target is missing or does not offer every merged dataset', () => {
+    assert.throws(() => sealAliases([], [], [merge], [], accessOf), /unregistered target/);
+    assert.throws(() => sealAliases([target(['outages', 'traffic'])], [], [merge], [], accessOf), /does not offer dataset ddos/);
   });
 });
 

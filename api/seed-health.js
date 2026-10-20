@@ -95,6 +95,10 @@ const SEED_DOMAINS = {
   'natural:events':           { key: 'seed-meta:natural:events',           intervalMin: 270 },
   'weather:hko-warnings':     { key: 'seed-meta:weather:hko-warnings',     intervalMin: 270 },
   'displacement:summary':     { key: 'seed-meta:displacement:summary',     intervalMin: 360 },
+  'displacement:border-uk': { key: 'seed-meta:displacement:border-uk', intervalMin: 1440, activationKey: 'seed-activated:displacement:border-uk' },
+  'displacement:border-cbp': { key: 'seed-meta:displacement:border-cbp', intervalMin: 1440, activationKey: 'seed-activated:displacement:border-cbp' },
+  'displacement:border-frontex': { key: 'seed-meta:displacement:border-frontex', intervalMin: 1440, activationKey: 'seed-activated:displacement:border-frontex' },
+  'displacement:border-panama': { key: 'seed-meta:displacement:border-panama', intervalMin: 1440, activationKey: 'seed-activated:displacement:border-panama' },
   'economic:energy-prices':   { key: 'seed-meta:economic:energy-prices',   intervalMin: 75 },
   // Independent hourly producer from scripts/seed-fred-rates.mjs. This
   // operator-only endpoint stays strict; api/health.js owns the bounded
@@ -139,6 +143,7 @@ const SEED_DOMAINS = {
   'positive-events:geo':      { key: 'seed-meta:positive-events:geo',      intervalMin: 30 },
   'intelligence:risk-scores': { key: 'seed-meta:intelligence:risk-scores', intervalMin: 15 }, // CII warm-ping every 8min; intervalMin*2 = 30min, aligned with api/health.js riskScores.
   'conflict:iran-events':     { key: 'seed-meta:conflict:iran-events',     intervalMin: 22 }, // ais-relay Middle East strike loop every 10min; intervalMin*2 = 44min, aligned with api/health.js iranEvents (45).
+  'conflict:strike-pressure': { key: 'seed-meta:conflict:strike-pressure', intervalMin: 22, activationKey: 'seed-activated:conflict:strike-pressure' }, // same relay loop adds each healthy window to the 30-day CII strike tally; aligned with api/health.js strikePressure (45).
   'conflict:ucdp-events':     { key: 'seed-meta:conflict:ucdp-events',     intervalMin: 210 },
   'conflict:acled-intel':     { key: 'seed-meta:conflict:acled-intel',     intervalMin: 19 },
   'weather:alerts':           { key: 'seed-meta:weather:alerts',           intervalMin: 15 },
@@ -352,6 +357,7 @@ const SEED_DOMAINS = {
 // classification. IRAN_EVENTS_ENABLED=true turns on producer and probe together.
 if ((process.env.IRAN_EVENTS_ENABLED ?? 'false').toLowerCase() !== 'true') {
   delete SEED_DOMAINS['conflict:iran-events'];
+  delete SEED_DOMAINS['conflict:strike-pressure'];
 }
 
 function parseJsonValue(raw) {

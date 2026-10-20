@@ -227,7 +227,15 @@ function registerSidecarAllowedPrivateFetchOrigins(port, extraOrigins = []) {
 }
 
 function isAllowedPrivateSidecarFetch(url) {
-  return sidecarAllowedPrivateFetchOrigins.has(url.origin);
+  if (sidecarAllowedPrivateFetchOrigins.has(url.origin)) return true;
+  // Desktop users can change Ollama settings without restarting the sidecar.
+  // Trust only the current configured origin, never an address from a request.
+  if (process.env.LOCAL_API_MODE === 'tauri-sidecar' && process.env.OLLAMA_API_URL) {
+    try {
+      return url.origin === new URL(process.env.OLLAMA_API_URL).origin;
+    } catch { /* invalid configuration grants no private-network access */ }
+  }
+  return false;
 }
 
 async function assertSafeSidecarFetchUrl(url) {
@@ -807,20 +815,20 @@ async function proxyToCloud(requestUrl, req, context) {
     const wmKey = process.env.WORLDMONITOR_API_KEY;
     if (wmKey) headers.set('X-WorldMonitor-Key', wmKey);
   }
-  // Only a signed-in Pro desktop forwards a bearer, so a signed-out desktop
-  // keeps today's keyless behaviour and never mints a session.
-  if (userBearer) {
-    headers.set('Authorization', userBearer);
-    if (!headers.has('X-WorldMonitor-Key')) {
-      const session = await Promise.race([
-        getCloudSessionToken(context),
-        new Promise((resolve) => {
-          if (deadline.aborted) resolve(null);
-          else deadline.addEventListener('abort', () => resolve(null), { once: true });
-        }),
-      ]);
-      if (session) headers.set('X-WorldMonitor-Key', session);
-    }
+  // Only a signed-in Pro desktop forwards a bearer.
+  if (userBearer) headers.set('Authorization', userBearer);
+  // Without a key the gateway answers 401, so every desktop presents the
+  // anonymous session a browser holds (#7548). The gateway rejects that session
+  // on tier-gated routes, so it unlocks nothing beyond the public web app.
+  if (!headers.has('X-WorldMonitor-Key')) {
+    const session = await Promise.race([
+      getCloudSessionToken(context),
+      new Promise((resolve) => {
+        if (deadline.aborted) resolve(null);
+        else deadline.addEventListener('abort', () => resolve(null), { once: true });
+      }),
+    ]);
+    if (session) headers.set('X-WorldMonitor-Key', session);
   }
   const clientAbort = new AbortController();
   const onClientClose = () => clientAbort.abort();
@@ -933,6 +941,7 @@ const cloudPreferredExact = new Set([
   '/api/aviation/v1/get-airport-ops-summary',
   '/api/displacement/v1/get-displacement-summary',
   '/api/displacement/v1/get-internal-displacement',
+  '/api/displacement/v1/get-cross-border-movements',
   '/api/economic/v1/get-bis-credit',
   '/api/economic/v1/get-bis-exchange-rates',
   '/api/economic/v1/get-bis-policy-rates',
@@ -979,6 +988,7 @@ const cloudPreferredExact = new Set([
   '/api/intelligence/v1/compute-energy-shock',
   '/api/intelligence/v1/get-china-decision-signals',
   '/api/intelligence/v1/get-country-energy-profile',
+  '/api/intelligence/v1/get-country-history',
   '/api/intelligence/v1/get-country-port-activity',
   '/api/intelligence/v1/get-country-risk',
   '/api/intelligence/v1/get-gdelt-topic-timeline',

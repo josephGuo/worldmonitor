@@ -210,7 +210,7 @@ function analysisPayloads() {
         },
       ],
     },
-    'risk:scores:sebuf:v11': {
+    'risk:scores:sebuf:v13': {
       ciiScores: [
         { region: 'IR', combinedScore: 88 },
         { region: 'TW', combinedScore: 61 },
@@ -669,7 +669,7 @@ describe('wave-2 analysis tools: cache-backed orchestration', () => {
     {
       tool: 'get_focal_points',
       params: {},
-      keys: ['news:insights:v1', 'intelligence:cross-source-signals:v1', 'risk:scores:sebuf:v11'],
+      keys: ['news:insights:v1', 'intelligence:cross-source-signals:v1', 'risk:scores:sebuf:v13'],
     },
     {
       tool: 'get_military_surge',
@@ -685,7 +685,7 @@ describe('wave-2 analysis tools: cache-backed orchestration', () => {
       tool: 'get_alert_digest',
       params: {},
       keys: [
-        'risk:scores:sebuf:v11',
+        'risk:scores:sebuf:v13',
         'military:surges:v1',
         'cable-health-v1',
         'infra:outages:v1',
@@ -699,7 +699,7 @@ describe('wave-2 analysis tools: cache-backed orchestration', () => {
       params: {},
       keys: [
         'news:insights:v1',
-        'risk:scores:sebuf:v11',
+        'risk:scores:sebuf:v13',
         'military:flights:v1',
         'unrest:events:v1',
         'seismology:earthquakes:v1',
@@ -843,6 +843,19 @@ describe('wave-2 analysis tools: cache-backed orchestration', () => {
     assert.ok(result.data.stats.nodes > 0);
     assert.ok(catalogNodes.some((node) => node.id === 'cable:sea-me-we-5'));
     assert.ok(catalogNodes.every((node) => !node.id.startsWith('country-')));
+  });
+
+  it('rejects a multi-cut containing both known and unknown node ids', async () => {
+    installUpstashStub(analysisPayloads());
+    const tool = findTool('simulate_infrastructure_cascade');
+    const result = await tool._execute(
+      { source_ids: ['cable:sea-me-we-5', 'cable:misspelled'] }, '', {}, {},
+    );
+
+    assert.match(result.error ?? '', /unknown.*cable:misspelled/i);
+    assert.equal(result.data.cascade, null);
+    assert.equal(result.data.catalog, null);
+    for (const key of tool.outputSchema.required) assert.ok(key in result);
   });
 
   it('keeps the static cascade catalog and chokepoint simulations available without cable data', async () => {

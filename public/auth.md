@@ -1,7 +1,8 @@
 # WorldMonitor — Agent Authentication (auth.md)
 
 Use API keys or OAuth 2.1 to authenticate with the WorldMonitor API and MCP server.
-This walkthrough follows the WorkOS **auth.md** spec: <https://workos.com/auth-md>.
+This walkthrough follows the WorkOS **auth.md** spec: <https://workos.com/auth-md>,
+in its pre-v0.2 `register_uri`/`claim_uri` form.
 
 Catalog reads are open; unauthenticated `initialize` on `/mcp` gets `401`.
 `get_sources` alone is credential- and daily-quota-free
@@ -30,7 +31,7 @@ Discover the authentication requirements:
    ```json
    { "issuer": "https://worldmonitor.app",
      "agent_auth": {
-       "skill": "https://www.worldmonitor.app/auth.md",
+       "skill": "https://worldmonitor.app/auth.md",
        "register_uri": "https://worldmonitor.app/oauth/register",
        "claim_uri": "https://worldmonitor.app/oauth/authorize",
        "identity_types_supported": ["anonymous"],
@@ -55,8 +56,7 @@ asserting a user identity; a human consents interactively at authorization (see
 
 **`identity_assertion` is not supported.** No pre-issued identity assertion (e.g.
 an `urn:ietf:params:oauth:token-type:id-jag` id-jag token) is exchanged for
-credentials — there is no identity or token-exchange endpoint. Identity is always
-established interactively.
+credentials — there is no identity or token-exchange endpoint.
 
 ## Register
 
