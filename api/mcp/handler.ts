@@ -131,8 +131,8 @@ type JsonRpcRequest = {
   params?: unknown;
 };
 
-function validJsonRpcId(id: unknown): id is string | number | null | undefined {
-  if (id === null || id === undefined) return true;
+function validJsonRpcId(id: unknown): id is string | number | undefined {
+  if (id === undefined) return true;
   return safeJsonRpcId(id) !== null;
 }
 
@@ -997,6 +997,11 @@ async function mcpHandlerInner(
     return rpcError(body.id ?? null, -32600, 'Invalid request: missing method', corsHeaders);
   }
 
+  if (body.params !== undefined && (body.params === null || typeof body.params !== 'object' || Array.isArray(body.params))) {
+    usage.phase = 'malformed';
+    return rpcError(body.id ?? null, -32600, 'Invalid request: params must be an object', corsHeaders, undefined, body.id === undefined ? 400 : 200);
+  }
+
   const { id, method } = body;
 
   // #8403 — attribute JSON-RPC method (and registry-bounded tool name) before
@@ -1014,6 +1019,15 @@ async function mcpHandlerInner(
     return id === undefined
       ? new Response(null, { status: 410, headers: mcpMigrationHeaders(corsHeaders) })
       : mcpAliasRpcError(id, corsHeaders);
+  }
+
+  if (id === undefined) {
+    const limited = await applyAnonDiscoveryLimit(req, corsHeaders);
+    if (limited) {
+      usage.phase = 'limit';
+      return new Response(null, { status: 429, headers: limited.headers });
+    }
+    return new Response(null, { status: 202, headers: withMcpNoStore(corsHeaders) });
   }
 
   // Connect-time challenge. An unauthenticated `initialize` on the transport is
@@ -1167,6 +1181,13 @@ async function mcpHandlerInner(
   // actually passed the gates above.
   const sseOwner = sseReplayOwner(context);
 
+  if (['tools/list', 'prompts/list', 'resources/list', 'resources/templates/list'].includes(method)) {
+    const cursor = (body.params as { cursor?: unknown } | undefined)?.cursor;
+    if (cursor !== undefined && typeof cursor !== 'string') {
+      return maybeStreamJsonRpcResponse(req, sseOwner, rpcError(id, -32602, 'Invalid params: cursor must be a string', corsHeaders));
+    }
+  }
+
   // Dispatch
   switch (method) {
     case 'initialize': {
@@ -1266,7 +1287,7 @@ async function mcpHandlerInner(
     case 'prompts/list':
       return maybeStreamJsonRpcResponse(req, sseOwner, rpcOk(id, { prompts: PROMPT_LIST_RESPONSE }, corsHeaders));
     case 'prompts/get': {
-      const params = body.params as { name?: unknown; arguments?: Record<string, unknown> } | null;
+      const params = body.params as { name?: unknown; arguments?: unknown } | null;
       if (!params || typeof params.name !== 'string') {
         return maybeStreamJsonRpcResponse(req, sseOwner, rpcError(id, -32602, 'Invalid params: missing prompt name', corsHeaders));
       }
