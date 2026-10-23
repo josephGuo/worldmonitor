@@ -72,11 +72,36 @@ describe('root dependency cache (#8710)', () => {
     }
   });
 
-  for (const [workflowText, jobIds] of [
-    [testWorkflow, ['docs-stats', 'unit-shards', 'unit-built-output', 'sidecar', 'convex-tests', 'dom-tests', 'variant-smoke-shards', 'variant-smoke-pro-webmcp', 'resilience-validation-smoke']],
-    [read(resolve(workflowsDir, 'perf-style-layout-budget.yml')), ['measure']],
-    [lintCodeWorkflow, ['biome', 'markdown']],
-    [read(resolve(workflowsDir, 'typecheck.yml')), ['typecheck']],
+  // The npm download cache is the fallback for a node_modules miss, so the
+  // action restores it only then; restoring it in setup-node cost every job
+  // 4-12s on hits that never read it.
+  it('restores the npm download cache only on a miss, before npm ci, and saves it after the clean install', () => {
+    const steps = readAction().runs.steps;
+    const restore = steps.find((step) => step.id === 'npm-cache');
+    const installIndex = steps.findIndex((step) => step.run === 'npm ci');
+    assert.ok(restore, 'the action must restore the npm download cache on a miss');
+    assert.match(restore.uses, /^actions\/cache\/restore@[a-f0-9]{40}$/);
+    assert.equal(restore.if, "steps.node-modules.outputs.cache-hit != 'true' && inputs.npm-cache == 'true'");
+    assert.equal(readAction().inputs['npm-cache'].default, 'true');
+    assert.equal(restore.with.path, '~/.npm');
+    assert.equal(restore.with.key, "npm-cache-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}");
+    assert.ok(steps.indexOf(restore) < installIndex);
+    const save = steps.find((step) => step.uses?.startsWith('actions/cache/save@') && step.with?.path === '~/.npm');
+    assert.ok(steps.indexOf(save) > installIndex + 1, 'the clean node_modules save stays first after npm ci');
+    assert.equal(save.if, "steps.node-modules.outputs.cache-hit != 'true' && inputs.npm-cache == 'true' && steps.npm-cache.outputs.cache-hit != 'true'");
+    assert.equal(save.with.key, '${{ steps.npm-cache.outputs.cache-primary-key }}');
+  });
+
+  // Jobs that install nothing beyond the action leave setup-node's cache off
+  // and use the action's miss-only fallback. Jobs with another npm install
+  // (blog-site, pro-test, including through build:pro) keep setup-node's
+  // cache for it and turn the action's off, so a miss restores it once.
+  for (const [workflowText, jobIds, setupCache] of [
+    [testWorkflow, ['docs-stats', 'sidecar', 'convex-tests', 'dom-tests', 'variant-smoke-shards', 'resilience-validation-smoke'], undefined],
+    [testWorkflow, ['unit-shards', 'unit-built-output', 'variant-smoke-pro-webmcp'], 'npm'],
+    [read(resolve(workflowsDir, 'perf-style-layout-budget.yml')), ['measure'], undefined],
+    [lintCodeWorkflow, ['biome', 'markdown'], undefined],
+    [read(resolve(workflowsDir, 'typecheck.yml')), ['typecheck'], 'npm'],
   ] as const) {
     for (const jobId of jobIds) {
       it(`${jobId} uses the shared action after Node 24 setup with npm fallback`, () => {
@@ -88,7 +113,8 @@ describe('root dependency cache (#8710)', () => {
         const install = steps.find((step) => step.uses === './.github/actions/install-root-deps');
         assert.ok(install, `${jobId} must use the shared root dependency action`);
         assert.equal(setup.with['node-version'], '24');
-        assert.equal(setup.with.cache, 'npm');
+        assert.equal(setup.with.cache, setupCache);
+        assert.equal(install.with?.['npm-cache'], setupCache === 'npm' ? 'false' : undefined);
         assert.ok(steps.indexOf(setup) < steps.indexOf(install));
         assert.equal(steps.some((step) => step.run === 'npm ci'), false);
       });
@@ -159,6 +185,7 @@ const REQUIRED_PR_SCRIPTS = [
 const REQUIRED_CI_SMOKE_SPECS = [
   'e2e/variant-live-smoke.spec.ts',
   'e2e/country-brief.spec.ts',
+  'e2e/country-brief-reports.spec.ts',
   'e2e/mcp-grant-consent.spec.ts',
   'e2e/dashboard-news-request-budget.spec.ts',
   'e2e/bootstrap-request-budget.spec.ts',
@@ -1085,6 +1112,40 @@ describe('CI workflow coverage', () => {
         /steps\.playwright-install-deps\.outcome == 'failure'[\s\S]*pkill -9 apt-get[\s\S]*npx playwright install --with-deps chromium/,
       );
     }
+  });
+
+  // The Redis-backed suites self-skip without the binaries, so the install must
+  // fail loudly, and it must not wait on the Ubuntu mirror: a slow mirror put
+  // 24-58s on the slowest unit shard in 9 of 12 runs (run 39922207309: 29s for
+  // 1.5 MB at 51 kB/s).
+  it('installs Redis in every unit shard from a package cache with dpkg, and fails without the binaries', () => {
+    const unitSteps = YAML.parse(testWorkflow).jobs['unit-shards'].steps
+      .flatMap((step: { parallel?: unknown[] }) => step.parallel ?? [step]);
+    const redis = unitSteps.find((step: { uses?: string }) => step.uses === './.github/actions/install-redis');
+    assert.ok(redis, 'unit shards must install Redis through the cached action');
+    assert.equal(redis['continue-on-error'], undefined, 'a failed Redis install must fail the shard');
+    assert.equal(unitSteps.some((step: { run?: string }) => /apt-get install[^\n]*redis-server/.test(step.run ?? '')), false,
+      'unit shards must not install Redis from the mirror directly');
+
+    const steps = YAML.parse(read(resolve(root, '.github/actions/install-redis/action.yml'))).runs.steps;
+    const restore = steps.find((step: { id?: string }) => step.id === 'redis-debs');
+    assert.match(restore.uses, /^actions\/cache\/restore@[a-f0-9]{40}$/);
+    const download = steps.find((step: { name?: string }) => step.name === 'Download Redis packages on cache miss');
+    assert.equal(download.if, "steps.redis-debs.outputs.cache-hit != 'true'");
+    assert.match(download.run, /--download-only/);
+    // download() runs before ||, so without errexit: a failed dependency
+    // download must fail the function, or the stale-index refresh is skipped.
+    assert.match(download.run, /redis-server redis-tools \\\n\s*&& \(cd ~\/\.cache\/wm-redis-debs && sudo apt-get download redis-server redis-tools\)/);
+    // ...and a failed download refreshes the stale index, then retries once.
+    assert.match(download.run, /\ndownload \|\| \{ sudo apt-get update -qq && download; \}\n/);
+    const install = steps.find((step: { name?: string }) => step.name === 'Install Redis packages');
+    assert.match(install.run, /sudo dpkg -i "\$\{debs\[@\]\}"/);
+    assert.doesNotMatch(install.run, /apt-get install[^\n]*\.deb/, 'apt-get must not install the cached .deb paths');
+    assert.match(install.run, /redis-server --version/);
+    assert.match(install.run, /redis-cli --version/);
+    assert.equal(install['continue-on-error'], undefined);
+    const save = steps.find((step: { uses?: string }) => step.uses?.startsWith('actions/cache/save@'));
+    assert.equal(save.if, download.if);
   });
 
   it('installs the locale font subset from a package cache in every browser job', () => {
