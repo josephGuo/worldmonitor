@@ -1562,12 +1562,17 @@ async function httpsProxyFetchJson(url, proxyAuth, proxyAttempt = 0) {
 
 // `headers` are forwarded to the origin (e.g. an API subscription key); the
 // shared User-Agent is applied unless a caller sets its own.
-export async function httpsProxyFetchRaw(url, proxyAuth, { accept = '*/*', timeoutMs = 20_000, signal, proxyAttempt = 0, headers = {} } = {}) {
+export async function httpsProxyFetchRaw(url, proxyAuth, {
+  accept = '*/*', timeoutMs = 20_000, signal, proxyAttempt = 0, headers = {}, onErrorResponse,
+} = {}) {
   const { proxyFetch, parseProxyConfigForAttempt } = createRequire(import.meta.url)('./_proxy-utils.cjs');
   const proxyConfig = parseProxyConfigForAttempt(proxyAuth, proxyAttempt);
   if (!proxyConfig) throw new Error('Invalid proxy auth string');
   const result = await proxyFetch(url, proxyConfig, { accept, timeoutMs, signal, headers: { 'User-Agent': CHROME_UA, ...headers } });
-  if (!result.ok) throw Object.assign(new Error(`HTTP ${result.status}`), { status: result.status });
+  if (!result.ok) {
+    onErrorResponse?.(result);
+    throw Object.assign(new Error(`HTTP ${result.status}`), { status: result.status });
+  }
   return { buffer: result.buffer, contentType: result.contentType };
 }
 
@@ -1628,6 +1633,18 @@ export function isExitRefusalError(error) {
 
 const FRED_JSON_HEADERS = { Accept: 'application/json', 'User-Agent': CHROME_UA };
 
+function throwIfFredMaintenance(body, contentType) {
+  if (/\btext\/html\b/i.test(contentType || '')
+    && /<h1[^>]*>\s*We(?:['\u2019]ll| will) be back soon!?\s*<\/h1>/i.test(body)) {
+    throw markPreservableFetchFailure(new Error('FRED API is under maintenance'));
+  }
+}
+
+function parseFredJson(body, contentType) {
+  throwIfFredMaintenance(body, contentType);
+  return JSON.parse(body);
+}
+
 // FRED's own edge returns sporadic 5xx on individual series. Observed
 // 2026-08-26: four consecutive 24/24 runs, then `FRED T10Y2Y: fetch failed —
 // direct: HTTP 502` and the same for UNRATE, publishing 22/24 — enough to trip
@@ -1656,11 +1673,7 @@ async function fredDirectFetchJson(url) {
       const r = await fetch(url, { headers: FRED_JSON_HEADERS, signal: AbortSignal.timeout(20_000) });
       if (r.ok) {
         if (/\btext\/html\b/i.test(r.headers?.get?.('content-type') || '')) {
-          const body = await r.text();
-          if (/<h1[^>]*>\s*We(?:['\u2019]ll| will) be back soon!?\s*<\/h1>/i.test(body)) {
-            throw markPreservableFetchFailure(new Error('FRED API is under maintenance'));
-          }
-          return JSON.parse(body);
+          return parseFredJson(await r.text(), r.headers.get('content-type'));
         }
         return await r.json();
       }
@@ -1700,7 +1713,13 @@ export async function fredFetchJson(url, proxyAuth) {
     for (let attempt = 1; attempt <= 3; attempt++) {
       triedExits.push(parseProxyConfigForAttempt(proxyAuth, attempt - 1)?.port ?? '?');
       try {
-        return await httpsProxyFetchJson(url, proxyAuth, attempt - 1);
+        const { buffer, contentType } = await httpsProxyFetchRaw(url, proxyAuth, {
+          accept: 'application/json', proxyAttempt: attempt - 1,
+          onErrorResponse: ({ buffer: errorBody, contentType: errorContentType }) => {
+            throwIfFredMaintenance(errorBody.toString('utf8'), errorContentType);
+          },
+        });
+        return parseFredJson(buffer.toString('utf8'), contentType);
       } catch (proxyErr) {
         lastProxyErr = proxyErr;
         // Two different reasons to try the next exit: the hop broke (transient),
@@ -1719,9 +1738,14 @@ export async function fredFetchJson(url, proxyAuth) {
     try {
       return await fredDirectFetchJson(url);
     } catch (directErr) {
-      throw Object.assign(new Error(`direct: ${directErr.message}`), {
+      const proxyMaintenance = lastProxyErr?.preservableFetchFailure === true;
+      const connectTimeout = directErr.cause?.code === 'UND_ERR_CONNECT_TIMEOUT';
+      const directMessage = `${directErr.message}${connectTimeout ? ' (UND_ERR_CONNECT_TIMEOUT)' : ''}`;
+      const message = `${proxyMaintenance ? `proxy: ${lastProxyErr.message}; ` : ''}direct: ${directMessage}`;
+      throw Object.assign(new Error(message), {
         cause: directErr,
-        preservableFetchFailure: directErr.preservableFetchFailure === true,
+        preservableFetchFailure: directErr.preservableFetchFailure === true
+          || (proxyMaintenance && (directErr.status === 403 || directErr.name === 'TimeoutError' || connectTimeout)),
       });
     }
   }
@@ -2836,9 +2860,12 @@ export async function runSeed(domain, resource, canonicalKey, fetchFn, opts = {}
     );
   }
   let data;
+  // Absolute wall-clock deadline of the fetch race, for fetchers with optional
+  // work that must stop in time to publish what they already have.
+  const fetchDeadlineAtMs = Date.now() + fetchDeadlineMs;
   try {
     data = await raceFetchDeadline(
-      withRetry(() => fetchFn({ runStartedAtMs: startMs })),
+      withRetry(() => fetchFn({ runStartedAtMs: startMs, fetchDeadlineAtMs })),
       fetchDeadlineMs,
       `${domain}:${resource}`,
     );

@@ -115,11 +115,12 @@ const { mergeLastGoodQuotes, planYahooRefresh, resolveMergedQuotesAsOf } = requi
 // ESM module loaded via require(esm) (Node >= 22.12; relay image is node:24).
 // Same implementation the RPC handler scores with — see the module header for
 // why it lives in shared/ rather than beside the other scoring helpers.
-const { detectTrafficAnomaly } = require('../shared/chokepoint-traffic-anomaly.js');
+const { detectTrafficAnomaly, summarizePortwatchHistory } = require('../shared/chokepoint-traffic-anomaly.js');
 const { CHOKEPOINT_THREAT_LEVELS } = require('../shared/chokepoint-threat-levels.js');
 const { classifyVesselType } = require('../shared/ais-vessel-type.js');
 const { readTransitWindow } = require('../shared/chokepoint-transit-window.js');
 const { createTransitTracker } = require('../shared/chokepoint-transit-tracker.js');
+const { CHOKEPOINT_TRANSIT_GATES } = require('../shared/chokepoint-transit-gates.js');
 const { CORRIDOR_RISK_NAME_MAP, deriveCorridorRiskLevel } = require('../shared/corridor-risk.js');
 // AIS upstream reconnect policy: failure classification (transport | auth |
 // rate-limit), the throttle ceiling escalation, and the silence verdict. Pure and
@@ -9704,18 +9705,16 @@ const CHOKEPOINTS = [
 const chokepointCrossings = new Map();
 const TRANSIT_COOLDOWN_MS = 30 * 60 * 1000;
 const TRANSIT_WINDOW_MS = 24 * 60 * 60 * 1000;
-const MIN_DWELL_MS = 5 * 60 * 1000;
-// How long zone membership outlives a vessel's last report inside the zone.
-// It must exceed DENSITY_WINDOW: the vessel table drops a vessel after 30
-// silent minutes, and an exit reported after that gap is still an exit.
-const TRANSIT_MAX_EXIT_GAP_MS = 6 * 60 * 60 * 1000;
+// How long a gate sighting waits for the opposite gate. It covers the slowest
+// gate-to-gate passage (about 180 nm at Malacca and the Cape) and must exceed
+// DENSITY_WINDOW: the vessel table drops a vessel after 30 silent minutes.
+const TRANSIT_MAX_GATE_GAP_MS = 18 * 60 * 60 * 1000;
 const CHOKEPOINT_TRANSIT_KEY = 'supply_chain:chokepoint_transits:v1';
 const CHOKEPOINT_TRANSIT_TTL = 3600; // 1h — 6x interval; survives ~5 consecutive missed pings
 const transitTracker = createTransitTracker({
-  zones: CHOKEPOINTS,
-  minDwellMs: MIN_DWELL_MS,
+  gates: CHOKEPOINT_TRANSIT_GATES,
+  maxTransitMs: TRANSIT_MAX_GATE_GAP_MS,
   cooldownMs: TRANSIT_COOLDOWN_MS,
-  maxExitGapMs: TRANSIT_MAX_EXIT_GAP_MS,
   crossings: chokepointCrossings,
 });
 
@@ -10544,6 +10543,10 @@ async function seedTransitSummaries() {
     const threatLevel = CHOKEPOINT_THREAT_LEVELS[cpId] || 'normal';
     const history = cpData?.history ?? [];
     const anomaly = detectTrafficAnomaly(history, threatLevel);
+    // The official IMF PortWatch figures: latest published day, trailing
+    // 7-day mean, and the seeder's year-earlier baseline. Null when PortWatch
+    // has nothing for this chokepoint -- never a zero-fill.
+    const official = summarizePortwatchHistory(history, cpData?.baseline);
 
     // Get relay transit counts for this chokepoint
     let relayTransit = null;
@@ -10576,6 +10579,12 @@ async function seedTransitSummaries() {
       todayCargo: relayTransit?.cargo ?? null,
       todayOther: relayTransit?.other ?? null,
       wowChangePct: cpData?.wowChangePct ?? 0,
+      officialLatestDate: official.latestDate,
+      officialLatestTotal: official.latestTotal,
+      officialAvg7d: official.avg7d,
+      baselineAvgDaily: official.baselineAvgDaily,
+      baselineFrom: official.baselineFrom,
+      baselineTo: official.baselineTo,
       riskLevel: cr?.riskLevel ?? '',
       incidentCount7d: cr?.incidentCount7d ?? 0,
       disruptionPct: cr?.disruptionPct ?? 0,
