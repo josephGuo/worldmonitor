@@ -150,6 +150,22 @@ function hasCredentials(req: Request): boolean {
   return (req.headers.get('X-WorldMonitor-Key') ?? '') !== '';
 }
 
+// Default User-Agents of HTTP libraries, which scripts and self-built agents
+// send unchanged. Production, 2026-10-17 to 10-24: after the connect-time 401,
+// python-httpx signed in from 1 of 254 IPs, node 2 of 195, Go-http-client 0 of
+// 102, undici 3 of 45. They retried the handshake instead (about 245,000 401s).
+// Connectors and CLIs name themselves and do sign in, so they keep the
+// challenge; these clients reach the 401 at their first paid tool call, which
+// the Python and TypeScript SDK auth providers answer the same way.
+// The whole value must be the default form: the library name, an optional
+// `/version` and an optional `(comment)`. A named product after it, such as
+// `node Cursor/1.0`, is a connector and keeps the challenge.
+const GENERIC_HTTP_CLIENT_UA = /^(?:python-httpx2?|python-requests|python-urllib|node|undici|go-http-client|hermes-agent)(?:\/[\w.+-]+)?(?:\s+\([^()]*\))?$/i;
+
+function isGenericHttpClient(req: Request): boolean {
+  return GENERIC_HTTP_CLIENT_UA.test(req.headers.get('User-Agent') ?? '');
+}
+
 type JsonRpcRequest = {
   jsonrpc?: string;
   id?: unknown;
@@ -886,11 +902,28 @@ async function mcpHandlerInner(
     const response = rpcError(null, -32600, 'Unsupported MCP-Protocol-Version', corsHeaders, undefined, 400);
     return req.method === 'HEAD' ? new Response(null, response) : response;
   };
+  const requestUrl = new URL(req.url);
+  const requestPathname = requestUrl.pathname;
+  const aliasRequest = isMcpAliasRequest(requestUrl.hostname, requestPathname)
+    || isMcpAliasRequest(req.headers.get('host') ?? '', requestPathname);
+  // An anonymous plain GET on the transport that names an MCP version is an
+  // OAuth discovery probe, not a stream open: rmcp (Codex) sends it with a
+  // fixed `2024-11-05` header and reads the 401's `resource_metadata` pointer
+  // (RFC 9728 §5.1). Browsers and crawlers never send the header, so they keep
+  // the guide. Aliases are excluded: their 308 is cross-origin from `www`,
+  // which rmcp's discovery treats as fatal, while the old 400 lets it continue.
+  const anonymousAuthProbe = req.method === 'GET'
+    && protocolVersion !== null
+    && !aliasRequest
+    && !WELL_KNOWN_MCP_PATHS.has(requestPathname)
+    && !hasCredentials(req)
+    && !req.headers.get('last-event-id')
+    && !clientAcceptsSse(req);
   // A POST is held until its body is read: `initialize` negotiates the version
   // from params.protocolVersion, and no version is agreed before it answers, so
   // clients that send their newest version in the header while negotiating
   // must still reach negotiation. Every other request is refused here.
-  if (unsupportedProtocolVersion && req.method !== 'POST') return rejectProtocolVersion();
+  if (unsupportedProtocolVersion && req.method !== 'POST' && !anonymousAuthProbe) return rejectProtocolVersion();
 
   if (req.method === 'OPTIONS') {
     usage.skip = true;
@@ -911,10 +944,6 @@ async function mcpHandlerInner(
   // below serve markdown at `/mcp` and the JSON card at `/.well-known/mcp` by
   // reading that pathname. The aliases sit under neither transport path, so
   // they take the origin-wide document, which covers every path on the host.
-  const requestUrl = new URL(req.url);
-  const requestPathname = requestUrl.pathname;
-  const aliasRequest = isMcpAliasRequest(requestUrl.hostname, requestPathname)
-    || isMcpAliasRequest(req.headers.get('host') ?? '', requestPathname);
 
   // The middleware catches ordinary browser discovery, but rewritten and
   // dotted well-known requests can bypass it. Keep the enforcement boundary
@@ -951,6 +980,11 @@ async function mcpHandlerInner(
     ? ''
     : requestPathname.startsWith('/api/mcp') ? '/api/mcp' : '/mcp';
   const resourceMetadataUrl = `${resolveMetadataOrigin(req)}/.well-known/oauth-protected-resource${transportSuffix}`;
+
+  if (anonymousAuthProbe) {
+    usage.phase = 'auth';
+    return authRequiredResponse(null, resourceMetadataUrl, corsHeaders);
+  }
 
   if (req.method === 'HEAD') {
     // HEAD is GET without a response body. Preserve transport-shaped GET
@@ -1201,7 +1235,7 @@ async function mcpHandlerInner(
   // with `tools/list` instead. The modern era has no shipped keyless clients.
   // Two exemptions keep their anonymous promise: the free-tier `get_sources`
   // call and a static `ui://` app-shell read. The aliases stay anonymous.
-  const challengeAnonymous = method === 'initialize'
+  const challengeAnonymous = (method === 'initialize' && (modernEra || !isGenericHttpClient(req)))
     || (modernEra && !isFreeTierToolCall && uiResourceReadUri === null);
   if (challengeAnonymous && !hasCredentials(req) && !WELL_KNOWN_MCP_PATHS.has(requestPathname)) {
     const denied = await resolveAuthContext(req, deps, resourceMetadataUrl, corsHeaders, id);
