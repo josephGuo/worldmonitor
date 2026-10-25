@@ -327,19 +327,14 @@ jobs:
         run: node --test tests/docs-i18n-parity.test.mjs
       - name: Published internal links resolve without redirects
         run: node --import tsx --test tests/internal-link-redirects.test.mjs
-      - name: Source attribution inventory is current
-        run: node scripts/source-attribution.mjs --check
-      - name: Homepage teaser strip matches the committed pulse snapshot
-        # Belongs in this always-on job, not `unit`: a PR that touches only
-        # docs/snapshots/ sets changes.code=false and skips `unit` entirely, so
-        # the snapshot could move out from under the generated teaser strip
-        # without any gate running. Pure Node builtins, no install required.
-        run: node scripts/build-welcome-teasers.mjs --check
-      - name: Every entitlement gate is classified
-        # Fails when a new free-vs-paid gate ships without a capability id or a
-        # documented exclusion (exit 1), or when the tree is missing a source the
-        # sweep expects (exit 2) — a partial sweep must never certify as complete.
-        run: node scripts/generate-entitlement-crosswalk.mjs --check
+      - name: Derived files are current (npm run generate)
+        # Every committed generated file with a freshness check: product facts,
+        # llms.txt, AI search, source attribution, the homepage teaser strip,
+        # the entitlement crosswalk (exit 2 there means a missing source, and
+        # its output is printed), catalogs and notices. Always-on because a
+        # docs-only PR skips `unit`, yet docs feed several of these. zh-TW is
+        # skipped here (no OpenCC) and checked in unit-built-output.
+        run: node scripts/generate-derived.mjs --check
 
   unit-shards:
     name: unit-shard (${{ matrix.shard }})
@@ -449,7 +444,10 @@ jobs:
         with:
           # The health-probe cutover gate compares the exact PR base with the
           # candidate tree. A shallow checkout would make that gate vacuous.
+          # Blobless like the unit shards: the gate reads one blob
+          # (api/health.js at the base), fetched on demand.
           fetch-depth: 0
+          filter: blob:none
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
@@ -866,8 +864,10 @@ jobs:
         # runner's CPU 81-85% busy, and four workers only bought ~15% with more
         # flaky retries, so more runners is where the time comes from. The spec
         # lists in package.json (test:e2e:ci-smoke:1..4) are balanced by
-        # measured test-seconds, ~197s each. Re-balance them from the per-test
-        # durations in the list reporter output when a spec grows.
+        # measured test-seconds (history in docs/solutions/performance-issues/
+        # ci-runners-are-cpu-bound-shard-before-parallel-steps.md). Re-balance
+        # them from the per-test durations in the list reporter output when a
+        # spec grows.
         shard: [1, 2, 3, 4]
     timeout-minutes: 20
     needs: changes

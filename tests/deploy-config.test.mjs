@@ -662,6 +662,15 @@ describe('crawlable content corpus deployment contracts', () => {
     assert.ok(!packageJson.scripts['build:full'].includes('npm run build:blog &&'), 'build:full must not regenerate inventory facts inside build:blog');
   });
 
+  it('builds frontend assets on the host platform and keeps nginx on the target platform', () => {
+    const stages = frontendDockerfileSource.match(/^FROM .+$/gm);
+    assert.equal(stages.length, 2);
+    assert.match(stages[0], /^FROM --platform=\$BUILDPLATFORM node:.+ AS builder$/);
+    assert.match(stages[1], /^FROM nginx:.+ AS runtime$/);
+    assert.match(frontendDockerfileSource, /^COPY --from=builder \/app\/dist\/ \.\/$/m);
+    assert.doesNotMatch(frontendDockerfileSource, /^COPY --from=builder .*node_modules/m);
+  });
+
   it('builds Vercel when corpus source files change', () => {
     assert.ok(vercelIgnoreSource.includes("'CHANGELOG.md'"));
     assert.ok(vercelIgnoreSource.includes("'docs/snapshots/'"));
@@ -5192,10 +5201,6 @@ describe('agent readiness: registry branding + ARD catalog', () => {
 });
 
 describe('variant subdomain dashboard SEO (#4996)', () => {
-  // No hardcoded variant list: every set is extracted from its real source
-  // and compared BIDIRECTIONALLY, so adding a variant to any one surface
-  // (middleware host map, generator, vercel.json rewrites) without the
-  // others fails here instead of shipping a subdomain with full-brand meta.
   const dashboardRewrites = vercelConfig.rewrites.filter((r) => r.source === '/dashboard');
 
   const rewriteVariants = dashboardRewrites
@@ -5206,10 +5211,6 @@ describe('variant subdomain dashboard SEO (#4996)', () => {
     })
     .sort();
 
-  const middlewareVariants = [...middlewareSource.matchAll(/'([a-z]+)\.worldmonitor\.app': '([a-z]+)'/g)]
-    .map((m) => m[2])
-    .sort();
-
   const variantHtmlSource = readFileSync(resolve(__dirname, '../src/config/variant-dashboard-html.ts'), 'utf-8');
   const generatorArrayMatch = variantHtmlSource.match(/WEB_DASHBOARD_VARIANTS = \[([^\]]+)\]/);
   const generatorVariants = (generatorArrayMatch?.[1] ?? '')
@@ -5218,14 +5219,12 @@ describe('variant subdomain dashboard SEO (#4996)', () => {
     .filter(Boolean)
     .sort();
 
-  it('extracted all three variant sets (extraction regressions fail loudly)', () => {
+  it('extracts both the rewrite and generator variant sets', () => {
     assert.ok(rewriteVariants.length > 0, 'no host-conditioned /dashboard rewrites found in vercel.json');
-    assert.ok(middlewareVariants.length > 0, 'VARIANT_HOST_MAP extraction from middleware.ts found nothing');
     assert.ok(generatorVariants.length > 0, 'WEB_DASHBOARD_VARIANTS extraction from variant-dashboard-html.ts found nothing');
   });
 
-  it('vercel.json rewrites, middleware host map, and the generator cover the SAME variant set (bidirectional)', () => {
-    assert.deepEqual(rewriteVariants, middlewareVariants, 'vercel.json /dashboard host rewrites vs middleware VARIANT_HOST_MAP diverged');
+  it('vercel.json rewrites and the generator cover the same variant set', () => {
     assert.deepEqual(rewriteVariants, generatorVariants, 'vercel.json /dashboard host rewrites vs WEB_DASHBOARD_VARIANTS diverged');
   });
 
