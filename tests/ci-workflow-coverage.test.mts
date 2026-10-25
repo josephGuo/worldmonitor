@@ -122,6 +122,49 @@ describe('root dependency cache (#8710)', () => {
   }
 });
 
+describe('shipped desktop Node coverage (#5909)', () => {
+  const steps = YAML.parse(testWorkflow).jobs.sidecar.steps;
+  const download = steps.find((step) => step.name === 'Download the shipped Node.js runtime');
+  const shippedTest = steps.find((step) => step.name === 'Test sidecar with the shipped Node.js runtime');
+
+  it('tests the shared downloader output after the repository Node suite', () => {
+    assert.ok(download);
+    assert.ok(shippedTest);
+    const repoSuite = steps.findIndex((step) => step.run === 'npm run test:sidecar');
+    assert.ok(repoSuite >= 0);
+    assert.ok(steps.indexOf(download) > repoSuite);
+    assert.ok(steps.indexOf(shippedTest) > steps.indexOf(download));
+    assert.equal(download.run, 'bash scripts/download-node.sh --target x86_64-unknown-linux-gnu');
+    assert.equal(download.env?.NODE_VERSION, undefined, 'CI must use the same pin as the release downloader');
+    for (const step of [download, shippedTest]) {
+      assert.equal(step.if, undefined);
+      assert.equal(step['continue-on-error'], undefined);
+    }
+  });
+
+  for (const exitCode of [0, 37]) {
+    it(`uses the bundled binary and preserves suite exit ${exitCode}`, () => {
+      assert.ok(shippedTest);
+      const dir = mkdtempSync(resolve(tmpdir(), 'wm-shipped-node-'));
+      try {
+        const bundledDir = resolve(dir, 'src-tauri/sidecar/node');
+        const toolsDir = resolve(dir, 'tools');
+        mkdirSync(bundledDir, { recursive: true });
+        mkdirSync(toolsDir);
+        writeFileSync(resolve(bundledDir, 'node'), '#!/bin/sh\necho shipped-node\n', { mode: 0o755 });
+        writeFileSync(resolve(toolsDir, 'npm'), `#!/bin/sh\n[ "$*" = 'run test:sidecar' ] || exit 99\nnode\nexit ${exitCode}\n`, { mode: 0o755 });
+        const result = spawnSync('bash', ['-e', '-c', shippedTest.run], {
+          cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: `${toolsDir}:${process.env.PATH}` },
+        });
+        assert.equal(result.status, exitCode, result.stderr);
+        assert.equal(result.stdout, 'shipped-node\nshipped-node\n');
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
 describe('browser-loss artifact capture (#6501, #7880)', () => {
   for (const exitCode of [0, 17]) {
     it(`retains logs after output cleanup and preserves smoke exit ${exitCode}`, () => {
@@ -3072,5 +3115,27 @@ describe('variant-smoke-pro-webmcp runs the /pro gates and the WebMCP smoke on s
     for (const single of ['pro-cls', 'pro-overflow', 'pro-hero', 'pro-lcp']) {
       assert.ok(!flat.some((step) => step.run?.includes(`test:e2e:${single}`)), `test:e2e:${single} must run via test:e2e:pro-gates`);
     }
+  });
+});
+
+describe('Rust toolchain pin', () => {
+  it('every dtolnay/rust-toolchain step installs the same exact release', () => {
+    const workflowDir = resolve(root, '.github/workflows');
+    const pins: { file: string; toolchain: unknown }[] = [];
+    for (const file of readdirSync(workflowDir).filter((f) => /\.ya?ml$/.test(f))) {
+      const workflow = YAML.parse(read(resolve(workflowDir, file))) as { jobs?: Record<string, { steps?: { uses?: string; with?: Record<string, unknown> }[] }> };
+      for (const job of Object.values(workflow.jobs ?? {})) {
+        for (const step of job.steps ?? []) {
+          if (step.uses?.startsWith('dtolnay/rust-toolchain@')) pins.push({ file, toolchain: step.with?.toolchain });
+        }
+      }
+    }
+    for (const file of ['build-desktop.yml', 'test.yml', 'test-linux-app.yml']) {
+      assert.ok(pins.some((pin) => pin.file === file), `${file} must install Rust with dtolnay/rust-toolchain`);
+    }
+    for (const { file, toolchain } of pins) {
+      assert.match(String(toolchain), /^\d+\.\d+\.\d+$/, `${file} must pin an exact Rust release, not a channel like stable`);
+    }
+    assert.equal(new Set(pins.map((pin) => String(pin.toolchain))).size, 1, 'release and test builds must compile with one Rust release');
   });
 });

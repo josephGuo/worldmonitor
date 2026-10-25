@@ -446,6 +446,20 @@
       ]
     },
     {
+      "host": "api-nms.aim.faa.gov",
+      "provider": "api-nms.aim.faa.gov",
+      "kind": "structured",
+      "observed": true,
+      "license": "Provider terms for this upstream API/dataset; verify before redistribution",
+      "attribution": "Credit api-nms.aim.faa.gov and link to the original upstream API/dataset.",
+      "status": "terms-review",
+      "references": [
+        {
+          "path": "scripts/seed-notam-nms.mjs"
+        }
+      ]
+    },
+    {
       "host": "api.abuseipdb.com",
       "provider": "api.abuseipdb.com",
       "kind": "structured",
@@ -2020,9 +2034,6 @@
       "references": [
         {
           "path": "scripts/ais-relay.cjs"
-        },
-        {
-          "path": "src/components/PizzIntIndicator.ts"
         }
       ]
     },
@@ -13797,9 +13808,6 @@
         },
         {
           "path": "scripts/seed-conflict-intel.mjs"
-        },
-        {
-          "path": "src/components/PizzIntIndicator.ts"
         }
       ]
     },
