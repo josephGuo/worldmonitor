@@ -12,6 +12,7 @@ import { projectNaturalEventsRetention } from '../../_natural-events-dashboard.j
 import { NATURAL_DISASTER_EVENT_LISTS, presentNaturalDisastersPanel } from '../_natural-disasters-reuse';
 import { GEO_FILTER_OUTPUT_SCHEMA, GEO_FILTER_PROPERTIES, attachGeoFilter, filterEventLists, locationPoint, locator, oldestDatedRows, parseEventFilter, pointAt, type EventList } from '../_geo-filter';
 import { CHINA_MACRO_REQUIRED_SERIES } from '../../../shared/china-macro-contract.js';
+import { INSIGHTS_MAX_AGE_MS } from '../../../shared/insights-snapshot.js';
 import {
   normalizeChinaMacroObservations,
   normalizeChinaMacroPreflight,
@@ -843,6 +844,77 @@ function filterForecastScorecard(data: Record<string, unknown>, params: Record<s
   return result;
 }
 
+// get_news_intelligence story filters read the seeder's story pool: every
+// scored cluster of the run, in the top-story shape (scripts/seed-insights.mjs
+// buildStoryPool). Without a usable pool they fall back to the top stories and
+// say why in insights.storyScope.
+type StoryScope =
+  | { source: 'story-pool'; poolStories: number; poolClusters: number | null; droppedForSize: number | null; generatedAt: string;
+    matchingStories?: number; nextCursor?: string }
+  | { source: 'top-stories'; reason: 'story-pool-unavailable' | 'story-pool-stale' };
+function storyPoolScope(pool: unknown, now: number): { stories: unknown[] | null; scope: StoryScope } {
+  const record = pool !== null && typeof pool === 'object' && !Array.isArray(pool) ? pool as Record<string, unknown> : null;
+  const generatedAt = typeof record?.generatedAt === 'string' ? Date.parse(record.generatedAt) : Number.NaN;
+  if (!record || !Array.isArray(record.stories) || !Number.isFinite(generatedAt)) {
+    return { stories: null, scope: { source: 'top-stories', reason: 'story-pool-unavailable' } };
+  }
+  if (now - generatedAt > INSIGHTS_MAX_AGE_MS) return { stories: null, scope: { source: 'top-stories', reason: 'story-pool-stale' } };
+  const count = (value: unknown) => (Number.isSafeInteger(value) && (value as number) >= 0 ? value as number : null);
+  return {
+    stories: record.stories,
+    scope: {
+      source: 'story-pool',
+      poolStories: record.stories.length,
+      poolClusters: count(record.clusterCount),
+      droppedForSize: count(record.droppedForSize),
+      generatedAt: record.generatedAt as string,
+    },
+  };
+}
+
+// One page of pool matches stays well inside the tool's 128 KiB output
+// budget, which also carries signals and advisories.
+const STORY_PAGE_MAX_BYTES = 65_536;
+const storyBytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
+function invalidStoriesCursor(description: string): RpcValidationError {
+  return new RpcValidationError('get_news_intelligence', [{ field: 'stories_cursor', description }]);
+}
+function storiesCursor(value: unknown): { generatedAt?: number; offset: number } {
+  if (value === undefined) return { offset: 0 };
+  const match = typeof value === 'string' && value.length <= 64 && /^([1-9]\d{0,15}):(0|[1-9]\d{0,5})$/.exec(value);
+  if (!match || !Number.isSafeInteger(Number(match[1]))) throw invalidStoriesCursor('Use insights.storyScope.nextCursor from the previous page.');
+  return { generatedAt: Number(match[1]), offset: Number(match[2]) };
+}
+// Pages filtered pool matches in rank order: limit (0 = no cap) and the byte
+// allowance bound a page, and nextCursor continues it. A page always holds at
+// least one story, so one oversized story cannot stall paging.
+function pageStoryPool(
+  insights: Record<string, unknown>,
+  scope: Extract<StoryScope, { source: 'story-pool' }>,
+  cursor: { generatedAt?: number; offset: number },
+  limit: number,
+): void {
+  const matches = Array.isArray(insights.topStories) ? insights.topStories : [];
+  const generatedAt = Date.parse(scope.generatedAt);
+  if (cursor.generatedAt !== undefined && cursor.generatedAt !== generatedAt) {
+    throw invalidStoriesCursor('The story pool changed; restart without the cursor.');
+  }
+  if (cursor.offset > matches.length) throw invalidStoriesCursor('Cursor is outside the matching stories.');
+  const size = limit > 0 ? Math.max(1, Math.trunc(limit)) : matches.length;
+  const page: unknown[] = [];
+  let bytes = 2;
+  for (const story of matches.slice(cursor.offset, cursor.offset + size)) {
+    const add = storyBytes(story) + (page.length > 0 ? 1 : 0);
+    if (page.length > 0 && bytes + add > STORY_PAGE_MAX_BYTES) break;
+    bytes += add;
+    page.push(story);
+  }
+  insights.topStories = page;
+  scope.matchingStories = matches.length;
+  const next = cursor.offset + page.length;
+  scope.nextCursor = next < matches.length ? `${generatedAt}:${next}` : '';
+}
+
 export const CACHE_TOOLS: ToolDef[] = [
   COUNTRY_HISTORY_TOOL,
   {
@@ -1522,7 +1594,7 @@ export const CACHE_TOOLS: ToolDef[] = [
     title: 'Threat news stories and signals',
     _uiResourceUri: NEWS_INTELLIGENCE_UI_URI,
     _outputBudgetBytes: 131072,
-    description: 'Return the seeded threat-news feed as individual items, not a written brief: AI-classified top stories, GDELT intelligence signals by topic, cross-source signals (including physical-premium regime transitions) and government security advisories. Flagged stale after 30 minutes; live window only, not a historical index. Each top story carries corroboration metadata: uniqueSourceCount, corroborationSourceCount, entityCorroboration, sourceTier, outlet names, clustered headlines, credibilityScore (0-100 source reliability, distinct from importance), corroboration, and the publishers roster; corroboration.state (single-publisher, tier4-only, corroborated, unknown) describes coverage, not accuracy. Seeded-cache read with no live fetch: weight 1 on API plans, included in the signed-in free allowance. topic, category, country, alerts_only, query and min_importance narrow the lists; limit caps each (default 30, 0 = no cap). Paid News Intelligence panels charge one opening allocation; repeat opens and filters reuse it.',
+    description: 'Return the seeded threat-news feed as items, not a brief: AI-classified news stories, GDELT intelligence signals by topic, cross-source signals, physical-premium regime transitions included, and government security advisories. With no story filter, topStories is the 8 the dashboard selects worldwide. country, category, query, alerts_only and min_importance search every scored story of the latest run, ranked by importance; insights.storyScope reports what was searched. Stale after 30 minutes; live window only. Stories carry uniqueSourceCount, corroborationSourceCount, entityCorroboration, sourceTier, outlets, member headlines, credibilityScore (0-100 source reliability, distinct from importance) and the publishers roster; corroboration.state (single-publisher, tier4-only, corroborated, unknown) describes coverage, not accuracy. Seeded-cache read: weight 1 on API plans, in the signed-in free allowance. limit caps each list (default 30, 0 = no cap). Paid panels charge one opening; repeats and filters reuse it.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1535,11 +1607,12 @@ export const CACHE_TOOLS: ToolDef[] = [
           description: 'Filter GDELT intelligence to a single topic.',
         },
         category: { type: 'string', description: 'Filter top news stories to one category (e.g. "conflict", "economy"; fallback is "general").' },
-        country: { type: 'string', description: 'Filter top stories and travel advisories to one ISO 3166-1 alpha-2 country code (case-insensitive). Country names and alpha-3 codes are accepted; unresolved inputs return Invalid params.' },
+        country: { type: 'string', description: 'Filter stories and travel advisories to one ISO 3166-1 alpha-2 country code (case-insensitive). Matches any country named in a story headline, across every scored story of the latest run, not only the top 8. Country names and alpha-3 codes are accepted; unresolved inputs return Invalid params.' },
         alerts_only: { type: 'boolean', description: 'Keep only top stories flagged as alerts.' },
-        query: { type: 'string', description: 'Keep only top stories whose headline, primary source, or any clustered member headline contains this text (case-insensitive substring). This filters the LIVE news window only — it is not a historical index, so an event older than the current digest will not be found here. Use search_intel_history for that.' },
+        query: { type: 'string', description: 'Keep only stories whose headline, primary source, or one of the first six clustered member headlines contains this text (case-insensitive substring), across every scored story of the latest run. This filters the LIVE news window only — it is not a historical index, so an event older than the current digest will not be found here. Use search_intel_history for that.' },
         min_importance: { type: 'number', description: 'Keep only top stories whose effectiveImportanceScore is at least this value. 0 is honoured as a real floor rather than treated as absent; a story carrying no score is excluded when this is set, never treated as scoring zero.' },
         limit: { type: 'number', description: 'Cap each list (top stories, signals, advisories) to at most this many items (default 30, pass 0 for no cap). Applied AFTER query and min_importance, so a capped list is drawn from the matches.' },
+        stories_cursor: { type: 'string', maxLength: 64, description: 'Continue a story-filtered search from insights.storyScope.nextCursor, keeping the same filters. A page of matches is also bounded in size, so follow nextCursor until it is empty.' },
       },
       required: [],
     },
@@ -1598,6 +1671,21 @@ export const CACHE_TOOLS: ToolDef[] = [
             corroboration: CORROBORATION_OUTPUT_SCHEMA,
             ...PUBLISHER_ROSTER_OUTPUT_PROPERTIES,
           } } },
+          storyScope: {
+            type: 'object',
+            description: 'Present when a story filter is set. source story-pool: topStories was searched across every scored story of the run (poolStories, from poolClusters clusters; droppedForSize lowest-ranked clusters did not fit the stored pool). source top-stories: the pool was unavailable or stale (reason), so only the global top stories were searched.',
+            properties: {
+              source: { type: 'string', enum: ['story-pool', 'top-stories'] },
+              poolStories: { type: 'number' },
+              poolClusters: { type: ['number', 'null'] },
+              droppedForSize: { type: ['number', 'null'] },
+              generatedAt: { type: 'string' },
+              matchingStories: { type: 'number', description: 'story-pool only: stories matching the filters, before paging.' },
+              nextCursor: { type: 'string', description: 'story-pool only: pass as stories_cursor with the same filters for the next page; empty when complete.' },
+              reason: { type: 'string', enum: ['story-pool-unavailable', 'story-pool-stale'] },
+            },
+            required: ['source'],
+          },
         },
       },
       'gdelt-intel': {
@@ -1633,6 +1721,25 @@ export const CACHE_TOOLS: ToolDef[] = [
       const category = argStr(params.category);
       const countries = resolveCountryFilter(params.country, 'country');
       const limit = (argNum(params.limit) ?? DEFAULT_LIST_LIMIT);
+      const query = argStr(params.query);
+      // `?? null` distinguishes an absent threshold from an explicit 0, which
+      // is a real floor: a story with no score must not pass it.
+      const minImportance = argNum(params.min_importance);
+      const pool = data['story-pool'];
+      delete data['story-pool'];
+      const storyFilter = Boolean(category) || countries.length > 0 || argBool(params.alerts_only) || Boolean(query) || minImportance !== null;
+      const cursor = storiesCursor(params.stories_cursor);
+      const insights = data.insights;
+      let poolScope: Extract<StoryScope, { source: 'story-pool' }> | null = null;
+      if (storyFilter && insights !== null && typeof insights === 'object' && !Array.isArray(insights)) {
+        const { stories, scope } = storyPoolScope(pool, Date.now());
+        if (stories) (insights as Record<string, unknown>).topStories = stories;
+        (insights as Record<string, unknown>).storyScope = scope;
+        if (scope.source === 'story-pool') poolScope = scope;
+      }
+      if (cursor.generatedAt !== undefined && !poolScope) {
+        throw invalidStoriesCursor('Pages only a story-filtered search of a current story pool; restart without the cursor.');
+      }
       mapNested(data, 'insights', 'topStories', addNewsSourceProvenance);
       if (topic) narrowNested(data, 'gdelt-intel', 'topics', (t) => argStr(t.id) === topic);
       if (category) narrowNested(data, 'insights', 'topStories', (s) => argStr(s.category) === category);
@@ -1644,7 +1751,6 @@ export const CACHE_TOOLS: ToolDef[] = [
       // query + min_importance run BEFORE the caps: filtering after capping
       // would draw the cap from the first N items and then match within them,
       // so a story matching the query but sitting past the cap would vanish.
-      const query = argStr(params.query);
       if (query) {
         narrowNested(data, 'insights', 'topStories', (s) => (
           ciIncludes(s.primaryTitle, query)
@@ -1652,16 +1758,14 @@ export const CACHE_TOOLS: ToolDef[] = [
           || (Array.isArray(s.memberTitles) && s.memberTitles.some((t: unknown) => ciIncludes(t, query)))
         ));
       }
-      // `?? null` distinguishes an absent threshold from an explicit 0, which
-      // is a real floor: a story with no score must not pass it.
-      const minImportance = argNum(params.min_importance);
       if (minImportance !== null) {
         narrowNested(data, 'insights', 'topStories', (s) => {
           const score = argNum(s.effectiveImportanceScore);
           return score !== null && score >= minImportance;
         });
       }
-      capNested(data, 'insights', 'topStories', limit);
+      if (poolScope) pageStoryPool(insights as Record<string, unknown>, poolScope, cursor, limit);
+      else capNested(data, 'insights', 'topStories', limit);
       capNested(data, 'cross-source-signals', 'signals', limit);
       capNested(data, 'advisories-bootstrap', 'advisories', limit);
       return data;
@@ -1671,7 +1775,9 @@ export const CACHE_TOOLS: ToolDef[] = [
       'intelligence:gdelt-intel:v1',
       'intelligence:cross-source-signals:v1',
       'intelligence:advisories-bootstrap:v1',
+      'news:insights:v1:pool',
     ],
+    _cacheLabels: { 'news:insights:v1:pool': 'story-pool' },
     // Per-key budgets (#5864): the envelope used to gate on the insights meta
     // alone, so a stalled GDELT materializer left agents reading stale:false
     // for hours. Every bundled key now carries its own freshness budget,

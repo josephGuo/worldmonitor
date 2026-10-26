@@ -26,7 +26,7 @@ import { runRedisPipeline } from '../server/_shared/redis';
 import { DIRECT_LLM_DAILY_QUOTA_LIMIT, reserveDirectLlmQuota } from '../server/_shared/direct-llm-quota';
 import { reportHighUsageIfCrossed } from '../server/_shared/high-usage-alarm';
 import { assembleAnalystContext } from '../server/worldmonitor/intelligence/v1/chat-analyst-context';
-import { buildAnalystSystemPrompt } from '../server/worldmonitor/intelligence/v1/chat-analyst-prompt';
+import { buildAnalystMessages } from '../server/worldmonitor/intelligence/v1/chat-analyst-prompt';
 import { buildActionEvents } from '../server/worldmonitor/intelligence/v1/chat-analyst-actions';
 import { callLlmReasoningStream } from '../server/_shared/llm';
 import { getAiRoutingDecisionForUser, toLlmRoutingPolicy } from '../server/_shared/ai-routing-policy';
@@ -297,13 +297,9 @@ export default async function handler(req: Request): Promise<Response> {
     const retrievalQuery = prevUserTurn ? `${query} ${prevUserTurn}` : query;
 
     const context = await assembleAnalystContext(geoContext, domainFocus, retrievalQuery);
-    const systemPrompt = buildAnalystSystemPrompt(context, domainFocus);
-
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      ...history,
-      { role: 'user', content: query },
-    ];
+    // Instructions in the system prompt, feed-derived context in the final user
+    // turn next to the question: untrusted text never shares the system role.
+    const messages = buildAnalystMessages({ context, domainFocus, history, query });
 
     // Chat turns are the caller's own text: a restricted account streams only
     // from its allowed providers (ai-routing-policy.ts).
@@ -312,6 +308,10 @@ export default async function handler(req: Request): Promise<Response> {
       messages,
       routingPolicy,
       maxTokens: 600,
+      // 600 tokens cannot carry DeepSeek V4 Flash's hidden reasoning: with it
+      // on, the model returned empty or cut answers (eval 2026-10-26; #9195
+      // measured the same for deduct-situation). Reasoning off answers in ~5s.
+      enableReasoning: false,
       temperature: 0.35,
       timeoutMs: 25_000,
       signal: req.signal,
