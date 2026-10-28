@@ -4744,10 +4744,20 @@ const CLASSIFY_SEED_INTERVAL_MS = 15 * 60 * 1000;
 const CLASSIFY_CACHE_TTL = 86400;
 const CLASSIFY_SKIP_TTL = 1800;
 const CLASSIFY_BATCH_SIZE = 50;
-const CLASSIFY_VARIANTS = ['full', 'tech', 'finance', 'happy', 'commodity'];
-// Zero under RELAY_TEST_MODE so the /__test/seed-classify seam runs a full
-// five-variant cycle in milliseconds instead of twelve minutes.
-const CLASSIFY_VARIANT_STAGGER_MS = RELAY_TEST_MODE ? 0 : 3 * 60 * 1000;
+// Every edition the news digest serves, generated from shared/news-catalog.json
+// (scripts/generate-browser-news-catalog.mjs), so a new edition is classified
+// without a relay edit.
+const CLASSIFY_VARIANTS = requireShared('news-digest-editions.json');
+// The waits between editions total CLASSIFY_STAGGER_TOTAL_MS whatever the
+// edition count, leaving the rest of the 15-minute interval for classify work;
+// a fixed per-edition wait would overrun the interval as editions are added and
+// the in-flight guard would then skip every other cycle. Zero under
+// RELAY_TEST_MODE so the /__test/seed-classify seam runs a full cycle in
+// milliseconds.
+const CLASSIFY_STAGGER_TOTAL_MS = 12 * 60 * 1000;
+const CLASSIFY_VARIANT_STAGGER_MS = RELAY_TEST_MODE
+  ? 0
+  : Math.floor(CLASSIFY_STAGGER_TOTAL_MS / Math.max(1, CLASSIFY_VARIANTS.length - 1));
 
 // Relay gates — active only when RELAY_GATES_READY=1 (see Appendix E of docs/internal/news-alerts-enhancements-from-trendradar.md).
 // When the flag is set the relay becomes the sole authoritative source of rss_alert events and
@@ -12092,7 +12102,8 @@ function handlePolymarketRequest(req, res) {
     polymarketInflight.set(cacheKey, inflight);
   }
 
-  inflight.then((data) => {
+  // Returned so a throw while serving reaches the router's catch instead of going unhandled.
+  return inflight.then((data) => {
     if (data) {
       sendCompressed(req, res, 200, {
         'Content-Type': 'application/json',
@@ -12549,7 +12560,24 @@ function getCorsOrigin(req) {
   return '';
 }
 
-const server = http.createServer(async (req, res) => {
+// A throw that escapes a request (the router's own awaits, or an async route
+// handler) would otherwise be an unhandled rejection, which exits the relay on
+// Node 24 and takes every route and the AIS stream down with it. Route handlers
+// are dispatched with `return` so this one catch covers them.
+const server = http.createServer((req, res) => handleRelayRequest(req, res)
+  .catch((err) => handleRelayRequestFailure(res, err)));
+
+function handleRelayRequestFailure(res, err) {
+  console.error('[Relay] request handler failed:', err?.name || 'Error', err?.message || '');
+  // A half-written body must not be ended as if complete: cut the socket so the client sees the failure.
+  if (res.headersSent) {
+    if (!res.writableEnded) res.destroy();
+    return;
+  }
+  safeEnd(res, 500, {}, '');
+}
+
+async function handleRelayRequest(req, res) {
   const pathname = (req.url || '/').split('?')[0];
   const corsOrigin = getCorsOrigin(req);
   // Always emit Vary: Origin on /rss (browser-direct via CDN) to prevent
@@ -13507,42 +13535,38 @@ const server = http.createServer(async (req, res) => {
       }));
     }
   } else if (pathname.startsWith('/ucdp-events')) {
-    handleUcdpEventsRequest(req, res);
+    return handleUcdpEventsRequest(req, res);
   } else if (pathname.startsWith('/wingbits/track')) {
-    handleWingbitsTrackRequest(req, res);
+    return handleWingbitsTrackRequest(req, res);
   } else if (pathname.startsWith('/opensky')) {
-    handleOpenSkyRequest(req, res, PORT);
+    return handleOpenSkyRequest(req, res, PORT);
   } else if (pathname.startsWith('/worldbank')) {
-    handleWorldBankRequest(req, res);
+    return handleWorldBankRequest(req, res);
   } else if (pathname === '/wits') {
     return handleWitsRequest(req, res);
   } else if (pathname.startsWith('/polymarket')) {
-    handlePolymarketRequest(req, res);
+    return handlePolymarketRequest(req, res);
   } else if (pathname === '/yahoo-chart') {
-    handleYahooChartRequest(req, res);
+    return handleYahooChartRequest(req, res);
   } else if (pathname === '/crypto-quotes') {
-    handleCryptoQuotesRequest(req, res);
+    return handleCryptoQuotesRequest(req, res);
   } else if (pathname === '/notam') {
-    handleNotamProxyRequest(req, res);
+    return handleNotamProxyRequest(req, res);
   } else if (pathname === '/aviationstack') {
-    handleAviationStackRequest(req, res);
+    return handleAviationStackRequest(req, res);
   } else if (pathname === '/google-flights/search') {
-    handleGoogleFlightsSearch(req, res);
+    return handleGoogleFlightsSearch(req, res);
   } else if (pathname === '/google-flights/search-dates') {
-    handleGoogleFlightsDates(req, res);
+    return handleGoogleFlightsDates(req, res);
   } else if (pathname === '/widget-agent/health' && req.method === 'GET') {
-    handleWidgetAgentHealthRequest(req, res);
+    return handleWidgetAgentHealthRequest(req, res);
   } else if (pathname === '/widget-agent' && req.method === 'POST') {
-    // Not awaited: an escaped rejection would be unhandled and exit the relay.
-    handleWidgetAgentRequest(req, res).catch((err) => {
-      console.error('[widget-agent] Unhandled handler error:', err?.name || 'Error', err?.message || '');
-      safeEnd(res, 500, {}, '');
-    });
+    return handleWidgetAgentRequest(req, res);
   } else {
     res.writeHead(404);
     res.end();
   }
-});
+}
 
 // ─── Google Flights ───────────────────────────────────────────────────────────
 //
