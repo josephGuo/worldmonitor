@@ -131,6 +131,7 @@ import {
 } from '../../../_shared/cache-keys';
 import { getRelayBaseUrl, getRelayHeaders } from '../../../_shared/relay';
 import diplomacyKeywordsData from '../../../../shared/diplomacy-keywords.json';
+import { normalizeFeedDateZone } from '../../../../shared/feed-date-zone.js';
 import { NEWS_LANGUAGES } from '../../../../src/shared/public-rpc-cache';
 // #6428: entity corroboration must count publishers, not feed labels.
 import {
@@ -263,7 +264,7 @@ type DigestFeedEntry = { attemptId: string; category: string; feed: ServerFeed }
  * on the next request rather than on the next rebuild. Returns the original
  * object untouched when nothing was suppressed, so the common path stays free.
  */
-function suppressRevoked(
+export function suppressRevoked(
   data: ListFeedDigestResponse,
   revoked: ReadonlySet<string>,
 ): { data: ListFeedDigestResponse; dropped: number } {
@@ -661,7 +662,7 @@ function compareAnchorCandidates(a: ParsedItem, b: ParsedItem): number {
   return 0;
 }
 
-function computeItemCredibilityScore(
+export function computeItemCredibilityScore(
   item: CredibilitySourceItem,
   independentCorroborationCount: number,
 ): number {
@@ -744,7 +745,7 @@ function entityCorroborationScore(count: number | undefined): number {
   return Math.min(Math.max(finite, 0), 5) * ENTITY_CORROBORATION_SCORE_PER_SOURCE;
 }
 
-function computeImportanceScore(
+export function computeImportanceScore(
   level: ThreatLevel,
   source: string,
   corroborationCount: number,
@@ -783,7 +784,9 @@ function createTimeoutLinkedController(parentSignal: AbortSignal): {
     controller.abort();
   }, FEED_TIMEOUT_MS);
   const onAbort = () => controller.abort();
-  parentSignal.addEventListener('abort', onAbort, { once: true });
+  // An abort event that already fired never reaches a listener added now.
+  if (parentSignal.aborted) controller.abort();
+  else parentSignal.addEventListener('abort', onAbort, { once: true });
 
   return {
     controller,
@@ -848,6 +851,37 @@ function responseValidators(resp: Response): FeedValidators | undefined {
 /** Mirrors `RSS_MAX_BODY_BYTES` in scripts/ais-relay.cjs (the relay leg's cap). */
 const RSS_MAX_BODY_BYTES = 5 * 1024 * 1024;
 
+/**
+ * Decode a feed body in the charset it declares: the Content-Type charset,
+ * else the XML prolog's encoding, else UTF-8. Folha de S.Paulo serves
+ * ISO-8859-1 with a bare `text/xml`, so a fixed UTF-8 decode garbled every
+ * accented title. An unknown label falls back to UTF-8.
+ */
+export function decodeFeedBody(bytes: Uint8Array, contentType: string | null): string {
+  // A byte-order mark wins over any declaration, as in browsers. UTF-16 has
+  // no ASCII prolog to sniff, so the BOM is the only way to find it.
+  const bom = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? 'utf-8'
+    : bytes[0] === 0xff && bytes[1] === 0xfe ? 'utf-16le'
+      : bytes[0] === 0xfe && bytes[1] === 0xff ? 'utf-16be'
+        : null;
+  if (bom) return new TextDecoder(bom).decode(bytes);
+  let label = /charset\s*=\s*["']?([\w.:-]+)/i.exec(contentType ?? '')?.[1];
+  if (!label) {
+    // The prolog is ASCII in every encoding a feed declares, so a Latin-1
+    // read of the first bytes finds it without knowing the charset yet.
+    const head = new TextDecoder('latin1').decode(bytes.subarray(0, 256));
+    label = /^\s*<\?xml[^>]*\bencoding\s*=\s*["']([\w.:-]+)["']/i.exec(head)?.[1];
+  }
+  if (label) {
+    try {
+      return new TextDecoder(label).decode(bytes);
+    } catch {
+      // Unknown label: fall through to UTF-8.
+    }
+  }
+  return new TextDecoder().decode(bytes);
+}
+
 async function fetchRssText(
   url: string,
   signal: AbortSignal,
@@ -868,7 +902,10 @@ async function fetchRssText(
     if (!resp.ok) return { text: null, failure: 'direct-error' };
     // Same 5 MiB ceiling the relay leg enforces; an oversized body throws
     // here and falls through to the relay like any other direct failure.
-    const text = new TextDecoder().decode(await readBoundedResponseBody(resp, RSS_MAX_BODY_BYTES));
+    const text = decodeFeedBody(
+      await readBoundedResponseBody(resp, RSS_MAX_BODY_BYTES),
+      resp.headers.get('content-type'),
+    );
     // Defensive: upstream may return HTTP 200 with an HTML interstitial
     // (Cloudflare bot challenge, captcha page). Reject up front so the
     // caller's relay fallback fires instead of caching an empty parse.
@@ -1038,8 +1075,9 @@ export async function fetchAndParseRss(
     let relayAttempted = false;
     let relayBodyShape: 'rss' | 'html-or-empty' | 'no-relay' | 'fetch-error' = 'no-relay';
 
-    // Fallback: route through Railway relay (different IP, avoids Vercel blocks)
-    if (!text) {
+    // Fallback: route through Railway relay (different IP, avoids Vercel blocks).
+    // Not once the digest deadline has passed: nothing would wait for it.
+    if (!text && !signal.aborted) {
       const relay = await fetchViaRelay(feed.url, signal);
       relayAttempted = relay.attempted;
       relayBodyShape = relay.bodyShape;
@@ -1078,7 +1116,11 @@ export async function fetchAndParseRss(
         negativeCache: false,
       };
       const empty: ParseResult = { items: [], parsedTotal: 0, droppedUndated: 0, attempt };
-      await setCachedJson(cacheKey, empty, CACHE_TTL_EMPTY_S);
+      // Our own deadline says nothing about the feed: caching it would make
+      // the next builds serve an empty row for 5 minutes instead of fetching.
+      if (attempt.failure !== 'deadline-abort') {
+        await setCachedJson(cacheKey, empty, CACHE_TTL_EMPTY_S);
+      }
       return empty;
     }
 
@@ -1277,6 +1319,10 @@ function parseRssXml(xml: string, feed: ServerFeed, variant: string): ParseResul
     } else {
       link = extractTag(block, 'link', blockLower);
     }
+    // A publisher click counter carries the article URL after a `*`
+    // (redir.folha.com.br/.../*https://www1.folha.uol.com.br/...). Keep the
+    // article URL; the publisher-link gate below still checks its host.
+    link = link.replace(/^https?:\/\/[^/?#*]+\/[^*?#]*\*(?=https?:\/\/)/i, '');
     // Strip non-HTTP links (javascript:, data:, etc.) before any downstream use.
     if (!/^https?:\/\//i.test(link)) link = '';
 
@@ -1296,7 +1342,7 @@ function parseRssXml(xml: string, feed: ServerFeed, variant: string): ParseResul
       if (forDigest) droppedUndated++;
       continue;
     }
-    const parsedDate = new Date(pubDateStr);
+    const parsedDate = new Date(normalizeFeedDateZone(pubDateStr));
     const parsedMs = parsedDate.getTime();
     if (Number.isNaN(parsedMs)) {
       if (forDigest) droppedUndated++;
@@ -2267,7 +2313,7 @@ async function readAdoptionState(
   return { aliasTargetByHash, trackFirstSeenByHash, incompleteHashes };
 }
 
-function toProtoItem(item: ParsedItem, storyMeta?: ProtoStoryMeta): ProtoNewsItem {
+export function toProtoItem(item: ParsedItem, storyMeta?: ProtoStoryMeta): ProtoNewsItem {
   return {
     source: item.source,
     title: item.title,

@@ -1650,12 +1650,6 @@
     "ownershipClass": "unreviewed",
     "note": "Google News topic query aggregating many publishers; no single owner."
   },
-  "Euractiv Digital": {
-    "country": "BE",
-    "audience": "international",
-    "language": "en",
-    "ownershipClass": "private"
-  },
   "Eurasianet": {
     "country": "US",
     "audience": "international",
@@ -2735,12 +2729,6 @@
     "language": "en",
     "ownershipClass": "unreviewed",
     "note": "Google News topic query aggregating many publishers; no single owner."
-  },
-  "LAVCA (LATAM)": {
-    "country": "US",
-    "audience": "international",
-    "language": "en",
-    "ownershipClass": "nonprofit"
   },
   "Layoffs News": {
     "country": "INTL",
@@ -5262,5 +5250,12 @@
     "audience": "domestic",
     "language": "uk",
     "ownershipClass": "private"
+  },
+  "MIT Tech Review AI": {
+    "country": "US",
+    "audience": "international",
+    "language": "en",
+    "ownershipClass": "nonprofit",
+    "note": "Owned by MIT."
   }
 }
