@@ -264,6 +264,14 @@ function overrideStringExample(key, context = {}) {
     if (key === 'language') return 'fr';
     if (key === 'state') return 'complete';
   }
+  // ListSourceItems: editions, category and sources must name catalog
+  // placements, or the example request is answered `unplaced`.
+  if (where.includes('listsourceitems') || where.includes('list-source-items') || where.includes('sourceitemsstate')) {
+    if (key === 'editions' || key === 'edition') return 'full';
+    if (key === 'category') return 'europe';
+    if (key === 'sources' || key === 'source') return 'France 24';
+    if (key === 'state') return 'found';
+  }
   if (where.includes('listvulnerabilityrankings') || where.includes('list-vulnerability-rankings')) {
     if (key === 'commodityid') return 'crude_oil';
     if (key === 'band') return 'high';
@@ -1133,6 +1141,19 @@ function exampleForSchema(schema, spec, context = {}, depth = 0, seen = new Set(
   if (!schema || typeof schema !== 'object') return 'example';
   const original = schema;
   schema = resolveRef(schema, spec);
+  if (depth === 0 && context.operationId === 'GetWebcamImage'
+    && context.exampleSurface === 'response') {
+    return {
+      thumbnailUrl: 'https://example.com/cam.jpg',
+      playerUrl: '',
+      title: 'Port camera',
+      windyUrl: 'https://www.windy.com/webcams/123',
+      lastUpdated: '2026-01-15T12:00:00.000Z',
+      resolvedAt: 1768478460000,
+      mediaType: 'snapshot',
+      error: '',
+    };
+  }
   if (depth === 0 && context.operationId === 'GetCountrySignalObservations'
     && context.exampleSurface === 'response') {
     return {

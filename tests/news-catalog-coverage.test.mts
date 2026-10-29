@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
-import { INTEL_EDITION } from '../shared/news-catalog-browser';
+import { INTEL_EDITION, digestCarriesFeed } from '../shared/news-catalog-browser';
 import { projectBrowserCatalog } from '../shared/news-catalog';
 import { VALID_VARIANTS, __testing__ as digestTesting } from '../server/worldmonitor/news/v1/list-feed-digest';
 import { NEWS_LANGUAGES } from '../src/shared/public-rpc-cache';
@@ -171,14 +171,37 @@ describe('digests serve the categories that used to need per-feed browser fetche
       .filter(p => p.edition === 'tech' && p.browserOrder !== undefined && (!feed.lang || feed.lang === 'en'))
       .map(p => `${p.category}|${feed.name}`))
       .filter(key => !fetched.has(key));
-    // GitHub Trending dates only its channel, never its items, so the digest's
-    // date gate would drop every item; it stays browser-only until the digest
-    // can date a snapshot feed by its channel.
-    assert.deepEqual(browserOnly, ['github|GitHub Trending']);
-    assert.ok(pending.has('GitHub Trending'), 'the browser keeps fetching it while it is pending');
+    assert.deepEqual(browserOnly, []);
     for (const name of ['DevOps.com', 'FwdStart Newsletter']) {
       const feed = catalog.feeds.find(f => f.name === name);
       assert.match(feed?.url ?? '', /^https:\/\//, `${name} must have an absolute URL the server can fetch`);
+    }
+  });
+
+  it('every English digest fetches every source its edition shows (U6 batch 4)', () => {
+    const missing: string[] = [];
+    for (const edition of new Set(catalog.feeds.flatMap(feed => feed.placements.map(p => p.edition)))) {
+      const variant = edition === INTEL_EDITION ? 'full' : edition;
+      if (!VALID_VARIANTS.has(variant)) continue;
+      const fetched = new Set(digestTesting.buildDigestFeedBatches(variant, 'en').batches.flat()
+        .map(entry => entry.feed.name));
+      for (const feed of catalog.feeds) {
+        if (feed.lang && feed.lang !== 'en') continue;
+        if (!feed.placements.some(p => p.edition === edition && p.browserOrder !== undefined)) continue;
+        if (!fetched.has(feed.name)) missing.push(`${edition}|${feed.name}`);
+      }
+    }
+    assert.deepEqual(missing, []);
+    assert.deepEqual(pendingNames, []);
+    // GitHub Trending dates only its channel and links to github.com, so its
+    // entry opts in to both.
+    const trending = catalog.feeds.find(f => f.name === 'GitHub Trending') as { channelDated?: boolean; linkHosts?: string[] } | undefined;
+    assert.equal(trending?.channelDated, true);
+    assert.deepEqual(trending?.linkHosts, ['github.com']);
+    for (const name of ['FAS', 'New Scientist', 'Ransomware.live']) {
+      const feed = catalog.feeds.find(f => f.name === name);
+      assert.match(feed?.url ?? '', /^https:\/\/news\.google\.com\/rss\/search\?q=site:[^&]+\+when:\d+d&/,
+        `${name} reads a dated Google News site: query`);
     }
   });
 
@@ -216,6 +239,30 @@ describe('digests serve the categories that used to need per-feed browser fetche
     const browser = projectBrowserCatalog().editions.full!.latam!.find(feed => feed.name === 'La Silla Vacía')!;
     assert.equal(browser.lang, undefined, 'browser targeting unchanged');
     assert.equal(browser.digestLang, 'es');
+  });
+
+  it('the browser catalog states exactly which digest languages carry each source', async () => {
+    // Panels read this to decide which sources a digest covers (direct
+    // fetch, #9796 source fill); it must match what each digest builds.
+    const browser = projectBrowserCatalog();
+    const mismatches: string[] = [];
+    for (const edition of VALID_VARIANTS) {
+      const placed: Array<[string, typeof browser.intel]> = Object.entries(browser.editions[edition] ?? {});
+      if (edition === 'full') placed.push(['intel', browser.intel]);
+      for (const language of NEWS_LANGUAGES) {
+        const built = new Set(digestTesting.buildDigestFeedBatches(edition, language).batches.flat()
+          .map(entry => `${entry.category}|${entry.feed.name}`));
+        for (const [category, feeds] of placed) {
+          for (const feed of feeds) {
+            if (feed.browserOnly) continue;
+            if (built.has(`${category}|${feed.name}`) !== digestCarriesFeed(feed, language)) {
+              mismatches.push(`${edition}/${category}/${feed.name}/${language}`);
+            }
+          }
+        }
+      }
+    }
+    assert.deepEqual(mismatches, []);
   });
 });
 

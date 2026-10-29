@@ -297,6 +297,85 @@ export interface CrudeImportOriginLike {
   } | undefined> | null;
 }
 
+/**
+ * `crudeImportOriginNational` in the same key: importers that file no
+ * partner-level crude to Comtrade, from their own statistics, in tonnes.
+ */
+export interface NationalCrudeOriginLike {
+  status?: string;
+  carriedForward?: boolean;
+  fetchedAt?: string;
+  months?: unknown;
+  importers?: Record<string, {
+    source?: string;
+    worldT?: Array<number | null>;
+    gulfT?: Array<number | null>;
+    bypassPartnersT?: Record<string, Array<number | null> | undefined>;
+  } | undefined> | null;
+}
+
+/** Reads a national section with the Comtrade share arithmetic: shares are unit-free. */
+export function nationalOriginAsShares(section: NationalCrudeOriginLike | null | undefined): CrudeImportOriginLike | null {
+  if (!section?.importers) return null;
+  const importers: NonNullable<CrudeImportOriginLike['importers']> = {};
+  for (const [iso2, imp] of Object.entries(section.importers)) {
+    if (!imp) continue;
+    importers[iso2] = { worldUsdM: imp.worldT, gulfUsdM: imp.gulfT, bypassPartnersUsdM: imp.bypassPartnersT };
+  }
+  return { ...section, importers };
+}
+
+/**
+ * `productDemandNational` in the same key: refined-product demand, kb/d,
+ * from national statistics for importers JODI carries without any
+ * (Malaysia from DOSM annual final consumption).
+ */
+export interface NationalProductDemandLike {
+  status?: string;
+  carriedForward?: boolean;
+  fetchedAt?: string;
+  countries?: Record<string, {
+    source?: string;
+    year?: unknown;
+    products?: Record<string, unknown> | null;
+  } | undefined> | null;
+}
+
+/** Oldest national demand year still used, in years before the JODI flow month. */
+export const NATIONAL_DEMAND_MAX_AGE_YEARS = 3;
+
+export interface NationalProductDemand {
+  source: string;
+  year: number;
+  products: Partial<Record<RefineryProductKey, number>>;
+  /** False when the year is after the flow month's or more than NATIONAL_DEMAND_MAX_AGE_YEARS before it. */
+  usable: boolean;
+}
+
+/** One country's national product demand, or null when the section has none. */
+export function parseNationalProductDemand(
+  section: NationalProductDemandLike | null | undefined,
+  iso2: string,
+  flowMonth: unknown,
+): NationalProductDemand | null {
+  const entry = section?.countries?.[iso2];
+  const year = entry?.year;
+  if (!entry || typeof year !== 'number' || !Number.isInteger(year) || !entry.products) return null;
+  const products: Partial<Record<RefineryProductKey, number>> = {};
+  for (const { key } of REFINERY_PRODUCTS) {
+    const kbd = entry.products[key];
+    if (typeof kbd === 'number' && Number.isFinite(kbd) && kbd > 0) products[key] = kbd;
+  }
+  if (Object.keys(products).length === 0) return null;
+  const flowYear = typeof flowMonth === 'string' && MONTH_RE.test(flowMonth) ? Number(flowMonth.slice(0, 4)) : null;
+  return {
+    source: typeof entry.source === 'string' && entry.source ? entry.source : 'national statistics',
+    year,
+    products,
+    usable: flowYear != null && flowYear - year >= 0 && flowYear - year <= NATIONAL_DEMAND_MAX_AGE_YEARS,
+  };
+}
+
 export interface MonthlyGulfShare {
   share: number;
   fromMonth: string;
@@ -374,6 +453,76 @@ export function computeMonthlyGulfShares(
  * the cap only triggers for clearly-absurd outputs.
  */
 export const EFFECTIVE_COVER_DAYS_CAP = 730;
+
+/** Stocks older than this, against the JODI flow month, are not used for cover. */
+export const JODI_STOCK_MAX_AGE_MONTHS = 12;
+
+export interface JodiStocks {
+  month: string;
+  crudeMb: number;
+  productsMb: number;
+}
+
+/** JODI net oil imports for `year` from the seeder's per-year list; null unless usable. */
+export function parseNetOilImports(raw: unknown, year: number | null): { year: number; kbd: number } | null {
+  if (!Array.isArray(raw) || year == null) return null;
+  const entry = raw.find((e) => e && typeof e === 'object' && (e as Record<string, unknown>).year === year) as Record<string, unknown> | undefined;
+  const kbd = entry?.kbd;
+  if (typeof kbd !== 'number' || !Number.isFinite(kbd) || kbd <= 0) return null;
+  return { year, kbd };
+}
+
+const monthIndex = (ym: unknown): number | null => {
+  if (typeof ym !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(ym)) return null;
+  return Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5, 7)) - 1;
+};
+
+/**
+ * The month-end crude and product stocks a JODI row carries, when the month is
+ * a valid YYYY-MM and both figures are finite and nonnegative with a positive
+ * total. Stocks are usable for cover only when they can be dated against a
+ * valid flow month and are at most JODI_STOCK_MAX_AGE_MONTHS older than it;
+ * otherwise `unusable` says why, for a limitation.
+ */
+export function parseJodiStocks(raw: unknown, flowMonth: unknown): { stocks: JodiStocks; unusable: 'stale' | 'undated' | null } | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const { month, crudeMb, productsMb } = raw as Record<string, unknown>;
+  const mb = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
+  const stockIndex = monthIndex(month);
+  if (stockIndex == null || !mb(crudeMb) || !mb(productsMb) || crudeMb + productsMb <= 0) return null;
+  const flowIndex = monthIndex(flowMonth);
+  const unusable = flowIndex == null ? 'undated' : flowIndex - stockIndex > JODI_STOCK_MAX_AGE_MONTHS ? 'stale' : null;
+  return { stocks: { month: month as string, crudeMb, productsMb }, unusable };
+}
+
+/** JODI crude balance figures, kb/d. */
+export interface JodiCrudeBalance {
+  productionKbd?: number | null;
+  refineryIntakeKbd?: number | null;
+  importsKbd?: number | null;
+  exportsKbd?: number | null;
+}
+
+/**
+ * Net crude exporter from a JODI row, for countries without an IEA stock
+ * record (Saudi Arabia, Kuwait, Iraq, Kazakhstan, Nigeria...): production
+ * covers refinery intake and exports exceed imports. An unreported import
+ * figure counts as 0 (Iraq files none); a reported but invalid one (negative)
+ * disqualifies the row. Exports above imports already imply production above
+ * intake in the crude balance, so the intake check only guards a stock-draw
+ * month and is skipped when intake is unreported. Returns the figures it rests
+ * on, or null when the row cannot show it.
+ */
+export function jodiNetCrudeExporter(crude: JodiCrudeBalance | null | undefined): JodiCrudeBalance | null {
+  const kbd = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
+  if (!crude || !kbd(crude.productionKbd) || crude.productionKbd <= 0 || !kbd(crude.exportsKbd)) return null;
+  if (crude.importsKbd != null && !kbd(crude.importsKbd)) return null;
+  const importsKbd = crude.importsKbd ?? null;
+  if (!(crude.exportsKbd > (importsKbd ?? 0))) return null;
+  const refineryIntakeKbd = kbd(crude.refineryIntakeKbd) ? crude.refineryIntakeKbd : null;
+  if (refineryIntakeKbd != null && crude.productionKbd < refineryIntakeKbd) return null;
+  return { productionKbd: crude.productionKbd, refineryIntakeKbd, importsKbd, exportsKbd: crude.exportsKbd };
+}
 
 export function computeEffectiveCoverDays(
   daysOfCover: number,
@@ -454,17 +603,21 @@ export function buildAssessment(
   ieaStocksCoverage?: boolean,
   comtradeCoverage?: boolean,
   supplyMix?: string,
-  /** 'estimate': daysOfCover is a non-IEA strategic reserve estimate, never called IEA cover. */
-  coverSource: 'iea' | 'estimate' = 'iea',
+  /** 'jodi': daysOfCover is stock reported to JODI by a country outside the IEA, never called IEA cover. */
+  coverSource: 'iea' | 'jodi' = 'iea',
 ): string {
   const country = countryLabel(code);
   const cp = chokepointLabel(chokepointId);
-  const estimated = coverSource === 'estimate';
+  const estimated = coverSource === 'jodi';
   const coverPhrase = estimated
-    ? `an estimated ${daysOfCover} days of strategic reserves (not IEA data)`
+    ? `about ${daysOfCover} days of oil stocks reported to JODI (not IEA data)`
     : `${daysOfCover} days IEA cover`;
   // Which Gulf share the figures rest on, e.g. "the pre-crisis supply mix".
   const mix = supplyMix ? ` at ${supplyMix}` : '';
+  // A net exporter needs no import data: checked before the import gates.
+  if (effectiveCoverDays === -1) {
+    return `${country} is a net oil exporter, so no import-cover duration applies; ${cp} disruption mainly affects export revenue and can still reach refiners that import Gulf crude or products.`;
+  }
   if (!dataAvailable) {
     return `Insufficient import data for ${country} to model ${cp} exposure.`;
   }
@@ -472,9 +625,6 @@ export function buildAssessment(
   // A fixed proxy share used to fill this gap; it read as a measurement.
   if (comtradeCoverage === false || coverageLevel === 'unsupported') {
     return `Crude import origin data is unavailable for ${country}; ${cp} oil exposure is not modeled.`;
-  }
-  if (effectiveCoverDays === -1) {
-    return `${country} is a net oil exporter; ${cp} disruption affects export revenue, not domestic supply.`;
   }
   // Reached only with a measured share (the branch above returns otherwise).
   if (gulfCrudeShare < 0.1) {
@@ -488,7 +638,7 @@ export function buildAssessment(
   if (effectiveCoverDays > 90) {
     return `With ${coverPhrase}, ${country} can bridge a ${disruptionPct}% ${cp} disruption for ~${effectiveCoverDays} days${mix}${degradedNote}.`;
   }
-  const coverText = estimated ? `estimated strategic reserve cover: ~${effectiveCoverDays} days (not IEA data)` : `IEA cover: ${ieaCoverText}`;
+  const coverText = estimated ? `JODI-reported stock cover: ~${effectiveCoverDays} days (not IEA data)` : `IEA cover: ${ieaCoverText}`;
   // No product with recorded demand: there is no deficit to name, not a 0.0% one.
   if (products.length === 0) {
     return `${country} has no refined-product demand observation, so product deficits under ${disruptionPct}% ${cp} disruption${mix} are not modeled; ${coverText}${degradedNote}.`;

@@ -2246,20 +2246,21 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
   }
 
   /**
-   * Non-IEA importers (India, China): a dated reserve estimate, never IEA
-   * cover. Cover days are shown only when the oil loss was modeled.
+   * Importers outside the IEA: the month-end stocks they report to JODI, never
+   * IEA cover. Cover days are shown only when the oil loss was modeled.
    */
-  private renderReserveEstimate(result: ComputeEnergyShockScenarioResponse): HTMLElement | null {
-    const est = result.reserveEstimate;
-    if (!est || result.ieaStocksCoverage) return null;
-    const mb = `${est.centralMb.toLocaleString('en')} M bbl`;
-    const oilModeled = result.dataAvailable && result.jodiOilCoverage && result.comtradeCoverage && result.effectiveCoverDays > 0
+  private renderReportedStocks(result: ComputeEnergyShockScenarioResponse): HTMLElement | null {
+    const s = result.reportedStocks;
+    if (!s || result.ieaStocksCoverage) return null;
+    // stockDays is present exactly when the stocks were applied, so a modeled
+    // cover of 0 days still reads as modeled.
+    const oilModeled = result.dataAvailable && result.jodiOilCoverage && result.comtradeCoverage && s.stockDays != null
+      && result.effectiveCoverDays >= 0
       && !(result.limitations ?? []).some((l) => l.includes('effective cover are not modeled'));
-    const credibility = est.credibility === 'low' ? '; low credibility' : '';
-    const text = oilModeled && est.coverDaysLow != null && est.coverDaysHigh != null
-      ? `Estimated strategic reserve cover (not IEA data): ~${result.effectiveCoverDays} days under this scenario (range ${est.coverDaysLow}–${est.coverDaysHigh}; ${est.scope}, ${mb}, as of ${est.asOf}${credibility})`
-      : `Estimated strategic reserve (not IEA data): ${mb}, as of ${est.asOf}${credibility}; cover not modeled for this scenario`;
-    const row = this.el('div', 'cdp-economic-source cdp-shock-reserve-estimate', text);
+    const text = oilModeled
+      ? `Stock cover (JODI-reported, not IEA data): ~${result.effectiveCoverDays} days under this scenario (crude ${s.crudeMb.toFixed(1)} + products ${s.productsMb.toFixed(1)} = ${s.totalMb.toFixed(1)} M bbl at the end of ${s.month}, about ${s.stockDays} days of crude imports)`
+      : `Oil stocks (JODI-reported, not IEA data): ${s.totalMb.toFixed(1)} M bbl at the end of ${s.month}; cover not modeled for this scenario`;
+    const row = this.el('div', 'cdp-economic-source cdp-shock-reported-stocks', text);
     row.style.cssText += ';margin-bottom:4px';
     return row;
   }
@@ -2268,10 +2269,10 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
     const container = this.el('div', '');
 
     if (!result.dataAvailable && !result.gasSensitivity?.dataAvailable) {
-      // Measured Gulf shares and a reserve estimate are still worth showing when the loss is not.
+      // Measured Gulf shares and reported stocks are still worth showing when the loss is not.
       const shares = this.renderCrudeShareBaselines(result);
       if (shares) container.append(shares);
-      const reserve = this.renderReserveEstimate(result);
+      const reserve = this.renderReportedStocks(result);
       if (reserve) container.append(reserve);
       container.append(this.el('div', 'cdp-economic-source', result.assessment));
       return container;
@@ -2349,7 +2350,13 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
       }
     }
 
-    if (result.ieaStocksCoverage) {
+    // -1 marks a net exporter, from IEA or from JODI production and trade, and
+    // holds even when the import inputs are missing (exporters file few).
+    if (result.effectiveCoverDays < 0) {
+      const coverRow = this.el('div', 'cdp-economic-source', 'Net oil exporter — strategic reserve cover not applicable');
+      coverRow.style.cssText += ';margin-bottom:4px';
+      container.append(coverRow);
+    } else if (result.ieaStocksCoverage) {
       const coverRow = this.el('div', 'cdp-economic-source');
       coverRow.style.cssText += ';margin-bottom:4px';
       // effectiveCoverDays is 0 whenever the oil loss was not modeled (missing
@@ -2360,8 +2367,6 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
       let coverText: string;
       if (oilNotModeled) {
         coverText = 'IEA cover: not modeled for this scenario (crude import inputs unavailable)';
-      } else if (result.effectiveCoverDays < 0) {
-        coverText = 'Net oil exporter — strategic reserve cover not applicable';
       } else if (result.effectiveCoverDays > 0) {
         coverText = `IEA cover: ~${result.effectiveCoverDays} days under this scenario`;
       } else {
@@ -2370,7 +2375,7 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
       coverRow.textContent = coverText;
       container.append(coverRow);
     } else {
-      const reserve = this.renderReserveEstimate(result);
+      const reserve = this.renderReportedStocks(result);
       if (reserve) container.append(reserve);
     }
 

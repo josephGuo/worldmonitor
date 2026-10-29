@@ -39,7 +39,10 @@ const JODI_MEASUREMENT_FIELDS = require('./shared/jodi-measurement-fields.json')
 
 export const CANONICAL_KEY = 'energy:jodi-oil:v1:_countries';
 export const COUNTRY_KEY_PREFIX = 'energy:jodi-oil:v1:';
-export const JODI_TTL = 70 * 24 * 3600; // 70 days: 2× 35d cadence so one missed monthly publish still serves last-good through the 40d STALE_SEED window (#7273)
+export const JODI_TTL = 70 * 24 * 3600; // 70 days: one missed monthly publish still serves last-good through the 40d STALE_SEED window (#7273)
+// Bump when the country payload changes shape: the energy-sources bundle
+// reseeds on the first tick after a deploy whose seed-meta lacks this version.
+export const JODI_OIL_SOURCE_VERSION = 'jodi-oil-v2';
 const META_KEY = 'seed-meta:energy:jodi-oil';
 const LOCK_DOMAIN = 'energy:jodi-oil';
 const LOCK_TTL_MS = 10 * 60 * 1000;
@@ -385,6 +388,86 @@ export function computeProductTrade(byMonth, iso2, dataMonth) {
   };
 }
 
+// Month-end closing stocks are filed in thousand barrels, not kb/d.
+const STOCK_FLOW = 'CLOSTLV';
+const STOCK_UNIT = 'KBBL';
+const isStockRow = (r) => r.FLOW_BREAKDOWN === STOCK_FLOW && r.UNIT_MEASURE === STOCK_UNIT;
+
+/**
+ * Latest month in which the country reported both crude and total-product
+ * closing stocks, in million barrels. Crude and products together are the
+ * scope IEA days of cover count; one without the other understates it, so a
+ * month needs both. Null when no month does.
+ */
+export function extractClosingStocks(allRows, iso2) {
+  const byMonth = new Map();
+  for (const r of allRows) {
+    if (r.REF_AREA !== iso2 || !r.TIME_PERIOD || !isStockRow(r)) continue;
+    const val = parseObsValue(r.OBS_VALUE);
+    if (val === null || val < 0) continue;
+    if (!byMonth.has(r.TIME_PERIOD)) byMonth.set(r.TIME_PERIOD, {});
+    byMonth.get(r.TIME_PERIOD)[r.ENERGY_PRODUCT] = val;
+  }
+  for (const month of [...byMonth.keys()].sort((a, b) => b.localeCompare(a))) {
+    const m = byMonth.get(month);
+    // A zero TOTCRUDE barrel stock is a placeholder: India files KBBL 0 beside
+    // 6,086 kt in the same row set.
+    const crude = m.CRUDEOIL ?? (m.TOTCRUDE > 0 ? m.TOTCRUDE : null);
+    const products = m.TOTPRODS ?? null;
+    if (crude === null || products === null || crude + products <= 0) continue;
+    return { month, crudeMb: crude / 1000, productsMb: products / 1000 };
+  }
+  return null;
+}
+
+// IEA counts days of cover against the previous calendar year's average net
+// imports of all oil: crude with NGL and feedstocks (TOTCRUDE), and products.
+const NET_IMPORTS_MIN_MONTHS = 9;
+
+const daysIn = (year, month) => new Date(Date.UTC(year, month, 0)).getUTCDate();
+
+/**
+ * Average net oil imports, kb/d, over one calendar year: crude (TOTCRUDE,
+ * else CRUDEOIL) plus total products, imports less exports, each month's
+ * rate weighted by its days. A month counts only when all four figures are
+ * reported. Null with fewer than NET_IMPORTS_MIN_MONTHS such months or a
+ * net-exporting year.
+ */
+export function computeNetOilImports(byMonth, iso2, year) {
+  let barrels = 0;
+  let days = 0;
+  let months = 0;
+  for (let m = 1; m <= 12; m++) {
+    const monthRows = byMonth.get(`${year}-${String(m).padStart(2, '0')}`);
+    if (!monthRows) continue;
+    const pick = (product, flow) => pickMonthValue(monthRows, iso2, product, flow, false);
+    const crudeCode = pick('TOTCRUDE', 'TOTIMPSB') !== null ? 'TOTCRUDE' : 'CRUDEOIL';
+    const values = [pick(crudeCode, 'TOTIMPSB'), pick(crudeCode, 'TOTEXPSB'), pick('TOTPRODS', 'TOTIMPSB'), pick('TOTPRODS', 'TOTEXPSB')];
+    if (values.some((v) => v === null)) continue;
+    const [crudeImp, crudeExp, prodImp, prodExp] = values;
+    barrels += (crudeImp - crudeExp + prodImp - prodExp) * daysIn(year, m);
+    days += daysIn(year, m);
+    months++;
+  }
+  if (months < NET_IMPORTS_MIN_MONTHS) return null;
+  const kbd = Math.round((barrels / days) * 10) / 10;
+  return kbd > 0 ? { year, kbd, months } : null;
+}
+
+/**
+ * Net oil imports for every calendar year up to `dataMonth`'s in the files,
+ * newest first; computeNetOilImports drops a year with fewer than 9 complete
+ * months. IEA's own data month decides which year its days count against, and
+ * it can lag or lead JODI's across a new year, so the reader picks.
+ */
+export function netOilImportsByYear(byMonth, iso2, dataMonth) {
+  const dataYear = Number(String(dataMonth).slice(0, 4));
+  const years = [...new Set([...byMonth.keys()].map((m) => Number(m.slice(0, 4))))]
+    .filter((y) => Number.isInteger(y) && y <= dataYear)
+    .sort((a, b) => b - a);
+  return years.map((y) => computeNetOilImports(byMonth, iso2, y)).filter(Boolean);
+}
+
 export function extractCountryData(allRows, iso2) {
   const byMonth = rowsByMonth(allRows, iso2);
 
@@ -460,6 +543,8 @@ export function extractCountryData(allRows, iso2) {
     refineryYields: computeRefineryYields(byMonth, iso2, dataMonth),
     productTrade: computeProductTrade(byMonth, iso2, dataMonth),
     demandChange: oilDemandChangeFromMonths(byMonth, iso2, dataMonth).change,
+    stocks: extractClosingStocks(allRows, iso2),
+    netOilImports: netOilImportsByYear(byMonth, iso2, dataMonth),
     seededAt,
   };
 }
@@ -509,6 +594,7 @@ export function mergeSourceRows(
   secondaryCurrent,
   secondaryPrior,
   secondaryLookback = '',
+  primaryLookback = '',
 ) {
   if (!secondaryCurrent && !secondaryPrior) {
     throw new Error('Both secondary JODI CSV files failed to download; product-level data unavailable');
@@ -519,8 +605,10 @@ export function mergeSourceRows(
     ...(secondaryCurrent ? parseCsv(secondaryCurrent) : []),
     ...(secondaryPrior ? parseCsv(secondaryPrior) : []),
     ...(secondaryLookback ? parseCsv(secondaryLookback) : []),
+    ...(primaryLookback ? parseCsv(primaryLookback) : []),
   ];
-  return allRows.filter(r => r.UNIT_MEASURE === 'KBD');
+  // Flows are kb/d; closing stocks are the one KBBL measure kept.
+  return allRows.filter(r => r.UNIT_MEASURE === 'KBD' || isStockRow(r));
 }
 
 /**
@@ -530,7 +618,9 @@ export function mergeSourceRows(
  * early in a year the newest usable month still sits in `priorYear` — whose
  * year-over-year comparison month lives one file further back. Without
  * `lookbackYear` the demand change is structurally unpublishable for months at
- * a time. Demand is a secondary-product measure, so only that file is needed.
+ * a time. Its primary (crude) file serves net oil imports: IEA days of cover
+ * count against the previous calendar year, which early in a year is
+ * `lookbackYear`.
  */
 export function jodiSourceYears(now = new Date()) {
   const currentYear = now.getFullYear();
@@ -592,7 +682,7 @@ export async function fetchYearCsv(kind, year, options = {}) {
 async function fetchAllRows() {
   const { currentYear, priorYear, lookbackYear } = jodiSourceYears();
 
-  const [primaryCurrent, primaryPrior, secondaryCurrent, secondaryPrior, secondaryLookback] =
+  const [primaryCurrent, primaryPrior, secondaryCurrent, secondaryPrior, secondaryLookback, primaryLookback] =
     await Promise.all([
       fetchYearCsv('primary', currentYear),
       fetchYearCsv('primary', priorYear),
@@ -600,6 +690,8 @@ async function fetchAllRows() {
       fetchYearCsv('secondary', priorYear),
       // Optional: its absence only withholds the demand change, never the seed.
       fetchYearCsv('secondary', lookbackYear),
+      // Optional: its absence only withholds net oil imports for that year.
+      fetchYearCsv('primary', lookbackYear),
     ]);
 
   for (const [label, result] of [
@@ -608,6 +700,7 @@ async function fetchAllRows() {
     [`secondary/${currentYear}`, secondaryCurrent],
     [`secondary/${priorYear}`, secondaryPrior],
     [`secondary/${lookbackYear}`, secondaryLookback],
+    [`primary/${lookbackYear}`, primaryLookback],
   ]) {
     if (!result.ok) console.warn(`  ${label} unavailable (tried ${result.attempted.length} names): ${result.error}`);
   }
@@ -630,6 +723,7 @@ async function fetchAllRows() {
     secondaryCurrent.text,
     secondaryPrior.text,
     secondaryLookback.text,
+    primaryLookback.text,
   );
 }
 
@@ -688,6 +782,7 @@ export function prepareOilPublish({ allRows, previousMeta = null, now = new Date
     metaPayload: {
       fetchedAt: now.getTime(),
       recordCount: countries.length,
+      sourceVersion: JODI_OIL_SOURCE_VERSION,
       chinaDataMonth: chinaCoverage.dataMonth,
       chinaRow: buildChinaRowDiagnostic(
         chinaCoverage,
