@@ -237,6 +237,13 @@ const EXCLUDED_FROM_MCP = new Map([
     'operational: meta-only health probe for the sharded Treasury par curve. GetUsTreasuryParYieldCurve serves the series; the history is too large for the composite economic cache tool (#8480).'],
   ['seed-meta:economic:us-interest-rates',
     'operational: meta-only health probe for the sharded Fed funds, Treasury yield, and SOFR history. GetUsInterestRates serves the series; the history is too large for the composite economic cache tool (#8485).'],
+  ['economic:food-prices:pihps:v1', 'source cache read by GetFoodPrices, which has no MCP tool yet; it serves dated local market prices and context (#9841).'],
+  ['economic:food-prices:pbs:v1', 'source cache read by GetFoodPrices, which has no MCP tool yet; it serves dated local market prices and context (#9841).'],
+  ['economic:food-prices:da:v1', 'source cache read by GetFoodPrices, which has no MCP tool yet; it serves dated local market prices and context (#9841).'],
+  ['economic:food-prices:cbsl:v1', 'source cache read by GetFoodPrices, which has no MCP tool yet; it serves dated local market prices and context (#9841).'],
+  ['economic:food-prices:sniim:v1', 'source cache read by GetFoodPrices, which has no MCP tool yet; it serves dated local market prices and context (#9841).'],
+  ['economic:food-prices:giews:v1', 'source cache read by GetFoodPrices, which has no MCP tool yet; it serves dated local market prices and context (#9841).'],
+  ['economic:food-prices:onagri:v1', 'source cache read by GetFoodPrices, which has no MCP tool yet; it serves dated local market prices and context (#9841).'],
   ['seed-meta:economic:world-cpi-imf',
     'operational: meta-only health probe for the worldwide IMF CPI payload (~1 MB across 190 countries). GetWorldCpiMonthly serves the data; the payload is too large for the composite economic cache tool (#8538).'],
   ['seed-meta:economic:world-cpi-eurostat',
@@ -405,7 +412,7 @@ const EXCLUDED_FROM_MCP = new Map([
   // (could be a follow-up tool).
   ['energy:spine:v1:_countries',
     'deferred: per-country energy spine index; covered indirectly via get_energy_intelligence headline aggregates. Future expanded per-country energy tool would expose this.'],
-  ...['pgcb', 'petrobangla', 'niso', 'eskom', 'cammesa', 'gse', 'ons', 'anp', 'evn', 'korem', 'coes', 'iccc', 'fccc'].map(id => [
+  ...['pgcb', 'petrobangla', 'niso', 'eskom', 'cammesa', 'gse', 'ons', 'anp', 'evn', 'korem', 'coes', 'iccc', 'fccc', 'mem'].map(id => [
     `energy:regional:${id}:v1`,
     'deferred: country-specific regional observations exposed by get-country-energy-profile; the MCP energy tool provides headline aggregates. A future per-country energy tool can expose these series.',
   ]),

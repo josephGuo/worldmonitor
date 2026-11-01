@@ -4572,7 +4572,10 @@ describe('agent readiness: Content-Signal declarations', () => {
   it('vercel.json serves an origin-wide Content-Signal header', () => {
     const value = headerValue();
     assert.ok(value, 'vercel.json must carry a Content-Signal response header');
-    assert.match(value, /ai-train=(yes|no)/);
+    // Owner decision: training by assistant vendors is welcome (brand recall in
+    // future models). The training crawlers are allowed in robots.txt, so the
+    // signal must say yes — a `no` here contradicts the crawl rules.
+    assert.match(value, /ai-train=yes/);
     assert.match(value, /search=(yes|no)/);
     assert.match(value, /ai-input=(yes|no)/);
   });
@@ -4644,7 +4647,9 @@ describe('agent readiness: Content-Signal declarations', () => {
 // #4952 — a named `User-agent` group replaces the `*` group for that crawler.
 // Autonomous search crawlers restate the full `*` rule set. User-triggered
 // fetchers keep the bounded path protections but can open shared map links.
-// The training-only group stays a hard `Disallow: /`.
+// Autonomous AI crawlers (search indexers AND training crawlers of vendors
+// whose assistants cite us) share one group. The bulk-scraper group stays a
+// hard `Disallow: /`.
 describe('agent readiness: robots.txt AI crawler policy', () => {
   const robotsSource = readFileSync(resolve(__dirname, '../public/robots.www.txt'), 'utf-8');
 
@@ -4655,9 +4660,15 @@ describe('agent readiness: robots.txt AI crawler policy', () => {
   const trainingBlockGroup = groups.find((g) => g.agents.includes('ccbot'));
 
   const REQUIRED_AI_SEARCH_AGENTS = [
+    'oai-searchbot',
+    'claude-searchbot',
+    'perplexitybot',
+    'duckassistbot',
+  ];
+  // Training crawlers / training-control tokens. Allowed because ai-train=yes.
+  const REQUIRED_AI_TRAINING_AGENTS = [
     'gptbot',
     'claudebot',
-    'perplexitybot',
     'google-extended',
     'applebot-extended',
   ];
@@ -4667,14 +4678,14 @@ describe('agent readiness: robots.txt AI crawler policy', () => {
     'perplexity-user',
     'mistralai-user',
   ];
-  const BLOCKED_TRAINING_AGENTS = ['ccbot', 'bytespider', 'anthropic-ai'];
+  const BLOCKED_TRAINING_AGENTS = ['ccbot', 'bytespider'];
 
-  it('explicitly allows the AI search crawlers in one named group', () => {
-    assert.ok(aiAllowGroup, 'robots.txt must have a named AI search group (GPTBot et al.)');
-    for (const agent of REQUIRED_AI_SEARCH_AGENTS) {
+  it('explicitly allows the AI search and training crawlers in one named group', () => {
+    assert.ok(aiAllowGroup, 'robots.txt must have a named AI crawler group (GPTBot et al.)');
+    for (const agent of [...REQUIRED_AI_SEARCH_AGENTS, ...REQUIRED_AI_TRAINING_AGENTS]) {
       assert.ok(
         aiAllowGroup.agents.includes(agent),
-        `AI search group must include User-agent: ${agent}`
+        `AI crawler group must include User-agent: ${agent}`
       );
     }
     assert.ok(
@@ -4717,7 +4728,11 @@ describe('agent readiness: robots.txt AI crawler policy', () => {
   });
 
   it('never lists an allowed AI agent in the blocked group (and vice versa)', () => {
-    for (const agent of [...REQUIRED_AI_SEARCH_AGENTS, ...REQUIRED_USER_FETCH_AGENTS]) {
+    for (const agent of [
+      ...REQUIRED_AI_SEARCH_AGENTS,
+      ...REQUIRED_AI_TRAINING_AGENTS,
+      ...REQUIRED_USER_FETCH_AGENTS,
+    ]) {
       assert.ok(
         !trainingBlockGroup.agents.includes(agent),
         `${agent} drives citations and must not be in the blocked group`
@@ -6034,5 +6049,26 @@ describe('cold-load metric evidence reaches the CI artifact (#7837)', () => {
       /assertDashboardMetricBudgets\(samples\.map\(\(sample\) => sample\.quiescence/,
       'the settled sample is recorded, never asserted (#7837)',
     );
+  });
+});
+
+// Google Connected Console fetches this file to verify domain ownership and
+// rejects any redirect (https://developers.google.com/connected-apps/gpc/perform-the-steps).
+// The file's own shape is pinned in tests/google-connected-apps-verification.test.mjs.
+describe('Google Connected Apps verification route', () => {
+  const path = '/.well-known/google-connected-apps';
+
+  it('is served directly as JSON on every host Google may fetch', () => {
+    for (const host of ['worldmonitor.app', 'www.worldmonitor.app']) {
+      assert.equal(firstRedirectFor({ host, path }), null, `${host}${path} must not redirect`);
+      assert.equal(firstRewriteFor({ host, path }), null, `${host}${path} must serve the static file`);
+    }
+    assert.equal(effectiveHeader(path, 'content-type'), 'application/json; charset=utf-8');
+  });
+
+  it('would catch a wildcard rule that does not name the file', () => {
+    for (const source of ['/.well-known/(.*)', '/.well-known/:path*', '/:path*']) {
+      assert.equal(sourceToRegExp(source).test(path), true, `${source} must be modelled as matching ${path}`);
+    }
   });
 });
