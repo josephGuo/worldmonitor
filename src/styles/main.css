@@ -17,9 +17,11 @@
   --border: #2a2a2a;
   --border-strong: #444;
   --border-subtle: #1a1a1a;
+  --border-color: var(--border); /* alias; many rules read var(--border-color, <grey>) */
 
   /* Text */
   --text: #e8e8e8;
+  --text-primary: var(--text); /* alias; many rules read var(--text-primary, <grey>) */
   --text-secondary: #ccc;
   --text-dim: #888;
   --text-muted: #838383; /* was #666 (3.2:1 on --surface); AA 4.9:1 */
@@ -1889,6 +1891,7 @@ canvas,
   transition: transform 0.15s, box-shadow 0.15s;
   position: relative;
   contain: content;
+  container-type: inline-size;
 }
 
 /* .panel.resized: Custom height set - use grid-row span for height */
@@ -1956,6 +1959,39 @@ canvas,
     calc(var(--dashboard-panel-row-max) * 2 + var(--dashboard-grid-gap)),
     max(var(--dashboard-first-grid-reservation), calc(100dvh - 64px))
   );
+}
+
+/* The pins above assume a row grows to its panel's height, but the track max
+   in grid-auto-rows is a fixed length, not an intrinsic size. In an auto-height
+   grid every implicit row therefore resolves to its 200px base, and a 380px pin
+   in one row (or a 764px pin in two) overflows into the next row, where the
+   panel placed there paints over it. Span enough rows to hold each pin and fill
+   them: two rows (404px) for a one-row pin, four (812px) for a two-row pin.
+   .panel.span-2 sets its span with !important, so the four-row rule must too.
+   Desktop grid only: on mobile the grid is a flex column, spans are inert, and
+   the pinned heights above still apply. Live News and Live Webcams are .panel-wide
+   and sized by the #8276 rules below. */
+@media (min-width: 769px) {
+  #panelsGrid > .panel[data-panel="threat-timeline"]:not(.span-1):not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
+  #panelsGrid > .panel[data-panel="gdelt-intel"]:not(.span-1):not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
+  #panelsGrid > .panel[data-panel="intel"]:not(.span-1):not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
+  #panelsGrid > .panel[data-panel="politics"]:not(.span-1):not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
+  #panelsGrid > .panel[data-panel="energy-complex"]:not(.span-1):not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
+  #panelsGrid > .panel[data-panel="global-procurement"]:not(.span-1):not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
+  #panelsGrid > .panel[data-panel="strategic-posture"]:not(.span-1):not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
+  #panelsGrid > .panel[data-panel="cascade"]:not(.span-1):not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized) {
+    grid-row: span 2;
+    height: 100%;
+  }
+
+  #panelsGrid > .panel[data-panel="threat-timeline"].span-2:not(.resized),
+  #panelsGrid > .panel[data-panel="gdelt-intel"].span-2:not(.resized),
+  #panelsGrid > .panel[data-panel="energy-complex"].span-2:not(.resized),
+  #panelsGrid > .panel[data-panel="strategic-posture"].span-2:not(.resized),
+  #panelsGrid > .panel[data-panel="global-procurement"].span-2:not(.resized) {
+    grid-row: span 4 !important;
+    height: 100%;
+  }
 }
 
 /* #8276: Reserve enough grid rows for the natural wide video panels.
@@ -2592,6 +2628,38 @@ body.panel-resize-active iframe {
   animation: live-badge-dot-pulse 1.8s ease-in-out infinite;
   will-change: opacity, transform;
 }
+
+/* A dashboard column is 248px on a 1366px laptop and 214px at 1280px. The
+   header's fixed-size badges then spill under the controls and the title
+   collapses to nothing. Below 300px the title wins: status badges shrink to
+   dots and the counters go. The JS toggles those counters with an inline
+   display, so the hide needs !important. These rules sit after the base badge
+   rules so they win at equal specificity. */
+@container (max-width: 300px) {
+  .panel-freshness-badge,
+  .panel-data-badge.live {
+    width: 8px;
+    height: 8px;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: currentColor;
+    font-size: 0;
+  }
+
+  .panel-data-badge.live::before {
+    display: none;
+  }
+
+  .panel-new-badge,
+  .deviation-indicator,
+  .panel-count {
+    display: none !important;
+  }
+}
+
 
 .panel-data-badge.cached {
   color: var(--semantic-elevated-text, var(--semantic-elevated));
@@ -4615,8 +4683,9 @@ body.live-news-fullscreen-active .panels-grid > *:not(.live-news-fullscreen) {
   letter-spacing: 0.5px;
   margin-bottom: 4px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 2px 6px;
 }
 
 .alert-tag {
@@ -9091,6 +9160,113 @@ a.prediction-link:hover {
   text-decoration: underline;
 }
 
+.pro-activation-about {
+  display: grid;
+  gap: 20px;
+}
+
+.pro-activation-about-label {
+  margin: 0 0 8px;
+  font-size: calc(12px * var(--wm-panel-effective-scale, 1));
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+.pro-activation-about-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Same chip language as the dashboard About-you card: neutral until chosen,
+   then the signal green with a drawn check. */
+.pro-activation-about-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: calc(12px * var(--wm-panel-effective-scale, 1));
+  color: var(--text-secondary, var(--text));
+  background: var(--overlay-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.pro-activation-about-option:hover {
+  color: var(--text);
+  background: var(--overlay-light);
+  border-color: var(--border-strong);
+}
+
+.pro-activation-about-option[aria-pressed='true'] {
+  color: var(--green-text, var(--green));
+  border-color: var(--green);
+}
+
+.pro-activation-about-option[aria-pressed='true']::before {
+  content: '';
+  width: 8px;
+  height: 4px;
+  margin-top: -2px;
+  border-inline-start: 1.5px solid currentColor;
+  border-block-end: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+.pro-activation-about-option:focus-visible,
+.pro-activation-about-save:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+.pro-activation-about-save {
+  justify-self: start;
+  min-height: 40px;
+  padding: 0 16px;
+  font: inherit;
+  font-size: calc(13px * var(--wm-panel-effective-scale, 1));
+  font-weight: 500;
+  color: #0a0a0a;
+  background: var(--green);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.pro-activation-about-save:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pro-activation-about-status {
+  margin: -8px 0 0;
+  font-size: calc(12px * var(--wm-panel-effective-scale, 1));
+  color: var(--text-dim);
+}
+
+/* Visually hidden, not display:none: the live region stays in the a11y tree,
+   and out of the grid flow so the empty row adds no gap. */
+.pro-activation-about-status:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (pointer: coarse) {
+  .pro-activation-about-option,
+  .pro-activation-about-save {
+    min-height: 44px;
+  }
+}
+
 @media (max-width: 560px) {
   .pro-activation-modal {
     width: 100%;
@@ -12015,6 +12191,22 @@ a.prediction-link:hover {
   color: var(--text-secondary);
 }
 
+@media (max-width: 768px) {
+  .radiation-table th,
+  .radiation-table td {
+    padding-inline: 4px;
+  }
+
+  .radiation-reading,
+  .radiation-delta {
+    white-space: normal;
+  }
+
+  .radiation-location {
+    overflow-wrap: anywhere;
+  }
+}
+
 .radiation-freshness,
 .radiation-severity,
 .radiation-badge {
@@ -12215,10 +12407,14 @@ a.prediction-link:hover {
 /* Global Procurement */
 .global-procurement-controls {
   display: grid;
-  grid-template-columns: minmax(150px, 2fr) minmax(110px, 1fr) 72px minmax(110px, 1fr) minmax(120px, 1fr) auto auto auto;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 6px;
   padding: 8px;
   border-bottom: 1px solid var(--border);
+}
+
+.global-procurement-input:first-child {
+  grid-column: 1 / -1;
 }
 
 /* biome-ignore lint/correctness/noUnknownPseudoClass: Chrome declarative WebMCP pseudo-class. */
@@ -12247,6 +12443,7 @@ a.prediction-link:hover {
 }
 
 .global-procurement-toggle {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -12344,20 +12541,6 @@ a.prediction-link:hover {
 .global-procurement-card a.award-agency {
   display: inline-block;
   color: var(--green-text, var(--green));
-}
-
-@media (max-width: 900px) {
-  .global-procurement-controls {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .global-procurement-input:first-child {
-    grid-column: 1 / -1;
-  }
-
-  .global-procurement-toggle {
-    grid-column: 1 / -1;
-  }
 }
 
 /* Trade Policy Panel */
@@ -20635,7 +20818,7 @@ a.prediction-link:hover {
 /* ============ Preferences Collapsible Groups ============ */
 
 .wm-pref-group {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border);
   border-radius: 8px;
   margin-bottom: 8px;
   overflow: hidden;
@@ -20648,7 +20831,7 @@ a.prediction-link:hover {
   font-weight: 600;
   letter-spacing: 0.5px;
   color: var(--text-primary, #e8eaed);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--overlay-subtle);
   list-style: none;
   display: flex;
   align-items: center;
@@ -20672,7 +20855,7 @@ a.prediction-link:hover {
 }
 
 .wm-pref-group > summary:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--overlay-light);
 }
 
 .wm-pref-group > summary:focus-visible {
@@ -20731,7 +20914,7 @@ a.prediction-link:hover {
   text-transform: uppercase;
   color: var(--text-faint);
   padding: 10px 0 4px;
-  border-top: 1px solid #333;
+  border-top: 1px solid var(--border);
 }
 
 .ai-flow-section-label:first-child {
@@ -20828,7 +21011,7 @@ a.prediction-link:hover {
 
 /* Ollama CTA */
 .ai-flow-cta {
-  border-top: 1px solid #333;
+  border-top: 1px solid var(--border);
   margin-top: 8px;
   padding-top: 10px;
 }
@@ -20904,7 +21087,7 @@ a.prediction-link:hover {
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
-  border-top: 1px solid #333;
+  border-top: 1px solid var(--border);
 }
 
 .ai-flow-status-dot {

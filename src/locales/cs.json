@@ -391,7 +391,6 @@
     "liveNews": "Živé zprávy",
     "markets": "Trhy",
     "map": "Globální situace",
-    "techMap": "Globální Tech",
     "techHubs": "Horká Tech centra",
     "status": "Stav systému",
     "insights": "AI postřehy",
@@ -924,7 +923,12 @@
         "permissive": "Povolný",
         "undefined": "Nedefinováno"
       },
-      "infoTooltip": "<strong>Regulace</strong> Regulační opatření, změny politik a aktualizace vynucování od globálních regulátorů: finanční, technologické, energetické a obchodní úřady. Zdroj: oficiální vládní a regulační publikace."
+      "infoTooltip": "<strong>Regulace</strong> Regulační opatření, změny politik a aktualizace vynucování od globálních regulátorů: finanční, technologické, energetické a obchodní úřady. Zdroj: oficiální vládní a regulační publikace.",
+      "latestActions": "Poslední zaznamenané akce",
+      "otherDeadlines": "Další termíny pro soulad",
+      "daysAgo": "dní zpátky",
+      "revokedCount": "Zrušené regulace ({{count}})",
+      "lapsedCount": "Vypršené návrhy ({{count}})"
     },
     "economic": {
       "indicators": "Ukazatele",
@@ -990,7 +994,10 @@
       "stageUnavailable": "No published figures for this stage",
       "withheldNote": "W withheld",
       "productionCaption": "Country shares of actual production. The map deposits layer shows where resources sit; this table shows who mines or refines them.",
-      "productionProLocked": "Upgrade na PRO pro podíly zemí dolů a rafinerií s koncentrací (index koncentrace producenta) podle stupně."
+      "productionProLocked": "Upgrade na PRO pro podíly zemí dolů a rafinerií s koncentrací (index koncentrace producenta) podle stupně.",
+      "partialTransitCoverage": "{{names}} - údaje o tranzitu nejsou dostupné",
+      "oilPipelinesUnavailable": "Data o ropovodech nejsou dostupná",
+      "gasPipelinesUnavailable": "Data o plynovodech nejsou dostupná"
     },
     "tradePolicy": {
       "tariffs": "Cla",
@@ -2659,6 +2666,15 @@
             "mcpClients": "Nastavit MCP",
             "channels": "Nastavte si je v nastavení oznámení"
           }
+        },
+        "about": {
+          "heading": "Poslední věc: k čemu budete World Monitor používat?",
+          "body": "Tři rychlé odpovědi nám pomohou vytvořit správné nástroje pro vás. Přeskočte jakékoliv, které chcete.",
+          "confirmCta": "Uložit moje odpovědi",
+          "confirming": "Ukládám…",
+          "doneNote": "Děkujeme, máme vaše odpovědi.",
+          "summaryLabel": "O vás",
+          "summaryVerified": "Uloženo. Děkujeme."
         }
       },
       "status": {
@@ -2874,7 +2890,7 @@
         "babElMandeb": "Bab el-Mandeb",
         "bosphorus": "Turecké průlivy",
         "panama": "Panama",
-        "danishStraits": "Dánské průlivy"
+        "doverStrait": "Doverská úžina"
       },
       "flow": {
         "mbd": "{{value}} mb/d",
@@ -3070,6 +3086,66 @@
       "partial": "Některé zprávy chybí nebo jsou staré",
       "stale": "Starší data",
       "global": "Globální měsíční index FAO"
+    },
+    "aboutYou": {
+      "title": "Pomozte nám vytvořit World Monitor pro vás",
+      "ariaLabel": "O vás",
+      "progress": "{{current}} z {{total}}",
+      "skip": "Přeskočit",
+      "close": "Zavřít",
+      "done": "Hotovo",
+      "saving": "Ukládám…",
+      "saveFailed": "Nepodařilo se to uložit. Zkuste znovu.",
+      "retry": "Zkusit znovu",
+      "thanks": "Děkujeme. Pomáhá nám to rozhodovat se, co budeme vyvíjet dál.",
+      "questions": {
+        "primaryUse": {
+          "label": "K čemu World Monitor především používáte?",
+          "options": {
+            "news": "Zprávy a světové události",
+            "markets": "Trhy a obchodování",
+            "commodities": "Komodity a dodavatelský řetězec",
+            "travel": "Cestování a lety",
+            "security": "Bezpečnost a OSINT",
+            "research": "Výzkum a novinárina",
+            "api-agent": "Vývoj s API nebo AI agentem",
+            "other": "Něco jiného"
+          }
+        },
+        "usageContext": {
+          "label": "Používáte to pro práci nebo osobní účely?",
+          "options": {
+            "personal": "Osobní",
+            "work": "Práce"
+          }
+        },
+        "payer": {
+          "label": "Kdo to platí, nebo by to platil?",
+          "options": {
+            "self": "Já sám",
+            "employer": "Můj zaměstnavatel nebo tým",
+            "not-paying": "Zatím nikdo"
+          }
+        },
+        "role": {
+          "label": "Která role vás nejlépe popisuje?",
+          "options": {
+            "analyst": "Analytik nebo výzkumný pracovník",
+            "trader": "Obchodník nebo investor",
+            "journalist": "Novinář",
+            "security": "Bezpečnost nebo řízení rizik",
+            "government": "Vláda nebo politika",
+            "supply-chain": "Dodavatelský řetězec nebo operace",
+            "developer": "Vývojář",
+            "student": "Student",
+            "other": "Jiné"
+          }
+        },
+        "alternative": {
+          "label": "Co byste používali, kdyby World Monitor neexistoval?",
+          "placeholder": "Volitelné"
+        }
+      }
     }
   },
   "popups": {
@@ -4245,5 +4321,29 @@
     "reportedClaims": "Zprávy vydavatele. Tvrzení mohou být stále vyšetřována.",
     "occurred": "Incident",
     "reported": "Zveřejněno"
+  },
+  "panelVariants": {
+    "finance": {
+      "map": "Mapa globálních trhů",
+      "liveNews": "Zprávy z trhů",
+      "insights": "AI postřehy o trzích"
+    },
+    "tech": {
+      "map": "Mapa globálních technologií",
+      "liveNews": "Zprávy z technologií"
+    },
+    "commodity": {
+      "map": "Mapa komodit",
+      "liveNews": "Zprávy z komodit",
+      "insights": "AI postřehy o komoditách"
+    },
+    "energy": {
+      "map": "Mapa energetiky",
+      "liveNews": "Zprávy z energetiky",
+      "insights": "AI postřehy o energetice"
+    },
+    "happy": {
+      "map": "Mapa dobrých zpráv"
+    }
   }
 }

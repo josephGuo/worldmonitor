@@ -457,7 +457,6 @@
     "markets": "Masoko",
     "marketImplications": "Athari za Soko la AI",
     "map": "Hali ya Ulimwengu",
-    "techMap": "Global Tech",
     "techHubs": "Hot Tech Hubs",
     "status": "Hali ya Mfumo",
     "insights": "Maarifa ya AI",
@@ -1022,7 +1021,12 @@
         "moderate": "Wastani",
         "permissive": "Ruhusa",
         "undefined": "Haijafafanuliwa"
-      }
+      },
+      "latestActions": "Vitendo vya Mwisho Vilivyorekodiwa",
+      "otherDeadlines": "Makataa Mengine ya Kuzingatia Sheria",
+      "daysAgo": "siku zilizopita",
+      "revokedCount": "Kanuni Zilizobatilishwa ({{count}})",
+      "lapsedCount": "Mapendekezo Yaliyokwisha Muda ({{count}})"
     },
     "economic": {
       "indicators": "Viashiria",
@@ -1097,7 +1101,10 @@
       "stageUnavailable": "No published figures for this stage",
       "withheldNote": "W withheld",
       "productionCaption": "Country shares of actual production. The map deposits layer shows where resources sit; this table shows who mines or refines them.",
-      "productionProLocked": "Panda kwa PRO kwa sehemu za nchi ya mgodi na rafinery na mkusanyiko (fahirisi ya mkusanyiko wa uzalishaji) kwa hatua."
+      "productionProLocked": "Panda kwa PRO kwa sehemu za nchi ya mgodi na rafinery na mkusanyiko (fahirisi ya mkusanyiko wa uzalishaji) kwa hatua.",
+      "partialTransitCoverage": "{{names}} data ya usafiri haipatikani",
+      "oilPipelinesUnavailable": "Data ya mabomba ya mafuta haipatikani",
+      "gasPipelinesUnavailable": "Data ya mabomba ya gesi haipatikani"
     },
     "tradePolicy": {
       "overview": "Muhtasari",
@@ -2810,7 +2817,7 @@
         "babElMandeb": "Bab el-Mandeb",
         "bosphorus": "Njia za Kituruki",
         "panama": "Panama",
-        "danishStraits": "Mlango wa Denmark"
+        "doverStrait": "Mlangobahari wa Dover"
       },
       "flow": {
         "mbd": "{{value}} mb/d",
@@ -2944,6 +2951,15 @@
             "mcpClients": "Set up MCP",
             "channels": "Set those up in notification settings"
           }
+        },
+        "about": {
+          "heading": "Kitu kimoja tu: utatumia World Monitor kwa nini?",
+          "body": "Majibu matatu ya haraka yatatusaidia kujenga zana sahihi kwako. Ruka yoyote unayotaka.",
+          "confirmCta": "Hifadhi majibu yangu",
+          "confirming": "Inakusubirisha…",
+          "doneNote": "Asante, tuna majibu yako.",
+          "summaryLabel": "Kuhusu wewe",
+          "summaryVerified": "Hifadhiwa. Asante."
         }
       },
       "status": {
@@ -3099,6 +3115,66 @@
       "partial": "Baadhi ya ripoti hazipatikani au ni za zamani",
       "stale": "Data ya zamani",
       "global": "Fahirisi ya mwezi ya FAO duniani"
+    },
+    "aboutYou": {
+      "title": "Tusaidie kujenga World Monitor kwa ajili yako",
+      "ariaLabel": "Kuhusu wewe",
+      "progress": "{{current}} ya {{total}}",
+      "skip": "Ruka",
+      "close": "Funga",
+      "done": "Imekamilika",
+      "saving": "Inakifanya…",
+      "saveFailed": "Haiwezi kufanya hivyo. Jaribu tena.",
+      "retry": "Jaribu tena",
+      "thanks": "Asante. Hii inasaidia sisi kuamua nini cha kujenga ijayo.",
+      "questions": {
+        "primaryUse": {
+          "label": "Kwa nini kwa kawaida unatumia World Monitor?",
+          "options": {
+            "news": "Habari na matukio ya dunia",
+            "markets": "Soko na biashara",
+            "commodities": "Bidhaa na mlolongo wa ugavi",
+            "travel": "Usafiri na ndege",
+            "security": "Usalama na OSINT",
+            "research": "Utafiti na ujumbe",
+            "api-agent": "Kujenga na API au wakili wa AI",
+            "other": "Kitu kingine"
+          }
+        },
+        "usageContext": {
+          "label": "Je, unatumia kwa ajili ya kazi au matumizi ya kibinafsi?",
+          "options": {
+            "personal": "Kibinafsi",
+            "work": "Kazi"
+          }
+        },
+        "payer": {
+          "label": "Nani analipa, au angepiga, kwa ajili yake?",
+          "options": {
+            "self": "Mimi",
+            "employer": "Mwajiriwa wangu au timu",
+            "not-paying": "Hakuna bado"
+          }
+        },
+        "role": {
+          "label": "Ipi inayoeleza vizuri jukumu lako?",
+          "options": {
+            "analyst": "Mchambuzi au mtafiti",
+            "trader": "Mfanyabiashara au mwekezaji",
+            "journalist": "Mwandishi wa habari",
+            "security": "Usalama au hatari",
+            "government": "Serikali au sera",
+            "supply-chain": "Mlolongo wa ugavi au uendeshaji",
+            "developer": "Msanidi programu",
+            "student": "Mwanafunzi",
+            "other": "Nyingine"
+          }
+        },
+        "alternative": {
+          "label": "Utakavyo tumia iwapo World Monitor haisogezwi?",
+          "placeholder": "Sehemu inayochagua"
+        }
+      }
     }
   },
   "popups": {
@@ -4205,5 +4281,29 @@
     "reportedClaims": "Ripoti za mchapishaji. Madai yanaweza kuwa bado yanachunguzwa.",
     "occurred": "Tukio",
     "reported": "Imechapishwa"
+  },
+  "panelVariants": {
+    "finance": {
+      "map": "Ramani ya Soko la Kimataifa",
+      "liveNews": "Habari za Soko",
+      "insights": "Maarifa ya AI ya Soko"
+    },
+    "tech": {
+      "map": "Ramani ya Teknolojia ya Kimataifa",
+      "liveNews": "Habari za Teknolojia"
+    },
+    "commodity": {
+      "map": "Ramani ya Bidhaa",
+      "liveNews": "Habari za Bidhaa",
+      "insights": "Maarifa ya AI ya Bidhaa"
+    },
+    "energy": {
+      "map": "Ramani ya Nishati",
+      "liveNews": "Habari za Nishati",
+      "insights": "Maarifa ya AI ya Nishati"
+    },
+    "happy": {
+      "map": "Ramani ya Habari Nzuri"
+    }
   }
 }
