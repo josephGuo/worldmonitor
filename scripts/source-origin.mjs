@@ -67,6 +67,8 @@ const INTERNATIONAL_HOST_SUFFIXES = [
 // Host → ISO 3166-1 alpha-2, 'EU', or null (international).
 // Only hosts that cannot be inferred from a real ccTLD or government suffix.
 const HOST_ORIGINS = Object.freeze({
+  'simaniger.net': 'NE',
+  'www.ocpv-ci.com': 'CI',
   'api.cammesa.com': 'AR',
   'admin.gse.com.ge': 'GE',
   'erp.powergrid.gov.bd': 'BD',
@@ -75,6 +77,7 @@ const HOST_ORIGINS = Object.freeze({
   'eskom.co.za': 'ZA',
   'dados.ons.org.br': 'BR',
   'www.datos.gov.co': 'CO',
+  'www.armeps.am': 'AM',
   // Editorial hosts used by site-scoped news searches. These are catalogued
   // as publishers in their own right; the shared search endpoint is a
   // separate provider.
@@ -300,6 +303,7 @@ const HOST_ORIGINS = Object.freeze({
   'hacker-news.firebaseio.com': 'US',
   'health.aws.amazon.com': 'US',
   'hnrss.org': 'US',
+  'hub.arcgis.com': 'US',
   'humanprogress.org': 'US',
   'inc42.com': 'IN',
   'indianexpress.com': 'IN',
