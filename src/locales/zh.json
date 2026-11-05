@@ -1227,26 +1227,10 @@
       "resetView": "重置视图",
       "legend": {
         "title": "图例",
-        "startupHub": "创业中心",
-        "techHQ": "科技总部",
-        "accelerator": "加速器",
-        "cloudRegion": "云计算区域",
-        "datacenter": "数据中心",
-        "stockExchange": "证券交易所",
-        "financialCenter": "金融中心",
-        "centralBank": "央行",
-        "commodityHub": "大宗商品枢纽",
-        "waterway": "水道",
         "highAlert": "高度警报",
         "elevated": "升高",
         "monitoring": "监控中",
-        "base": "基地",
-        "nuclear": "核设施",
-        "aircraft": "飞机",
-        "miningSite": "采矿场",
-        "commodityPort": "商品港口",
         "pipeline": "管道",
-        "processingPlant": "加工厂",
         "conflict": "冲突区域",
         "diseaseAlert": "疾病警报",
         "diseaseWarning": "疾病预警",
@@ -1964,6 +1948,8 @@
       "infoTooltip": "<strong>预测市场</strong>真金白银的预测市场：<ul><li>价格反映群体概率估计</li><li>交易量越高 = 信号越可靠</li><li>聚焦地缘政治和时事</li></ul>来源：Polymarket (polymarket.com)"
     },
     "etfFlows": {
+      "previousColumns": "前面的栏",
+      "moreColumns": "更多栏",
       "unavailable": "交易所交易基金数据暂时不可用",
       "rateLimited": "交易所交易基金数据暂时不可用（受速率限制）— 正在重试",
       "netFlow": "净流量",
@@ -3216,6 +3202,14 @@
       },
       "description": "主要{{type}}管道基础设施。{{status}}"
     },
+    "storageFacility": {
+      "openInAtlas": "在储存图集中打开",
+      "types": {
+        "lngExport": "LNG出口",
+        "lngImport": "LNG进口",
+        "crudeTankFarm": "原油枢纽"
+      }
+    },
     "pipelineStatusDesc": {
       "operating": "目前正在运营并输送资源。",
       "construction": "目前正在建设中。"
@@ -3625,7 +3619,11 @@
       "c2Server": "C2 服务器",
       "malwareHost": "恶意软件主机",
       "phishing": "网络钓鱼",
-      "maliciousUrl": "恶意 URL"
+      "maliciousUrl": "恶意 URL",
+      "operational": "运行中",
+      "reduced": "减量运行",
+      "offline": "停运",
+      "disputed": "有争议"
     },
     "aptTactics": {
       "reconnaissance": "侦察",

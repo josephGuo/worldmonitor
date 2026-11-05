@@ -1372,26 +1372,10 @@
       "resetView": "بازنشانی نما",
       "legend": {
         "title": "راهنما",
-        "startupHub": "مرکز استارتاپی",
-        "techHQ": "دفتر مرکزی فناوری",
-        "accelerator": "شتاب‌دهنده",
-        "cloudRegion": "منطقه ابری",
-        "datacenter": "مرکز داده",
-        "stockExchange": "بورس",
-        "financialCenter": "مرکز مالی",
-        "centralBank": "بانک مرکزی",
-        "commodityHub": "مرکز کالا",
-        "waterway": "آبراه",
         "highAlert": "هشدار بالا",
         "elevated": "افزایش‌یافته",
         "monitoring": "در حال پایش",
-        "base": "پایگاه",
-        "nuclear": "هسته‌ای",
-        "aircraft": "هواپیما",
-        "miningSite": "سایت معدنی",
-        "commodityPort": "بندر کالا",
         "pipeline": "خط لوله",
-        "processingPlant": "کارخانه فرآوری",
         "conflict": "منطقه درگیری",
         "diseaseAlert": "هشدار بیماری",
         "diseaseWarning": "اخطار بیماری",
@@ -2113,6 +2097,8 @@
       "infoTooltip": "<strong>بازارهای پیش‌بینی</strong> بازارهای پیش‌بینی با پول واقعی:<ul><li>قیمت‌ها برآورد جمعی از احتمال را بازتاب می‌دهند</li><li>حجم بیشتر = سیگنال معتبرتر</li><li>تمرکز بر ژئوپلیتیک و رویدادهای جاری</li></ul>منابع: Polymarket، Kalshi"
     },
     "etfFlows": {
+      "previousColumns": "ستون‌های قبلی",
+      "moreColumns": "ستون‌های بیشتر",
       "unavailable": "داده‌های صندوق‌های قابل تبادل موقتاً در دسترس نیست",
       "rateLimited": "داده‌های صندوق‌های قابل تبادل موقتاً در دسترس نیست (محدودیت نرخ) — تلاش مجدد به زودی",
       "netFlow": "جریان خالص",
@@ -3305,6 +3291,14 @@
       },
       "description": "زیرساخت خط لوله اصلی {{type}}. {{status}}"
     },
+    "storageFacility": {
+      "openInAtlas": "باز کردن در اطلس ذخیره‌سازی",
+      "types": {
+        "lngExport": "صادرات LNG",
+        "lngImport": "واردات LNG",
+        "crudeTankFarm": "هاب نفت خام"
+      }
+    },
     "pipelineStatusDesc": {
       "operating": "در حال حاضر فعال است و منابع را انتقال می‌دهد.",
       "construction": "در حال حاضر در دست ساخت است."
@@ -3714,7 +3708,11 @@
       "c2Server": "سرور فرماندهی و کنترل",
       "malwareHost": "میزبان بدافزار",
       "phishing": "فیشینگ",
-      "maliciousUrl": "نشانی اینترنتی مخرب"
+      "maliciousUrl": "نشانی اینترنتی مخرب",
+      "operational": "عملیاتی",
+      "reduced": "کاهش‌یافته",
+      "offline": "غیرفعال",
+      "disputed": "مورد اختلاف"
     },
     "aptTactics": {
       "reconnaissance": "شناسایی",

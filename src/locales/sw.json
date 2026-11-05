@@ -1372,26 +1372,10 @@
       "resetView": "Weka Mwonekano upya",
       "legend": {
         "title": "UFAFANUZI",
-        "startupHub": "Kitovu cha Kuanzisha",
-        "techHQ": "Makao makuu ya teknolojia",
-        "accelerator": "Kiongeza kasi",
-        "cloudRegion": "Mkoa wa Cloud",
-        "datacenter": "Kituo cha data",
-        "stockExchange": "Soko la Hisa",
-        "financialCenter": "Kituo cha Fedha",
-        "centralBank": "Benki Kuu",
-        "commodityHub": "Kitovu cha Bidhaa",
-        "waterway": "Njia ya maji",
         "highAlert": "Tahadhari ya Juu",
         "elevated": "Imeinuliwa",
         "monitoring": "Ufuatiliaji",
-        "base": "Msingi",
-        "nuclear": "Nyuklia",
-        "aircraft": "Ndege",
-        "miningSite": "Tovuti ya Madini",
-        "commodityPort": "Bandari ya Bidhaa",
         "pipeline": "Bomba",
-        "processingPlant": "Kiwanda cha Usindikaji",
         "conflict": "Eneo la Migogoro",
         "diseaseAlert": "Tahadhari ya Ugonjwa",
         "diseaseWarning": "Onyo la Ugonjwa",
@@ -2113,6 +2097,8 @@
       "infoTooltip": "<strong>Masoko ya Utabiri</strong> Masoko ya utabiri wa pesa halisi:<ul><li>Bei zinaonyesha makadirio ya uwezekano wa umati</li><li>Kiasi cha juu = ishara ya kuaminika zaidi</li><li>Lengo la matukio ya jiografia na ya sasa</li></ul>Vyanzo: Polymarket, Kalshi"
     },
     "etfFlows": {
+      "previousColumns": "Safu wima zilizotangulia",
+      "moreColumns": "Safu wima zaidi",
       "unavailable": "Data ya mifuko inayouzwa kwenye soko la hisa haipatikani kwa sasa",
       "rateLimited": "Data ya mifuko inayouzwa kwenye soko la hisa haipatikani kwa sasa (kikomo cha maombi) — tutajaribu tena hivi karibuni",
       "netFlow": "Mtiririko wa Wavu",
@@ -3305,6 +3291,14 @@
       },
       "description": "Miundombinu kuu ya bomba la {{type}}. {{status}}"
     },
+    "storageFacility": {
+      "openInAtlas": "Fungua katika atlasi ya hifadhi",
+      "types": {
+        "lngExport": "Usafirishaji wa LNG",
+        "lngImport": "Uagizaji wa LNG",
+        "crudeTankFarm": "Kituo cha mafuta ghafi"
+      }
+    },
     "pipelineStatusDesc": {
       "operating": "Kwa sasa rasilimali za uendeshaji na usafirishaji.",
       "construction": "Hivi sasa inajengwa."
@@ -3714,7 +3708,11 @@
       "c2Server": "Seva ya C2",
       "malwareHost": "Mwenyeji wa programu hasidi",
       "phishing": "Hadaa",
-      "maliciousUrl": "URL hasidi"
+      "maliciousUrl": "URL hasidi",
+      "operational": "Inafanya kazi",
+      "reduced": "Imepunguzwa",
+      "offline": "Haifanyi kazi",
+      "disputed": "Inabishaniwa"
     },
     "aptTactics": {
       "reconnaissance": "Upelelezi",

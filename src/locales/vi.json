@@ -1227,26 +1227,10 @@
       "resetView": "Đặt lại Góc nhìn",
       "legend": {
         "title": "CHÚ GIẢI",
-        "startupHub": "Trung tâm Khởi nghiệp",
-        "techHQ": "Trụ sở Công nghệ",
-        "accelerator": "Vườn ươm",
-        "cloudRegion": "Vùng Đám mây",
-        "datacenter": "Trung tâm Dữ liệu",
-        "stockExchange": "Sàn Chứng khoán",
-        "financialCenter": "Trung tâm Tài chính",
-        "centralBank": "Ngân hàng Trung ương",
-        "commodityHub": "Trung tâm Hàng hóa",
-        "waterway": "Đường thủy",
         "highAlert": "Cảnh báo Cao",
         "elevated": "Nâng cao",
         "monitoring": "Giám sát",
-        "base": "Căn cứ",
-        "nuclear": "Hạt nhân",
-        "aircraft": "Máy bay",
-        "miningSite": "Khu khai thác",
-        "commodityPort": "Cảng hàng hóa",
         "pipeline": "Đường ống",
-        "processingPlant": "Nhà máy xử lý",
         "conflict": "Khu vực xung đột",
         "diseaseAlert": "Cảnh báo bệnh tật",
         "diseaseWarning": "Cảnh báo bệnh dịch",
@@ -1964,6 +1948,8 @@
       "infoTooltip": "<strong>Thị trường Dự đoán</strong> Thị trường dự báo bằng tiền thật:<ul><li>Giá phản ánh ước tính xác suất của đám đông</li><li>Khối lượng cao hơn = tín hiệu đáng tin cậy hơn</li><li>Tập trung vào địa chính trị và sự kiện thời sự</li></ul>Nguồn: Polymarket (polymarket.com)"
     },
     "etfFlows": {
+      "previousColumns": "Các cột trước",
+      "moreColumns": "Thêm cột",
       "unavailable": "dữ liệu quỹ giao dịch trao đổi tạm thời không khả dụng",
       "rateLimited": "dữ liệu quỹ giao dịch trao đổi tạm thời không khả dụng (giới hạn tốc độ) — thử lại trong giây lát",
       "netFlow": "Dòng tiền Ròng",
@@ -3216,6 +3202,14 @@
       },
       "description": "Hạ tầng đường ống {{type}} chính. {{status}}"
     },
+    "storageFacility": {
+      "openInAtlas": "Mở trong bản đồ kho chứa",
+      "types": {
+        "lngExport": "Xuất khẩu LNG",
+        "lngImport": "Nhập khẩu LNG",
+        "crudeTankFarm": "Trung tâm dầu thô"
+      }
+    },
     "pipelineStatusDesc": {
       "operating": "Hiện đang vận hành và vận chuyển tài nguyên.",
       "construction": "Hiện đang xây dựng."
@@ -3625,7 +3619,11 @@
       "c2Server": "Máy chủ C2",
       "malwareHost": "Máy chủ chứa mã độc",
       "phishing": "Lừa đảo trực tuyến",
-      "maliciousUrl": "URL độc hại"
+      "maliciousUrl": "URL độc hại",
+      "operational": "Đang hoạt động",
+      "reduced": "Giảm công suất",
+      "offline": "Ngừng hoạt động",
+      "disputed": "Đang tranh chấp"
     },
     "aptTactics": {
       "reconnaissance": "Trinh sát",

@@ -1227,26 +1227,10 @@
       "resetView": "기본 보기",
       "legend": {
         "title": "범례",
-        "startupHub": "스타트업 허브",
-        "techHQ": "기술 본사",
-        "accelerator": "액셀러레이터",
-        "cloudRegion": "클라우드 리전",
-        "datacenter": "데이터 센터",
-        "stockExchange": "증권거래소",
-        "financialCenter": "금융 중심지",
-        "centralBank": "중앙은행",
-        "commodityHub": "원자재 허브",
-        "waterway": "수로",
         "highAlert": "고도 경보",
         "elevated": "경계",
         "monitoring": "감시 중",
-        "base": "기지",
-        "nuclear": "핵",
-        "aircraft": "항공기",
-        "miningSite": "광산",
-        "commodityPort": "상품 항구",
         "pipeline": "파이프라인",
-        "processingPlant": "처리 시설",
         "conflict": "분쟁 지역",
         "diseaseAlert": "질병 경보",
         "diseaseWarning": "질병 경고",
@@ -1964,6 +1948,8 @@
       "infoTooltip": "<strong>예측 시장</strong> 실제 자금 기반 예측 시장:<ul><li>가격은 군중의 확률 추정치를 반영</li><li>거래량이 높을수록 신뢰도가 높은 신호</li><li>지정학 및 시사 이벤트 중심</li></ul>출처: Polymarket (polymarket.com)"
     },
     "etfFlows": {
+      "previousColumns": "이전 열",
+      "moreColumns": "추가 열",
       "unavailable": "상장지수펀드 데이터 일시 이용 불가",
       "rateLimited": "상장지수펀드 데이터 일시 이용 불가(속도 제한) — 잠시 후 재시도 중",
       "netFlow": "순흐름",
@@ -3216,6 +3202,14 @@
       },
       "description": "주요 {{type}} 파이프라인 인프라. {{status}}"
     },
+    "storageFacility": {
+      "openInAtlas": "저장 아틀라스에서 열기",
+      "types": {
+        "lngExport": "LNG 수출",
+        "lngImport": "LNG 수입",
+        "crudeTankFarm": "원유 허브"
+      }
+    },
     "pipelineStatusDesc": {
       "operating": "현재 운영 중이며 자원을 수송하고 있습니다.",
       "construction": "현재 건설 중입니다."
@@ -3625,7 +3619,11 @@
       "c2Server": "C2 서버",
       "malwareHost": "악성코드 호스트",
       "phishing": "피싱",
-      "maliciousUrl": "악성 URL"
+      "maliciousUrl": "악성 URL",
+      "operational": "가동 중",
+      "reduced": "축소",
+      "offline": "가동 중단",
+      "disputed": "분쟁 중"
     },
     "aptTactics": {
       "reconnaissance": "정찰",

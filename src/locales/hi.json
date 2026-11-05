@@ -1372,26 +1372,10 @@
       "resetView": "व्यू रीसेट करें",
       "legend": {
         "title": "दर्जा",
-        "startupHub": "स्टार्टअप हब",
-        "techHQ": "टेक मुख्यालय",
-        "accelerator": "त्वरक",
-        "cloudRegion": "क्लाउड क्षेत्र",
-        "datacenter": "डेटा केंद्र",
-        "stockExchange": "स्टॉक एक्सचेंज",
-        "financialCenter": "वित्तीय केंद्र",
-        "centralBank": "केंद्रीय बैंक",
-        "commodityHub": "कमोडिटी हब",
-        "waterway": "जलमार्ग",
         "highAlert": "उच्च सतर्कता",
         "elevated": "ऊँचा",
         "monitoring": "निगरानी",
-        "base": "बेस",
-        "nuclear": "परमाणु",
-        "aircraft": "विमान",
-        "miningSite": "खनन स्थल",
-        "commodityPort": "कमोडिटी पोर्ट",
         "pipeline": "पाइपलाइन",
-        "processingPlant": "प्रसंस्करण संयंत्र",
         "conflict": "संघर्ष क्षेत्र",
         "diseaseAlert": "रोग अलर्ट",
         "diseaseWarning": "रोग चेतावनी",
@@ -2110,6 +2094,8 @@
       "infoTooltip": "<strong>पूर्वानुमान बाजार</strong> रियल-मनी पूर्वानुमान बाजार:<ul><li>कीमतें भीड़ की संभावना अनुमानित करती हैं</li><li>ज्यादा वॉल्यूम = ज्यादा भरोसेमंद संकेत</li><li>भू-राजनीतिक और वर्तमान घटनाओं पर ध्यान केंद्रित</li></ul>स्रोत: पोलिमार्केट, काल्शि"
     },
     "etfFlows": {
+      "previousColumns": "पिछले कॉलम",
+      "moreColumns": "और कॉलम",
       "unavailable": "एक्सचेंज-ट्रेडेड फंड डेटा अस्थायी रूप से उपलब्ध नहीं है",
       "rateLimited": "एक्सचेंज-ट्रेडेड फंड डेटा अस्थायी रूप से उपलब्ध नहीं है (दर सीमित) — शीघ्र ही पुनः प्रयास कर रहे हैं",
       "netFlow": "नेट प्रवाह",
@@ -3305,6 +3291,14 @@
       },
       "description": "प्रमुख {{type}} पाइपलाइन इंफ्रास्ट्रक्चर। {{status}}"
     },
+    "storageFacility": {
+      "openInAtlas": "स्टोरेज एटलस में खोलें",
+      "types": {
+        "lngExport": "LNG निर्यात",
+        "lngImport": "LNG आयात",
+        "crudeTankFarm": "कच्चा तेल हब"
+      }
+    },
     "pipelineStatusDesc": {
       "operating": "वर्तमान में चालू और संसाधन ले जा रहा है।",
       "construction": "वर्तमान में निर्माणाधीन।"
@@ -3714,7 +3708,11 @@
       "c2Server": "C2 सर्वर",
       "malwareHost": "मैलवेयर होस्ट",
       "phishing": "फ़िशिंग",
-      "maliciousUrl": "दुर्भावनापूर्ण URL"
+      "maliciousUrl": "दुर्भावनापूर्ण URL",
+      "operational": "चालू",
+      "reduced": "घटा हुआ",
+      "offline": "बंद",
+      "disputed": "विवादित"
     },
     "aptTactics": {
       "reconnaissance": "टोही",

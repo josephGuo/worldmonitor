@@ -530,26 +530,10 @@
       "resetView": "Weergave opnieuw instellen",
       "legend": {
         "title": "LEGENDA",
-        "startupHub": "Startup-hub",
-        "techHQ": "Tech-hoofdkantoor",
-        "accelerator": "Accelerator",
-        "cloudRegion": "Cloudregio",
-        "datacenter": "Datacentrum",
-        "stockExchange": "Effectenbeurs",
-        "financialCenter": "Financieel centrum",
-        "centralBank": "Centrale bank",
-        "commodityHub": "Grondstoffenhub",
-        "waterway": "Waterweg",
         "highAlert": "Hoog alarm",
         "elevated": "Verhoogd",
         "monitoring": "Bewaking",
-        "base": "Basis",
-        "nuclear": "Nucleair",
-        "aircraft": "Vliegtuigen",
-        "miningSite": "Mijnbouwlocatie",
-        "commodityPort": "Grondstoffenhaven",
         "pipeline": "Pijpleiding",
-        "processingPlant": "Verwerkingsinstallatie",
         "conflict": "Conflictzone",
         "diseaseAlert": "Ziekte-waarschuwing",
         "diseaseWarning": "Ziekte-alarm",
@@ -1437,6 +1421,8 @@
       "lapsedCount": "Vervallen voorstellen ({{count}})"
     },
     "etfFlows": {
+      "previousColumns": "Vorige kolommen",
+      "moreColumns": "Meer kolommen",
       "unavailable": "exchangegenoteerde fondsengegevens tijdelijk niet beschikbaar",
       "netFlow": "Netto stroom",
       "estFlow": "Gesch. stroom",
@@ -2843,6 +2829,14 @@
       },
       "description": "Belangrijke {{type}}-pijpleidinginfrastructuur. {{status}}"
     },
+    "storageFacility": {
+      "openInAtlas": "Openen in opslagatlas",
+      "types": {
+        "lngExport": "LNG-export",
+        "lngImport": "LNG-import",
+        "crudeTankFarm": "Ruwe-oliehub"
+      }
+    },
     "pipelineStatusDesc": {
       "operating": "Momenteel operationeel en transporteert grondstoffen.",
       "construction": "Momenteel in aanbouw."
@@ -3261,7 +3255,11 @@
       "c2Server": "C2-server",
       "malwareHost": "Malwarehost",
       "phishing": "Phishing",
-      "maliciousUrl": "Kwaadaardige URL"
+      "maliciousUrl": "Kwaadaardige URL",
+      "operational": "Operationeel",
+      "reduced": "Verminderd",
+      "offline": "Buiten gebruik",
+      "disputed": "Betwist"
     },
     "aptTactics": {
       "reconnaissance": "Verkenning",

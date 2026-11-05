@@ -1227,26 +1227,10 @@
       "resetView": "รีเซ็ตมุมมอง",
       "legend": {
         "title": "คำอธิบายสัญลักษณ์",
-        "startupHub": "ศูนย์กลางสตาร์ทอัพ",
-        "techHQ": "สำนักงานใหญ่เทคโนโลยี",
-        "accelerator": "แอคเซเลอเรเตอร์",
-        "cloudRegion": "ภูมิภาคคลาวด์",
-        "datacenter": "ศูนย์ข้อมูล",
-        "stockExchange": "ตลาดหลักทรัพย์",
-        "financialCenter": "ศูนย์กลางการเงิน",
-        "centralBank": "ธนาคารกลาง",
-        "commodityHub": "ศูนย์กลางสินค้าโภคภัณฑ์",
-        "waterway": "เส้นทางน้ำ",
         "highAlert": "แจ้งเตือนสูง",
         "elevated": "ยกระดับ",
         "monitoring": "เฝ้าระวัง",
-        "base": "ฐานทัพ",
-        "nuclear": "นิวเคลียร์",
-        "aircraft": "อากาศยาน",
-        "miningSite": "เหมืองแร่",
-        "commodityPort": "ท่าเรือสินค้าโภค",
         "pipeline": "สายท่อ",
-        "processingPlant": "โรงงานแปรรูป",
         "conflict": "พื้นที่ความขัดแย้ง",
         "diseaseAlert": "การแจ้งเตือนโรค",
         "diseaseWarning": "คำเตือนโรค",
@@ -1964,6 +1948,8 @@
       "infoTooltip": "<strong>ตลาดพยากรณ์</strong> ตลาดพยากรณ์ที่ใช้เงินจริง:<ul><li>ราคาสะท้อนการประมาณความน่าจะเป็นของกลุ่ม</li><li>ปริมาณสูง = สัญญาณที่น่าเชื่อถือกว่า</li><li>เน้นภูมิรัฐศาสตร์และเหตุการณ์ปัจจุบัน</li></ul>แหล่งที่มา: Polymarket (polymarket.com)"
     },
     "etfFlows": {
+      "previousColumns": "คอลัมน์ก่อนหน้า",
+      "moreColumns": "คอลัมน์เพิ่มเติม",
       "unavailable": "ข้อมูลกองทุนที่อนุญาตให้ซื้อขายในตลาดหุ้น ไม่พร้อมใช้งานชั่วคราว",
       "rateLimited": "ข้อมูลกองทุนที่อนุญาตให้ซื้อขายในตลาดหุ้น ไม่พร้อมใช้งานชั่วคราว (จำกัดอัตรา) — กำลังลองใหม่ในไม่ช้า",
       "netFlow": "กระแสสุทธิ",
@@ -3216,6 +3202,14 @@
       },
       "description": "Major {{type}} pipeline infrastructure. {{status}}"
     },
+    "storageFacility": {
+      "openInAtlas": "เปิดในแผนที่คลังเก็บ",
+      "types": {
+        "lngExport": "ส่งออก LNG",
+        "lngImport": "นำเข้า LNG",
+        "crudeTankFarm": "ศูนย์กลางน้ำมันดิบ"
+      }
+    },
     "pipelineStatusDesc": {
       "operating": "ดำเนินการอยู่และขนส่งทรัพยากร",
       "construction": "อยู่ระหว่างก่อสร้าง"
@@ -3625,7 +3619,11 @@
       "c2Server": "เซิร์ฟเวอร์ C2",
       "malwareHost": "โฮสต์มัลแวร์",
       "phishing": "ฟิชชิง",
-      "maliciousUrl": "URL อันตราย"
+      "maliciousUrl": "URL อันตราย",
+      "operational": "ใช้งานอยู่",
+      "reduced": "ลดลง",
+      "offline": "หยุดทำงาน",
+      "disputed": "มีข้อพิพาท"
     },
     "aptTactics": {
       "reconnaissance": "การลาดตระเวน",

@@ -1227,26 +1227,10 @@
       "resetView": "重置檢視",
       "legend": {
         "title": "圖例",
-        "startupHub": "創業中心",
-        "techHQ": "科技總部",
-        "accelerator": "加速器",
-        "cloudRegion": "雲端計算區域",
-        "datacenter": "資料中心",
-        "stockExchange": "證券交易所",
-        "financialCenter": "金融中心",
-        "centralBank": "央行",
-        "commodityHub": "大宗商品樞紐",
-        "waterway": "水道",
         "highAlert": "高度警報",
         "elevated": "升高",
         "monitoring": "監控中",
-        "base": "基地",
-        "nuclear": "核設施",
-        "aircraft": "飛機",
-        "miningSite": "採礦場",
-        "commodityPort": "商品港口",
         "pipeline": "管道",
-        "processingPlant": "加工廠",
         "conflict": "衝突區域",
         "diseaseAlert": "疾病警報",
         "diseaseWarning": "疾病預警",
@@ -1964,6 +1948,8 @@
       "infoTooltip": "<strong>預測市場</strong>真金白銀的預測市場：<ul><li>價格反映群體機率估計</li><li>交易量越高 = 訊號越可靠</li><li>聚焦地緣政治和時事</li></ul>來源：Polymarket (polymarket.com)"
     },
     "etfFlows": {
+      "previousColumns": "前面的欄",
+      "moreColumns": "更多欄",
       "unavailable": "交易所交易基金資料暫時不可用",
       "rateLimited": "交易所交易基金資料暫時不可用（受速率限制）— 正在重試",
       "netFlow": "淨流量",
@@ -3216,6 +3202,14 @@
       },
       "description": "主要{{type}}管道基礎設施。{{status}}"
     },
+    "storageFacility": {
+      "openInAtlas": "在儲存圖集中開啟",
+      "types": {
+        "lngExport": "LNG出口",
+        "lngImport": "LNG進口",
+        "crudeTankFarm": "原油樞紐"
+      }
+    },
     "pipelineStatusDesc": {
       "operating": "目前正在運營並輸送資源。",
       "construction": "目前正在建設中。"
@@ -3625,7 +3619,11 @@
       "c2Server": "C2 伺服器",
       "malwareHost": "惡意軟體主機",
       "phishing": "網路釣魚",
-      "maliciousUrl": "惡意 URL"
+      "maliciousUrl": "惡意 URL",
+      "operational": "執行中",
+      "reduced": "減量執行",
+      "offline": "停運",
+      "disputed": "有爭議"
     },
     "aptTactics": {
       "reconnaissance": "偵察",

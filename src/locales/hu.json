@@ -1372,26 +1372,10 @@
       "resetView": "Nézet alaphelyzetbe állítása",
       "legend": {
         "title": "JELMAGYARÁZAT",
-        "startupHub": "Startup központ",
-        "techHQ": "Tech központ",
-        "accelerator": "Gyorsító",
-        "cloudRegion": "Felhőrégió",
-        "datacenter": "Adatközpont",
-        "stockExchange": "Értéktőzsde",
-        "financialCenter": "Pénzügyi centrum",
-        "centralBank": "Jegybank",
-        "commodityHub": "Árucikk-csomópont",
-        "waterway": "Vízi út",
         "highAlert": "Magas riasztás",
         "elevated": "Emelt",
         "monitoring": "Megfigyelés",
-        "base": "Alap",
-        "nuclear": "Atomerőmű",
-        "aircraft": "Repülőgép",
-        "miningSite": "Bányaterület",
-        "commodityPort": "Árucikk-kikötő",
         "pipeline": "Vezetékrendszer",
-        "processingPlant": "Feldolgozó üzem",
         "conflict": "Konfliktuszóna",
         "diseaseAlert": "Betegség-riasztás",
         "diseaseWarning": "Betegség-figyelmeztetés",
@@ -2110,6 +2094,8 @@
       "infoTooltip": "<strong>Előrejelzési piacok</strong> Valódi pénzű előrejelzési piacok:<ul><li>Az árak a tömeg valószínűségi becsléseit tükrözik</li><li>Magasabb volumen = megbízhatóbb jel</li><li>Geopolitikai és aktuális események fókusza</li></ul>Források: Polymarket, Kalshi"
     },
     "etfFlows": {
+      "previousColumns": "Előző oszlopok",
+      "moreColumns": "További oszlopok",
       "unavailable": "Tőzsdén kereskedett alap adatai ideiglenesen nem érhetőek el",
       "rateLimited": "Tőzsdén kereskedett alap adatai ideiglenesen nem érhetőek el (sebességkorlátozva) — hamarosan újrapróbálkozás",
       "netFlow": "Nettó áramlás",
@@ -3305,6 +3291,14 @@
       },
       "description": "Nagyobb {{type}} vezeték infrastruktúra. {{status}}"
     },
+    "storageFacility": {
+      "openInAtlas": "Megnyitás a tárolóatlaszban",
+      "types": {
+        "lngExport": "LNG-export",
+        "lngImport": "LNG-import",
+        "crudeTankFarm": "Kőolaj-csomópont"
+      }
+    },
     "pipelineStatusDesc": {
       "operating": "Jelenleg működik és erőforrásokat szállít.",
       "construction": "Jelenleg építés alatt áll."
@@ -3714,7 +3708,11 @@
       "c2Server": "C2-szerver",
       "malwareHost": "Kártevőt tároló gép",
       "phishing": "Adathalászat",
-      "maliciousUrl": "Kártékony URL"
+      "maliciousUrl": "Kártékony URL",
+      "operational": "Üzemel",
+      "reduced": "Csökkentett",
+      "offline": "Üzemen kívül",
+      "disputed": "Vitatott"
     },
     "aptTactics": {
       "reconnaissance": "Felderítés",

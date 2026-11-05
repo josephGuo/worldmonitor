@@ -1230,26 +1230,10 @@
       "resetView": "Нулиране на преглед",
       "legend": {
         "title": "ЛЕГЕНДА",
-        "startupHub": "Стартъп център",
-        "techHQ": "Технологична централа",
-        "accelerator": "Ускоритель",
-        "cloudRegion": "Облачен регион",
-        "datacenter": "Центр за данни",
-        "stockExchange": "Фондова борса",
-        "financialCenter": "Финансов център",
-        "centralBank": "Централна банка",
-        "commodityHub": "Хъб за стоки",
-        "waterway": "Водния път",
         "highAlert": "Висок алерт",
         "elevated": "Повишен",
         "monitoring": "Мониторинг",
-        "base": "База",
-        "nuclear": "Ядрена",
-        "aircraft": "Самолет",
-        "miningSite": "Място за добив",
-        "commodityPort": "Порт за стоки",
         "pipeline": "Тръбопровод",
-        "processingPlant": "Обработвателен завод",
         "conflict": "Зона на конфликт",
         "diseaseAlert": "Предупреждение за болест",
         "diseaseWarning": "Внимание за болест",
@@ -1968,6 +1952,8 @@
       "infoTooltip": "<strong>Пазари на предвиждане</strong> Пазари за предвиждане с реални пари:<ul><li>Цените отразяват оценките на вероятността на публиката</li><li>По-висок обем = по-надежден сигнал</li><li>Фокус върху геополитични и текущи събития</li></ul>Източник: Polymarket (polymarket.com)"
     },
     "etfFlows": {
+      "previousColumns": "Предишни колони",
+      "moreColumns": "Още колони",
       "unavailable": "Данни на борсово търгуваните фондове временно недостъпни",
       "rateLimited": "Данни на борсово търгуваните фондове временно недостъпни (ограничение на курса) — повтаряне в скоро време",
       "netFlow": "Нетен поток",
@@ -3236,6 +3222,14 @@
       },
       "description": "Основна {{type}} тръбопровод инфраструктура. {{status}}"
     },
+    "storageFacility": {
+      "openInAtlas": "Отвори в атласа на хранилищата",
+      "types": {
+        "lngExport": "Износ на втечнен газ",
+        "lngImport": "Внос на втечнен газ",
+        "crudeTankFarm": "Хъб за суров петрол"
+      }
+    },
     "pipelineStatusDesc": {
       "operating": "В момента оперативна и транспортиране на ресурси.",
       "construction": "В момента в строителството."
@@ -3645,7 +3639,11 @@
       "c2Server": "C2 сървър",
       "malwareHost": "Хост на зловреден софтуер",
       "phishing": "Фишинг",
-      "maliciousUrl": "Злонамерен URL"
+      "maliciousUrl": "Злонамерен URL",
+      "operational": "Работещ",
+      "reduced": "Намален",
+      "offline": "Извън експлоатация",
+      "disputed": "Спорен"
     },
     "aptTactics": {
       "reconnaissance": "Разузнаване",

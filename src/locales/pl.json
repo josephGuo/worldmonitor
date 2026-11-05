@@ -1044,26 +1044,10 @@
       "resetView": "Zresetuj widok",
       "legend": {
         "title": "LEGENDA",
-        "startupHub": "Hub startupowy",
-        "techHQ": "Siedziba technologiczna",
-        "accelerator": "Akcelerator",
-        "cloudRegion": "Region chmury",
-        "datacenter": "Centrum danych",
-        "stockExchange": "Giełda",
-        "financialCenter": "Centrum finansowe",
-        "centralBank": "Bank centralny",
-        "commodityHub": "Hub towarowy",
-        "waterway": "Droga wodna",
         "highAlert": "Wysoki alarm",
         "elevated": "Podwyższony",
         "monitoring": "Monitorowanie",
-        "base": "Baza",
-        "nuclear": "Obiekt jądrowy",
-        "aircraft": "Samoloty",
-        "miningSite": "Teren górniczy",
-        "commodityPort": "Port towarowy",
         "pipeline": "Rurociąg",
-        "processingPlant": "Zakład przetwarzania",
         "conflict": "Strefa konfliktu",
         "diseaseAlert": "Alert choroby",
         "diseaseWarning": "Ostrzeżenie o chorobie",
@@ -1829,6 +1813,8 @@
       "streamIdleStopNever": "Nigdy"
     },
     "etfFlows": {
+      "previousColumns": "Poprzednie kolumny",
+      "moreColumns": "Więcej kolumn",
       "unavailable": "dane funduszy notowanych na giełdzie czasowo niedostępne",
       "netFlow": "Przepływ netto",
       "estFlow": "Szac. przepływ",
@@ -3267,6 +3253,14 @@
       },
       "description": "Ważna infrastruktura rurociągu {{type}}. {{status}}"
     },
+    "storageFacility": {
+      "openInAtlas": "Otwórz w atlasie magazynów",
+      "types": {
+        "lngExport": "Eksport LNG",
+        "lngImport": "Import LNG",
+        "crudeTankFarm": "Hub ropy naftowej"
+      }
+    },
     "pipelineStatusDesc": {
       "operating": "Aktualnie w eksploatacji i transportujący zasoby.",
       "construction": "Aktualnie w budowie."
@@ -3685,7 +3679,11 @@
       "c2Server": "Serwer C2",
       "malwareHost": "Host złośliwego oprogramowania",
       "phishing": "Phishing",
-      "maliciousUrl": "Złośliwy URL"
+      "maliciousUrl": "Złośliwy URL",
+      "operational": "Działa",
+      "reduced": "Ograniczony",
+      "offline": "Nieczynny",
+      "disputed": "Sporny"
     },
     "aptTactics": {
       "reconnaissance": "Rozpoznanie",

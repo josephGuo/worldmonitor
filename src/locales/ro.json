@@ -1233,26 +1233,10 @@
       "resetView": "Resetați vizualizarea",
       "legend": {
         "title": "LEGENDĂ",
-        "startupHub": "Hub startup-uri",
-        "techHQ": "Sediu central tech",
-        "accelerator": "Accelerator",
-        "cloudRegion": "Regiunea Cloud",
-        "datacenter": "Centru de date",
-        "stockExchange": "Bursa de Valori",
-        "financialCenter": "Centrul financiar",
-        "centralBank": "Banca Centrală",
-        "commodityHub": "Hub mărfuri",
-        "waterway": "Căi navigabile",
         "highAlert": "Alertă mare",
         "elevated": "Ridicat",
         "monitoring": "Monitorizare",
-        "base": "Baza",
-        "nuclear": "Nuclear",
-        "aircraft": "Aeronavă",
-        "miningSite": "Sit de Extracție",
-        "commodityPort": "Port de Mărfuri",
         "pipeline": "Conductă",
-        "processingPlant": "Fabrică de Prelucrare",
         "conflict": "Zonă de Conflict",
         "diseaseAlert": "Alertă Boală",
         "diseaseWarning": "Avertisment Boală",
@@ -1972,6 +1956,8 @@
       "infoTooltip": "<strong>Piețe de predicție</strong> Piețe de prognoză în bani reali:<ul><li>Prețurile reflectă estimările probabilității aglomerației</li><li>Volum mai mare = semnal mai fiabil</li><li>Concentrare geopolitică și evenimente curente</li></ul>Sursa: Polymarket (polymarket.com)"
     },
     "etfFlows": {
+      "previousColumns": "Coloanele anterioare",
+      "moreColumns": "Mai multe coloane",
       "unavailable": "datele fondurilor tranzacționate la bursă sunt temporar indisponibile",
       "rateLimited": "datele fondurilor tranzacționate la bursă sunt temporar indisponibile (limita de rată) — se reîncearcă în curând",
       "netFlow": "Flux net",
@@ -3256,6 +3242,14 @@
       },
       "description": "Infrastructură majoră de conducte {{type}}. {{status}}"
     },
+    "storageFacility": {
+      "openInAtlas": "Deschide în atlasul depozitelor",
+      "types": {
+        "lngExport": "Export GNL",
+        "lngImport": "Import GNL",
+        "crudeTankFarm": "Hub de țiței"
+      }
+    },
     "pipelineStatusDesc": {
       "operating": "Momentan resurse operaționale și de transport.",
       "construction": "În prezent în construcție."
@@ -3665,7 +3659,11 @@
       "c2Server": "Server C2",
       "malwareHost": "Gazdă malware",
       "phishing": "Phishing",
-      "maliciousUrl": "URL rău intenționat"
+      "maliciousUrl": "URL rău intenționat",
+      "operational": "Operațional",
+      "reduced": "Redus",
+      "offline": "Scos din funcțiune",
+      "disputed": "Disputat"
     },
     "aptTactics": {
       "reconnaissance": "Recunoaștere",

@@ -1380,26 +1380,10 @@
       "resetView": "Vrati prikaz",
       "legend": {
         "title": "LEGENDA",
-        "startupHub": "Startup čvorište",
-        "techHQ": "Tehnološko sjedište",
-        "accelerator": "Akcelerator",
-        "cloudRegion": "Regija oblaka",
-        "datacenter": "Podatkovni centar",
-        "stockExchange": "Burza",
-        "financialCenter": "Financijski centar",
-        "centralBank": "Središnja banka",
-        "commodityHub": "Hub roba",
-        "waterway": "Plovni put",
         "highAlert": "Visoka uzbuna",
         "elevated": "Pojačano",
         "monitoring": "Praćenje",
-        "base": "Baza",
-        "nuclear": "Nuklearno",
-        "aircraft": "Zrakoplov",
-        "miningSite": "Rudnik",
-        "commodityPort": "Luka roba",
         "pipeline": "Cjevovod",
-        "processingPlant": "Proizvodna tvornica",
         "conflict": "Zona konflikta",
         "diseaseAlert": "Upozorenje na bolest",
         "diseaseWarning": "Upozorenje na bolest",
@@ -2121,6 +2105,8 @@
       "infoTooltip": "<strong>Tržišta predviđanja</strong> Tržišta za predviđanja s pravim novcem:<ul><li>Cijene odražavaju procjene vjerojatnosti publike</li><li>Veći volumen = pouzdaniji signal</li><li>Fokus na geopolitičke i trenutne događaje</li></ul>Izvori: Polymarket, Kalshi"
     },
     "etfFlows": {
+      "previousColumns": "Prethodni stupci",
+      "moreColumns": "Više stupaca",
       "unavailable": "podaci o fondovima namijenjenim razmjeni privremeno недostupни",
       "rateLimited": "podaci o fondovima namijenjenim razmjeni privremeno недostupni (ograničena brzina) — ponovni pokušaj uskoro",
       "netFlow": "Neto tok",
@@ -3335,6 +3321,14 @@
       },
       "description": "Glavna {{type}} infrastruktura cjevovoda. {{status}}"
     },
+    "storageFacility": {
+      "openInAtlas": "Otvori u atlasu skladišta",
+      "types": {
+        "lngExport": "Izvoz LNG-a",
+        "lngImport": "Uvoz LNG-a",
+        "crudeTankFarm": "Čvorište sirove nafte"
+      }
+    },
     "pipelineStatusDesc": {
       "operating": "Trenutno operativan i transportira resurse.",
       "construction": "Trenutno u gradnji."
@@ -3745,7 +3739,11 @@
       "c2Server": "C2 poslužitelj",
       "malwareHost": "Domaćin zlonamjernog softvera",
       "phishing": "Krađa identiteta",
-      "maliciousUrl": "Zlonamjerni URL"
+      "maliciousUrl": "Zlonamjerni URL",
+      "operational": "U pogonu",
+      "reduced": "Smanjen",
+      "offline": "Izvan pogona",
+      "disputed": "Sporan"
     },
     "aptTactics": {
       "reconnaissance": "Izviđanje",

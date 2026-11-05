@@ -1380,26 +1380,10 @@
       "resetView": "Скинути вид",
       "legend": {
         "title": "ЛЕГЕНДА",
-        "startupHub": "Стартап-хаб",
-        "techHQ": "Технологічна штаб-квартира",
-        "accelerator": "Стартап-прискорювач",
-        "cloudRegion": "Регіон хмари",
-        "datacenter": "Центр обробки даних",
-        "stockExchange": "Фондова біржа",
-        "financialCenter": "Фінансовий центр",
-        "centralBank": "Центральний банк",
-        "commodityHub": "Вузол торгівлі сировиною",
-        "waterway": "Водний шлях",
         "highAlert": "Високий рівень готовності",
         "elevated": "Підвищений рівень загрози",
         "monitoring": "Моніторинг",
-        "base": "База",
-        "nuclear": "Ядерна об'єкти",
-        "aircraft": "Літак",
-        "miningSite": "Гірничодобувне підприємство",
-        "commodityPort": "Порт сировини",
         "pipeline": "Трубопровід",
-        "processingPlant": "Переробний завод",
         "conflict": "Зона конфлікту",
         "diseaseAlert": "Оповіщення про хворобу",
         "diseaseWarning": "Попередження про хворобу",
@@ -2123,6 +2107,8 @@
       "infoTooltip": "<strong>Ринки прогнозування</strong> Ринки прогнозування з реальними грошима:<ul><li>Ціни відбивають оцінки ймовірності краудом</li><li>Більший обсяг = надійніший сигнал</li><li>Фокус на геополітичні та поточні події</li></ul>Джерела: Polymarket, Kalshi"
     },
     "etfFlows": {
+      "previousColumns": "Попередні стовпці",
+      "moreColumns": "Інші стовпці",
       "unavailable": "дані обмінних фондів тимчасово недоступні",
       "rateLimited": "дані обмінних фондів тимчасово недоступні (обмеження за швидкістю) — повторне спробування незабаром",
       "netFlow": "Чистий потік",
@@ -3345,6 +3331,14 @@
       },
       "description": "Основна інфраструктура трубопроводу {{type}}. {{status}}"
     },
+    "storageFacility": {
+      "openInAtlas": "Відкрити в атласі сховищ",
+      "types": {
+        "lngExport": "Експорт ЗПГ",
+        "lngImport": "Імпорт ЗПГ",
+        "crudeTankFarm": "Нафтовий хаб"
+      }
+    },
     "pipelineStatusDesc": {
       "operating": "Наразі працює та транспортує ресурси.",
       "construction": "Наразі будується."
@@ -3754,7 +3748,11 @@
       "c2Server": "C2-сервер",
       "malwareHost": "Хост шкідливого ПЗ",
       "phishing": "Фішинг",
-      "maliciousUrl": "Шкідлива URL-адреса"
+      "maliciousUrl": "Шкідлива URL-адреса",
+      "operational": "Працює",
+      "reduced": "Знижена",
+      "offline": "Не працює",
+      "disputed": "Спірний"
     },
     "aptTactics": {
       "reconnaissance": "Розвідка",

@@ -1224,26 +1224,10 @@
       "resetView": "Obnovit pohled",
       "legend": {
         "title": "LEGENDA",
-        "startupHub": "Startup centrum",
-        "techHQ": "Tech centrála",
-        "accelerator": "Akcelerátor",
-        "cloudRegion": "Cloud region",
-        "datacenter": "Datové centrum",
-        "stockExchange": "Akciová burza",
-        "financialCenter": "Finanční centrum",
-        "centralBank": "Centrální banka",
-        "commodityHub": "Komoditní centrum",
-        "waterway": "Vodní cesta",
         "highAlert": "Vysoká pohotovost",
         "elevated": "Zvýšená",
         "monitoring": "Monitorování",
-        "base": "Základna",
-        "nuclear": "Jaderné zařízení",
-        "aircraft": "Letadla",
-        "miningSite": "Těžební lokalita",
-        "commodityPort": "Přístav pro komodity",
         "pipeline": "Potrubí",
-        "processingPlant": "Zpracovatelský závod",
         "conflict": "Konfliktní zóna",
         "diseaseAlert": "Výstraha na nemoc",
         "diseaseWarning": "Varování na nemoc",
@@ -1955,6 +1939,8 @@
       "infoTooltip": "<strong>Predikční trhy</strong> Trhy s reálnými penězi pro prognózy:<ul><li>Ceny odrážejí odhady pravděpodobnosti davu</li><li>Vyšší objem = spolehlivější signál</li><li>Zaměření na geopolitiku a aktuální dění</li></ul>Zdroj: Polymarket (polymarket.com)"
     },
     "etfFlows": {
+      "previousColumns": "Předchozí sloupce",
+      "moreColumns": "Další sloupce",
       "unavailable": "data fondů obchodovaných na burze dočasně nedostupná",
       "rateLimited": "data fondů obchodovaných na burze dočasně nedostupná (omezení rychlosti) — opakuji za chvíli",
       "netFlow": "Čistý tok",
@@ -3268,6 +3254,14 @@
       },
       "description": "Hlavní {{type}} potrubní infrastruktura. {{status}}"
     },
+    "storageFacility": {
+      "openInAtlas": "Otevřít v atlasu zásobníků",
+      "types": {
+        "lngExport": "Export LNG",
+        "lngImport": "Import LNG",
+        "crudeTankFarm": "Uzel ropy"
+      }
+    },
     "pipelineStatusDesc": {
       "operating": "V současné době v provozu a přepravuje suroviny.",
       "construction": "V současné době ve výstavbě."
@@ -3685,7 +3679,11 @@
       "c2Server": "Server C2",
       "malwareHost": "Hostitel malwaru",
       "phishing": "Phishing",
-      "maliciousUrl": "Škodlivá URL"
+      "maliciousUrl": "Škodlivá URL",
+      "operational": "V provozu",
+      "reduced": "Omezený",
+      "offline": "Mimo provoz",
+      "disputed": "Sporný"
     },
     "aptTactics": {
       "reconnaissance": "Průzkum",

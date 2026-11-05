@@ -1078,26 +1078,10 @@
       "resetView": "Ansicht zurücksetzen",
       "legend": {
         "title": "LEGENDE",
-        "startupHub": "Startup-Hub",
-        "techHQ": "Tech-Zentrale",
-        "accelerator": "Accelerator",
-        "cloudRegion": "Cloud-Region",
-        "datacenter": "Rechenzentrum",
-        "stockExchange": "Börse",
-        "financialCenter": "Finanzzentrum",
-        "centralBank": "Zentralbank",
-        "commodityHub": "Rohstoffzentrum",
-        "waterway": "Wasserstraße",
         "highAlert": "Hohe Warnstufe",
         "elevated": "Erhöht",
         "monitoring": "Überwachung",
-        "base": "Basis",
-        "nuclear": "Nuklear",
-        "aircraft": "Flugzeuge",
-        "miningSite": "Bergbaustandort",
-        "commodityPort": "Rohstoffhafen",
         "pipeline": "Pipeline",
-        "processingPlant": "Verarbeitungsanlage",
         "conflict": "Konfliktzone",
         "diseaseAlert": "Krankheitsalarm",
         "diseaseWarning": "Krankheitswarnung",
@@ -1915,6 +1899,8 @@
       "streamIdleStopNever": "Nie"
     },
     "etfFlows": {
+      "previousColumns": "Vorherige Spalten",
+      "moreColumns": "Weitere Spalten",
       "unavailable": "Daten zu börsengehandelten Fonds vorübergehend nicht verfügbar",
       "rateLimited": "Daten zu börsengehandelten Fonds vorübergehend nicht verfügbar (Rate begrenzt) – Wiederversuch in Kürze",
       "netFlow": "Netto-Mittelfluss",
@@ -3227,6 +3213,14 @@
       },
       "description": "Große {{type}}-Pipeline-Infrastruktur. {{status}}"
     },
+    "storageFacility": {
+      "openInAtlas": "Im Speicheratlas öffnen",
+      "types": {
+        "lngExport": "LNG-Export",
+        "lngImport": "LNG-Import",
+        "crudeTankFarm": "Rohöl-Hub"
+      }
+    },
     "pipelineStatusDesc": {
       "operating": "Derzeit in Betrieb und transportiert Ressourcen.",
       "construction": "Derzeit im Bau."
@@ -3645,7 +3639,11 @@
       "c2Server": "C2-Server",
       "malwareHost": "Malware-Host",
       "phishing": "Phishing",
-      "maliciousUrl": "Schädliche URL"
+      "maliciousUrl": "Schädliche URL",
+      "operational": "In Betrieb",
+      "reduced": "Reduziert",
+      "offline": "Außer Betrieb",
+      "disputed": "Umstritten"
     },
     "aptTactics": {
       "reconnaissance": "Aufklärung",

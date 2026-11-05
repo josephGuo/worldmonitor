@@ -1081,26 +1081,10 @@
       "resetView": "Reimposta vista",
       "legend": {
         "title": "LEGENDA",
-        "startupHub": "Hub Startup",
-        "techHQ": "Sede Tech",
-        "accelerator": "Acceleratore",
-        "cloudRegion": "Regione Cloud",
-        "datacenter": "Centro dati",
-        "stockExchange": "Borsa valori",
-        "financialCenter": "Centro finanziario",
-        "centralBank": "Banca centrale",
-        "commodityHub": "Hub materie prime",
-        "waterway": "Via d'acqua",
         "highAlert": "Allerta alta",
         "elevated": "Elevato",
         "monitoring": "Monitoraggio",
-        "base": "Base",
-        "nuclear": "Nucleare",
-        "aircraft": "Aeromobili",
-        "miningSite": "Sito Minerario",
-        "commodityPort": "Porto Merci",
         "pipeline": "Condotta",
-        "processingPlant": "Impianto di Lavorazione",
         "conflict": "Zona di Conflitto",
         "diseaseAlert": "Avviso Malattia",
         "diseaseWarning": "Avvertenza Malattia",
@@ -1919,6 +1903,8 @@
       "streamIdleStopNever": "Mai"
     },
     "etfFlows": {
+      "previousColumns": "Colonne precedenti",
+      "moreColumns": "Altre colonne",
       "unavailable": "Dati dei fondi negoziati in borsa temporaneamente non disponibili",
       "rateLimited": "Dati dei fondi negoziati in borsa temporaneamente non disponibili (limite di velocità raggiunto) — nuovo tentativo tra poco",
       "netFlow": "Flusso netto",
@@ -3247,6 +3233,14 @@
       },
       "description": "Importante infrastruttura {{type}}. {{status}}"
     },
+    "storageFacility": {
+      "openInAtlas": "Apri nell'atlante degli stoccaggi",
+      "types": {
+        "lngExport": "Export GNL",
+        "lngImport": "Import GNL",
+        "crudeTankFarm": "Hub greggio"
+      }
+    },
     "pipelineStatusDesc": {
       "operating": "Attualmente operativo e in trasporto risorse.",
       "construction": "Attualmente in costruzione."
@@ -3665,7 +3659,11 @@
       "c2Server": "Server C2",
       "malwareHost": "Host di malware",
       "phishing": "Phishing",
-      "maliciousUrl": "URL malevolo"
+      "maliciousUrl": "URL malevolo",
+      "operational": "Operativo",
+      "reduced": "Ridotto",
+      "offline": "Fuori servizio",
+      "disputed": "Contestato"
     },
     "aptTactics": {
       "reconnaissance": "Ricognizione",

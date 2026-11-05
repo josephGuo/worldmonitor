@@ -531,26 +531,10 @@
       "resetView": "Redefinir visualização",
       "legend": {
         "title": "LEGENDA",
-        "startupHub": "Hub de Startups",
-        "techHQ": "Sede Tecnológica",
-        "accelerator": "Aceleradora",
-        "cloudRegion": "Região de Nuvem",
-        "datacenter": "Data center",
-        "stockExchange": "Bolsa de Valores",
-        "financialCenter": "Centro Financeiro",
-        "centralBank": "Banco Central",
-        "commodityHub": "Hub de Commodities",
-        "waterway": "Hidrovia",
         "highAlert": "Alerta Alto",
         "elevated": "Elevado",
         "monitoring": "Monitoramento",
-        "base": "Base",
-        "nuclear": "Nuclear",
-        "aircraft": "Aeronaves",
-        "miningSite": "Sítio de Mineração",
-        "commodityPort": "Porto de Commodities",
         "pipeline": "Gasoduto",
-        "processingPlant": "Planta de Processamento",
         "conflict": "Zona de Conflito",
         "diseaseAlert": "Alerta de Doença",
         "diseaseWarning": "Aviso de Doença",
@@ -1439,6 +1423,8 @@
       "lapsedCount": "Propostas arquivadas ({{count}})"
     },
     "etfFlows": {
+      "previousColumns": "Colunas anteriores",
+      "moreColumns": "Mais colunas",
       "unavailable": "dados de fundos negociados em bolsa temporariamente indisponíveis",
       "netFlow": "Fluxo líquido",
       "estFlow": "Fluxo est.",
@@ -2861,6 +2847,14 @@
       },
       "description": "Importante infraestrutura de {{type}}. {{status}}"
     },
+    "storageFacility": {
+      "openInAtlas": "Abrir no atlas de armazenamento",
+      "types": {
+        "lngExport": "Exportação de GNL",
+        "lngImport": "Importação de GNL",
+        "crudeTankFarm": "Hub de petróleo bruto"
+      }
+    },
     "pipelineStatusDesc": {
       "operating": "Atualmente operacional e transportando recursos.",
       "construction": "Atualmente em construção."
@@ -3279,7 +3273,11 @@
       "c2Server": "Servidor C2",
       "malwareHost": "Host de malware",
       "phishing": "Phishing",
-      "maliciousUrl": "URL maliciosa"
+      "maliciousUrl": "URL maliciosa",
+      "operational": "Operacional",
+      "reduced": "Reduzido",
+      "offline": "Fora de serviço",
+      "disputed": "Contestado"
     },
     "aptTactics": {
       "reconnaissance": "Reconhecimento",

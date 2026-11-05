@@ -1227,26 +1227,10 @@
       "resetView": "ビューをリセット",
       "legend": {
         "title": "凡例",
-        "startupHub": "スタートアップハブ",
-        "techHQ": "テック本社",
-        "accelerator": "アクセラレーター",
-        "cloudRegion": "クラウドリージョン",
-        "datacenter": "データセンター",
-        "stockExchange": "証券取引所",
-        "financialCenter": "金融センター",
-        "centralBank": "中央銀行",
-        "commodityHub": "コモディティハブ",
-        "waterway": "水路",
         "highAlert": "高警戒",
         "elevated": "上昇",
         "monitoring": "監視中",
-        "base": "基地",
-        "nuclear": "核施設",
-        "aircraft": "航空機",
-        "miningSite": "採鉱地",
-        "commodityPort": "商品港",
         "pipeline": "パイプライン",
-        "processingPlant": "処理工場",
         "conflict": "紛争地帯",
         "diseaseAlert": "疾病警報",
         "diseaseWarning": "疾病警告",
@@ -1964,6 +1948,8 @@
       "infoTooltip": "<strong>予測市場</strong> リアルマネー予測市場:<ul><li>価格は群衆の確率推定を反映</li><li>取引量が多いほど信頼性の高いシグナル</li><li>地政学・時事問題に焦点</li></ul>ソース: Polymarket (polymarket.com)"
     },
     "etfFlows": {
+      "previousColumns": "前の列",
+      "moreColumns": "他の列",
       "unavailable": "上場投資信託データは一時的に利用できません",
       "rateLimited": "上場投資信託データは一時的に利用できません(レート制限) — 間もなく再試行します",
       "netFlow": "純フロー",
@@ -3216,6 +3202,14 @@
       },
       "description": "主要な{{type}}パイプラインインフラ。{{status}}"
     },
+    "storageFacility": {
+      "openInAtlas": "ストレージアトラスで開く",
+      "types": {
+        "lngExport": "LNG輸出",
+        "lngImport": "LNG輸入",
+        "crudeTankFarm": "原油ハブ"
+      }
+    },
     "pipelineStatusDesc": {
       "operating": "現在稼働中で資源を輸送。",
       "construction": "現在建設中。"
@@ -3625,7 +3619,11 @@
       "c2Server": "C2サーバー",
       "malwareHost": "マルウェアホスト",
       "phishing": "フィッシング",
-      "maliciousUrl": "悪意のあるURL"
+      "maliciousUrl": "悪意のあるURL",
+      "operational": "稼働中",
+      "reduced": "縮小",
+      "offline": "停止中",
+      "disputed": "係争中"
     },
     "aptTactics": {
       "reconnaissance": "偵察",
