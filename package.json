@@ -263,6 +263,7 @@
     "ajv": "^8.20.0",
     "convex-test": "^0.0.43",
     "cross-env": "^10.1.0",
+    "deepmerge": "file:scripts/vendor/deepmerge",
     "esbuild": "0.28.1",
     "exceljs": "^4.4.0",
     "fengari": "^0.1.5",
@@ -286,6 +287,7 @@
     "@deck.gl/layers": "^9.4.0",
     "@deck.gl/maplibre": "^9.4.0",
     "@dodopayments/convex": "^0.2.8",
+    "@e965/xlsx": "0.20.3",
     "@fontsource/nunito": "^5.2.7",
     "@fontsource/tajawal": "^5.2.7",
     "@noble/hashes": "1.4.0",
@@ -309,6 +311,7 @@
     "globe.gl": "^2.45.0",
     "h3-js": "^4.4.0",
     "hls.js": "^1.6.15",
+    "hyparquet": "1.32.0",
     "i18next": "^25.8.10",
     "i18next-browser-languagedetector": "^8.2.1",
     "jmespath": "^0.16.0",
@@ -333,6 +336,11 @@
     "zod": "^4.6.6"
   },
   "overrides": {
+    "glob@11": "14.0.2",
+    "glob@13": "14.0.2",
+    "uuid@8": "11.1.1",
+    "uuid@11": "11.1.1",
+    "deepmerge": "$deepmerge",
     "braces": "$braces",
     "convex": {
       "esbuild": "0.28.1"
