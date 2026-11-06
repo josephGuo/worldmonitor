@@ -15,14 +15,8 @@ import { durationToSeconds, limitWithFallback, resetRateLimitFallbackForTest } f
 // UNKNOWN_CLIENT_IP: turnstile.ts; plus the rate-limit test suites).
 export { getClientIp, getClientRateLimitKey, hasCloudflareTransitProof, hasUnprovenCloudflareClientIp, rateLimitKeyForIp, UNKNOWN_CLIENT_IP } from './client-ip.js';
 
-// @upstash/redis defaults to 5 retries with exponential backoff (~4.3s total)
-// before surfacing an unreachable-Redis error. The node test runner sets
-// NODE_TEST_CONTEXT in the child that executes each file; in that context the
-// fail-open / fail-closed rate-limit tests point UPSTASH_REDIS_REST_URL at a
-// fake host and would otherwise burn that full backoff on every limiter call.
-// Skip retries under the test runner only — production (env unset) keeps the
-// resilient default untouched. Mirrors the retry:false already shipped on the
-// MCP limiter to unblock the suite (PR #3963).
+// Production uses two retries with capped jitter and a three-second operation
+// deadline. Skip SDK retries in fake-host fail-open / fail-closed tests.
 const REDIS_TEST_RETRY_OPTS: { retry?: false } = process.env.NODE_TEST_CONTEXT ? { retry: false } : {};
 // @upstash/ratelimit v2 returns an allow-shaped result with reason="timeout"
 // when this deadline wins the Redis race. Endpoint policies inspect that
@@ -63,7 +57,7 @@ function getRatelimit(): Ratelimit | null {
   if (!url || !token) return null;
 
   ratelimit = new Ratelimit({
-    redis: new Redis({ url, token, ...REDIS_TEST_RETRY_OPTS }),
+    redis: new Redis({ retry: { retries: 2, backoff: (attempt) => Math.round(Math.min(1_000, 100 * 2 ** attempt) * (0.5 + Math.random() * 0.5)) }, signal: () => AbortSignal.timeout(3_000), url, token, ...REDIS_TEST_RETRY_OPTS }),
     limiter: Ratelimit.slidingWindow(GLOBAL_RATE_LIMIT, GLOBAL_RATE_WINDOW),
     prefix: 'rl',
     analytics: false,
@@ -605,6 +599,7 @@ interface EndpointRatePolicy {
 // using checkEndpointRateLimit / hasEndpointRatePolicy below — the export is
 // for tooling, not new runtime callers.
 export const ENDPOINT_RATE_POLICIES: Record<string, EndpointRatePolicy> = {
+  '/api/cyber/v1/get-network-info': { limit: 20, window: '60 s' },
   '/api/scorecard/v1/get-five-factor-scorecard': { limit: 30, window: '60 s' },
   '/api/scorecard/v1/get-bloc-scorecard': { limit: 30, window: '60 s' },
   '/api/scorecard/v1/list-five-factor-scorecards': { limit: 30, window: '60 s' },
@@ -910,6 +905,9 @@ interface RateLimitPolicyDecision {
 // defence. scripts/enforce-rate-limit-policies.mjs fails if any route listed
 // here can drift back to the gateway's availability-first global fallback.
 export const FAIL_CLOSED_ENDPOINT_RATE_POLICY_REQUIRED: Record<string, RateLimitPolicyDecision> = {
+  '/api/cyber/v1/get-network-info': {
+    reason: 'Public IP lookups proxy RIPEstat on cache misses and must retain the caller cap during Redis outages.',
+  },
   '/api/news/v1/list-feed-digest': { reason: 'Cold digest builds fan out to RSS providers and require a fail-closed caller budget.' },
   '/api/aviation/v1/track-aircraft': {
     reason: 'Distinct aircraft viewports call Wingbits on cache misses and can fall back to authenticated OpenSky quota.',
@@ -1132,6 +1130,7 @@ function getEndpointRatelimit(pathname: string): Ratelimit | null {
 
   const rl = new Ratelimit({
     redis: new Redis({
+      retry: { retries: 2, backoff: (attempt) => Math.round(Math.min(1_000, 100 * 2 ** attempt) * (0.5 + Math.random() * 0.5)) },
       url,
       token,
       ...REDIS_TEST_RETRY_OPTS,
@@ -1264,7 +1263,7 @@ function getScopedRatelimit(scope: string, limit: number, window: Duration): Rat
   if (!url || !token) return null;
 
   const rl = new Ratelimit({
-    redis: new Redis({ url, token, ...REDIS_TEST_RETRY_OPTS }),
+    redis: new Redis({ retry: { retries: 2, backoff: (attempt) => Math.round(Math.min(1_000, 100 * 2 ** attempt) * (0.5 + Math.random() * 0.5)) }, signal: () => AbortSignal.timeout(3_000), url, token, ...REDIS_TEST_RETRY_OPTS }),
     limiter: Ratelimit.slidingWindow(limit, window),
     prefix: 'rl:scope',
     analytics: false,
