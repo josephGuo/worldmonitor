@@ -530,6 +530,28 @@ describe('open data under /data/v1', () => {
   });
 });
 
+describe('self-host installer at /install.sh', () => {
+  const INSTALLER_SOURCE = 'https://raw.githubusercontent.com/koala73/worldmonitor/main/scripts/install.sh';
+
+  it('serves the repo installer from www.worldmonitor.app without a redirect', () => {
+    assert.equal(firstRedirectFor({ host: 'www.worldmonitor.app', path: '/install.sh' }), null);
+    assert.equal(firstRewriteFor({ host: 'www.worldmonitor.app', path: '/install.sh' })?.destination, INSTALLER_SOURCE);
+  });
+
+  it('proxies a script that exists, with no public/ copy shadowing the rewrite', () => {
+    assert.equal(existsSync(resolve(__dirname, '..', 'scripts/install.sh')), true);
+    assert.equal(existsSync(resolve(__dirname, '..', 'public/install.sh')), false);
+  });
+
+  it('documents the worldmonitor.app URL wherever the one-liner appears', () => {
+    for (const file of ['README.md', 'SELF_HOSTING.md', 'scripts/install.sh']) {
+      const text = readFileSync(resolve(__dirname, '..', file), 'utf8');
+      assert.match(text, /curl -fsSL https:\/\/www\.worldmonitor\.app\/install\.sh \| bash/, file);
+      assert.doesNotMatch(text, /raw\.githubusercontent\.com\/koala73\/worldmonitor\/main\/scripts\/install\.sh/, file);
+    }
+  });
+});
+
 describe('crawlable content corpus deployment contracts', () => {
   const staticCorpusPaths = [
     '/countries/ukraine/',
@@ -3212,6 +3234,24 @@ describe('security header guardrails', () => {
       /import '\.\/bootstrap\/zod-csp';/,
       'main.ts must apply the Zod CSP bootstrap before the app graph'
     );
+    // Zod v4 runs its `new Function` probe when a z.object() is constructed,
+    // so any script module evaluated before zod-csp could trip the CSP.
+    // Spans lines so `import {\n  a,\n} from 'x';` counts as an import of 'x'.
+    const scriptImportsOf = (source) =>
+      [...source.matchAll(/^import\s(?:[^'";]*?\sfrom\s)?['"]([^'"]+)['"]/gm)]
+        .map((match) => match[1])
+        .filter((specifier) => !specifier.endsWith('.css'));
+    assert.deepEqual(
+      scriptImportsOf("import './a.css';\nimport {\n  one,\n  two,\n} from './early';\nimport type { T } from './t';\nimport './bootstrap/zod-csp';\n"),
+      ['./early', './t', './bootstrap/zod-csp'],
+      'the import scan must see multiline and type-only declarations'
+    );
+    const scriptImports = scriptImportsOf(mainSource);
+    assert.equal(
+      scriptImports[0],
+      './bootstrap/zod-csp',
+      'zod-csp must be the first script import in main.ts so no module graph evaluates before it'
+    );
     assert.match(
       zodCspSource,
       /configureZod\(\{\s*jitless:\s*true\s*\}\)/,
@@ -3636,6 +3676,25 @@ describe('self-hosted docker nginx SPA entry', () => {
       assert.match(src, /^\s*index dashboard\.html index\.html;/m, `${conf}: index directive must prefer dashboard.html then serve corpus index.html`);
       assert.match(src, /try_files \$uri \$uri\/ \$uri\/index\.html \/dashboard\.html;/, `${conf}: SPA fallback must serve corpus index.html before /dashboard.html`);
       assert.doesNotMatch(src, /try_files \$uri \$uri\/ \/index\.html;/, `${conf}: must not keep the broken /index.html SPA fallback`);
+    }
+  });
+
+  it('serves the branded 500 page on document routes only, never on /api/', () => {
+    // A server-level error_page is inherited by every location. On /api/ it
+    // swapped nginx's 502 for the HTML page and dropped the CORS header the
+    // template's /api/ sets with `always` (reproduced in nginx:alpine on #10290).
+    for (const conf of ['docker/nginx.conf', 'docker/nginx.conf.template']) {
+      const src = readFileSync(resolve(__dirname, `../${conf}`), 'utf-8');
+      const blocks = [...src.matchAll(/^ {4}location ([^{]+)\{\n([\s\S]*?)^ {4}\}/gm)]
+        .map(([, location, body]) => ({ location: location.trim(), body }));
+      const outsideLocations = src.replace(/^ {4}location [^{]+\{\n[\s\S]*?^ {4}\}/gm, '');
+      assert.doesNotMatch(outsideLocations, /\berror_page\b/, `${conf}: error_page must not sit at server level, where /api/ inherits it`);
+      const root = blocks.find((b) => b.location === '/');
+      assert.ok(root, `${conf}: must define location /`);
+      assert.match(root.body, /^\s*error_page 500 502 503 504 \/500\.html;/m, `${conf}: location / must serve the branded 500 page`);
+      for (const { location, body } of blocks.filter((b) => b.location.includes('/api'))) {
+        assert.doesNotMatch(body, /\berror_page\b/, `${conf}: ${location} must keep upstream and nginx error bodies`);
+      }
     }
   });
 });

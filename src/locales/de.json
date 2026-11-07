@@ -1314,6 +1314,7 @@
       "shareStory": "Story teilen",
       "printPdf": "Drucken / PDF",
       "exportData": "Daten exportieren",
+      "moreActions": "Weitere Aktionen",
       "shareLink": "Link teilen"
     },
     "relatedAssets": {
@@ -1380,7 +1381,8 @@
       "skipToStart": "Zum Anfang springen",
       "previous": "Zurück",
       "next": "Weiter",
-      "skipToEnd": "Zum Ende springen"
+      "skipToEnd": "Zum Ende springen",
+      "storageUnavailable": "Die Wiedergabe ist nicht verfügbar, da dieser Browser die Website-Speicherung blockiert. Erlauben Sie Website-Daten für diese Website, um Snapshots zu speichern."
     },
     "stablecoins": {
       "pegHealth": "Peg-Stabilität",
@@ -4742,7 +4744,7 @@
         "category": "Naturkatastrophen",
         "purpose": "Zeigt Erdbeben, schwere Katastrophenwarnungen und aktive Erdbeobachtungsereignisse für das Lagebild.",
         "source": "USGS-Erdbeben, GDACS-Warnungen und NASA-EONET-Ereignisse, zusammengeführt im Dienst für Naturereignisse.",
-        "freshness": "Naturereignisse werden alle 3 Stunden geseedet; die Erwartung für USGS-Erdbeben ist eine Quelltaktung von etwa 5 Minuten.",
+        "freshness": "Naturereignisse werden alle 30 Minuten geseedet; die Erwartung für USGS-Erdbeben ist eine Quelltaktung von etwa 5 Minuten.",
         "confidence": "Belastbar für erkannte öffentliche Katastrophensignale; die Konfidenz hängt von der Gefahrenart und der Meldelatenz der Quelle ab.",
         "limitations": {
           "0": "GDACS-Warnungen geringer Schwere werden herausgefiltert, damit die Karte lesbar bleibt.",
@@ -4836,5 +4838,14 @@
     "happy": {
       "map": "Karte der guten Nachrichten"
     }
+  },
+  "pwaInstall": {
+    "title": "App installieren",
+    "share": "Tippen Sie in Safari auf Teilen (das Quadrat mit dem Pfeil nach oben). Öffnen Sie bei Bedarf zuerst das Menü Mehr.",
+    "add": "Wählen Sie Zum Home-Bildschirm.",
+    "confirm": "Tippen Sie auf Hinzufügen und öffnen Sie World Monitor über den Home-Bildschirm.",
+    "close": "Schließen",
+    "alertsHint": "Installieren Sie World Monitor auf dem Home-Bildschirm, um auf diesem iPhone oder iPad Warnungen zu erhalten.",
+    "how": "Installationsanleitung"
   }
 }

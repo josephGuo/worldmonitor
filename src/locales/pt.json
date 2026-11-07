@@ -513,7 +513,8 @@
       "skipToStart": "Ir para o início",
       "previous": "Anterior",
       "next": "Próximo",
-      "skipToEnd": "Ir para o fim"
+      "skipToEnd": "Ir para o fim",
+      "storageUnavailable": "A reprodução não está disponível porque este navegador está bloqueando o armazenamento do site. Permita dados do site para este site para começar a salvar snapshots."
     },
     "deckgl": {
       "views": {
@@ -767,6 +768,7 @@
       "shareStory": "Compartilhar história",
       "printPdf": "Imprimir / PDF",
       "exportData": "Exportar dados",
+      "moreActions": "Mais ações",
       "shareLink": "Partilhar ligação"
     },
     "relatedAssets": {
@@ -4763,7 +4765,7 @@
         "category": "Desastres naturais",
         "purpose": "Mostra terremotos, alertas de desastre grave e eventos ativos de observação da Terra, para a consciência situacional.",
         "source": "Terremotos do USGS, alertas GDACS e eventos NASA EONET, reunidos no serviço de eventos naturais.",
-        "freshness": "Os eventos naturais são carregados a cada 3 horas. O ritmo de origem esperado para os terremotos do USGS está documentado em cerca de 5 minutos.",
+        "freshness": "Os eventos naturais são carregados a cada 30 minutos. O ritmo de origem esperado para os terremotos do USGS está documentado em cerca de 5 minutos.",
         "confidence": "Forte para os sinais públicos de desastre que foram detectados. A confiança varia conforme o tipo de perigo e a demora do relato na origem.",
         "limitations": {
           "0": "Os alertas GDACS de baixa gravidade são filtrados para o mapa continuar legível.",
@@ -4857,5 +4859,14 @@
     "happy": {
       "map": "Mapa de Boas Notícias"
     }
+  },
+  "pwaInstall": {
+    "title": "Instalar aplicativo",
+    "share": "No Safari, toque em Compartilhar (o quadrado com uma seta para cima). Talvez seja necessário abrir primeiro o menu Mais.",
+    "add": "Escolha Adicionar à Tela de Início.",
+    "confirm": "Toque em Adicionar e abra o World Monitor pela Tela de Início.",
+    "close": "Fechar",
+    "alertsHint": "Instale o World Monitor na Tela de Início para receber alertas neste iPhone ou iPad.",
+    "how": "Como instalar"
   }
 }

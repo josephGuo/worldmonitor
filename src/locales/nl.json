@@ -512,7 +512,8 @@
       "skipToStart": "Naar het begin",
       "previous": "Vorige",
       "next": "Volgende",
-      "skipToEnd": "Naar het einde"
+      "skipToEnd": "Naar het einde",
+      "storageUnavailable": "Afspelen is niet beschikbaar omdat deze browser siteopslag blokkeert. Sta sitegegevens voor deze site toe om snapshots op te slaan."
     },
     "deckgl": {
       "views": {
@@ -766,6 +767,7 @@
       "shareStory": "Deel verhaal",
       "printPdf": "Afdrukken / PDF",
       "exportData": "Gegevens exporteren",
+      "moreActions": "Meer acties",
       "shareLink": "Link delen"
     },
     "relatedAssets": {
@@ -4742,7 +4744,7 @@
         "category": "Natuurrampen",
         "purpose": "Toont aardbevingen, zware rampwaarschuwingen en actieve aardobservatiegebeurtenissen, voor situatiebewustzijn.",
         "source": "Aardbevingen van USGS, waarschuwingen van GDACS en gebeurtenissen van NASA EONET, samengevoegd in de dienst voor natuurlijke gebeurtenissen.",
-        "freshness": "Natuurlijke gebeurtenissen worden elke 3 uur geladen. Het verwachte bronritme voor aardbevingen van USGS is gedocumenteerd op ongeveer 5 minuten.",
+        "freshness": "Natuurlijke gebeurtenissen worden elke 30 minuten geladen. Het verwachte bronritme voor aardbevingen van USGS is gedocumenteerd op ongeveer 5 minuten.",
         "confidence": "Sterk voor gedetecteerde openbare rampsignalen. De betrouwbaarheid verschilt per gevaartype en door de meldingsvertraging bij de bron.",
         "limitations": {
           "0": "GDACS-waarschuwingen van lage ernst worden weggefilterd zodat de kaart leesbaar blijft.",
@@ -4836,5 +4838,14 @@
     "happy": {
       "map": "Goed nieuws-kaart"
     }
+  },
+  "pwaInstall": {
+    "title": "App installeren",
+    "share": "Tik in Safari op Delen (het vierkant met een pijl omhoog). Mogelijk moet je eerst het menu Meer openen.",
+    "add": "Kies Zet op beginscherm.",
+    "confirm": "Tik op Voeg toe en open World Monitor vanaf je beginscherm.",
+    "close": "Sluiten",
+    "alertsHint": "Installeer World Monitor op je beginscherm om meldingen te ontvangen op deze iPhone of iPad.",
+    "how": "Installatie-instructies"
   }
 }

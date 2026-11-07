@@ -1317,6 +1317,7 @@
       "shareStory": "Condividi la storia",
       "printPdf": "Stampa/PDF",
       "exportData": "Esporta dati",
+      "moreActions": "Altre azioni",
       "shareLink": "Condividi link"
     },
     "relatedAssets": {
@@ -1383,7 +1384,8 @@
       "skipToStart": "Vai all'inizio",
       "previous": "Precedente",
       "next": "Successivo",
-      "skipToEnd": "Vai alla fine"
+      "skipToEnd": "Vai alla fine",
+      "storageUnavailable": "La riproduzione non è disponibile perché questo browser sta bloccando l'archiviazione del sito. Consenti i dati del sito per questo sito per iniziare a salvare gli snapshot."
     },
     "stablecoins": {
       "pegHealth": "Salute dell'ancoraggio",
@@ -4763,7 +4765,7 @@
         "category": "Disastri naturali",
         "purpose": "Mostra terremoti, allerte di disastro grave ed eventi attivi di osservazione della Terra, per la consapevolezza della situazione.",
         "source": "Terremoti USGS, allerte GDACS ed eventi NASA EONET, fusi nel servizio degli eventi naturali.",
-        "freshness": "Gli eventi naturali sono caricati ogni 3 ore. Il ritmo di origine atteso per i terremoti USGS è documentato a circa 5 minuti.",
+        "freshness": "Gli eventi naturali sono caricati ogni 30 minuti. Il ritmo di origine atteso per i terremoti USGS è documentato a circa 5 minuti.",
         "confidence": "Solido per i segnali pubblici di disastro che sono stati rilevati. L'attendibilità varia secondo il tipo di pericolo e il ritardo della segnalazione a monte.",
         "limitations": {
           "0": "Le allerte GDACS di bassa gravità sono filtrate per tenere la mappa leggibile.",
@@ -4857,5 +4859,14 @@
     "happy": {
       "map": "Mappa Buone Notizie"
     }
+  },
+  "pwaInstall": {
+    "title": "Installa app",
+    "share": "In Safari, tocca Condividi (il quadrato con una freccia verso l'alto). Potrebbe essere necessario aprire prima il menu Altro.",
+    "add": "Scegli Aggiungi alla schermata Home.",
+    "confirm": "Tocca Aggiungi, poi apri World Monitor dalla schermata Home.",
+    "close": "Chiudi",
+    "alertsHint": "Installa World Monitor sulla schermata Home per ricevere avvisi su questo iPhone o iPad.",
+    "how": "Come installare"
   }
 }

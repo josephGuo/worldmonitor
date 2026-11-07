@@ -1244,7 +1244,8 @@
       "skipToStart": "Preskoči na početak",
       "previous": "Prethodno",
       "next": "Sljedeće",
-      "skipToEnd": "Preskoči na kraj"
+      "skipToEnd": "Preskoči na kraj",
+      "storageUnavailable": "Reprodukcija nije dostupna jer ovaj preglednik blokira pohranu podataka web-mjesta. Dopustite podatke za ovu stranicu kako biste počeli spremati snimke stanja."
     },
     "pizzint": {
       "indexSource": "Indeks: World Monitor",
@@ -1355,6 +1356,7 @@
       }
     },
     "countryBrief": {
+      "moreActions": "Više radnji",
       "shareLink": "Dijeli vezu",
       "shareStory": "Dijeli priču",
       "printPdf": "Ispiši / PDF",
@@ -4774,7 +4776,7 @@
         "category": "Prirodne katastrofe",
         "purpose": "Prikazuje potrese, teška upozorenja na katastrofe i aktivne događaje promatranja Zemlje za pregled situacije.",
         "source": "Potresi USGS, upozorenja GDACS i događaji NASA EONET, spojeni u usluzi prirodnih događaja.",
-        "freshness": "Prirodni događaji pune se svaka 3 sata. Za potrese USGS opisano očekivanje je ritam izvora otprilike svakih 5 minuta.",
+        "freshness": "Prirodni događaji pune se svakih 30 minuta. Za potrese USGS opisano očekivanje je ritam izvora otprilike svakih 5 minuta.",
         "confidence": "Jako za otkrivene javne signale katastrofa. Pouzdanost ovisi o vrsti opasnosti i kašnjenju prijave na izvoru.",
         "limitations": {
           "0": "Upozorenja GDACS niske ozbiljnosti filtriraju se da karta ostane čitljiva.",
@@ -4868,5 +4870,14 @@
     "happy": {
       "map": "Mapa dobrih vijesti"
     }
+  },
+  "pwaInstall": {
+    "title": "Instaliraj aplikaciju",
+    "share": "U Safariju dodirnite Dijeli (kvadrat sa strelicom prema gore). Možda prvo trebate otvoriti izbornik Više.",
+    "add": "Odaberite Dodaj na početni zaslon.",
+    "confirm": "Dodirnite Dodaj i otvorite World Monitor s početnog zaslona.",
+    "close": "Zatvori",
+    "alertsHint": "Instalirajte World Monitor na početni zaslon kako biste primali upozorenja na ovom iPhoneu ili iPadu.",
+    "how": "Kako instalirati"
   }
 }

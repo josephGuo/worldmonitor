@@ -1282,7 +1282,8 @@
       "skipToStart": "Skip to start",
       "previous": "Previous",
       "next": "Next",
-      "skipToEnd": "Skip to end"
+      "skipToEnd": "Skip to end",
+      "storageUnavailable": "Playback is unavailable because this browser is blocking site storage. Allow site data for this site to start saving snapshots."
     },
     "pizzint": {
       "indexSource": "Index: World Monitor",
@@ -1394,6 +1395,7 @@
     },
     "countryBrief": {
       "shareLink": "Share link",
+      "moreActions": "More actions",
       "shareStory": "Share story",
       "printPdf": "Print / PDF",
       "exportData": "Export data"
@@ -4765,7 +4767,7 @@
         "category": "Natural Disasters",
         "purpose": "Shows earthquakes, severe disaster alerts, and active Earth-observation events for situational awareness.",
         "source": "USGS earthquakes, GDACS alerts, and NASA EONET events merged into the natural events service.",
-        "freshness": "Natural events are seeded every 3 hours; USGS earthquake expectations are documented at roughly 5-minute source cadence.",
+        "freshness": "Natural events are seeded every 30 minutes; USGS earthquake expectations are documented at roughly 5-minute source cadence.",
         "confidence": "Strong for detected public disaster signals; confidence varies by hazard type and upstream reporting latency.",
         "limitations": {
           "0": "Low-severity GDACS alerts are filtered out to keep the map readable.",
@@ -4835,5 +4837,14 @@
     "reportedClaims": "Publisher reports. Claims may remain under investigation.",
     "occurred": "Incident",
     "reported": "Published"
+  },
+  "pwaInstall": {
+    "title": "Install app",
+    "share": "In Safari, tap Share (the square with an upward arrow). You may need to open the More menu first.",
+    "add": "Choose Add to Home Screen.",
+    "confirm": "Tap Add, then open World Monitor from your Home Screen.",
+    "close": "Close",
+    "alertsHint": "Install World Monitor to your Home Screen to get alerts on this iPhone or iPad.",
+    "how": "How to install"
   }
 }

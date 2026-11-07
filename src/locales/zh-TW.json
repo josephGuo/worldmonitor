@@ -1091,7 +1091,8 @@
       "skipToStart": "跳到開頭",
       "previous": "上一個",
       "next": "下一個",
-      "skipToEnd": "跳到結尾"
+      "skipToEnd": "跳到結尾",
+      "storageUnavailable": "回放功能不可用，因為瀏覽器正在阻止網站儲存。請允許此網站的網站資料以開始儲存快照。"
     },
     "pizzint": {
       "indexSource": "指數：World Monitor",
@@ -1202,6 +1203,7 @@
       "emojiKeyNaval": "海軍資產"
     },
     "countryBrief": {
+      "moreActions": "更多操作",
       "shareLink": "分享連結",
       "shareStory": "分享報道",
       "printPdf": "列印 / PDF",
@@ -4721,7 +4723,7 @@
         "category": "自然災害",
         "purpose": "顯示地震、嚴重災害警報和仍在持續的地球觀測事件，用於掌握態勢。",
         "source": "USGS地震、GDACS警報和NASA EONET事件，合併進自然事件服務。",
-        "freshness": "自然事件每3小時寫入一次種子。USGS地震的預期在文件中約為5分鐘的來源節奏。",
+        "freshness": "自然事件每30分鐘寫入一次種子。USGS地震的預期在文件中約為5分鐘的來源節奏。",
         "confidence": "對已探測到的公開災害訊號較強。置信度因災害型別和上游報告延遲而不同。",
         "limitations": {
           "0": "為保持地圖可讀，低嚴重程度的GDACS警報會被濾除。",
@@ -4815,5 +4817,14 @@
     "happy": {
       "map": "好訊息地圖"
     }
+  },
+  "pwaInstall": {
+    "title": "安裝應用",
+    "share": "在 Safari 中輕點分享（帶向上箭頭的方框）。你可能需要先開啟更多選單。",
+    "add": "選擇新增到主螢幕。",
+    "confirm": "輕點新增，然後從主螢幕開啟 World Monitor。",
+    "close": "關閉",
+    "alertsHint": "將 World Monitor 安裝到主螢幕，以便在此 iPhone 或 iPad 上接收提醒。",
+    "how": "如何安裝"
   }
 }

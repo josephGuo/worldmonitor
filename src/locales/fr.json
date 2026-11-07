@@ -1045,7 +1045,8 @@
       "skipToStart": "Aller au début",
       "previous": "Précédent",
       "next": "Suivant",
-      "skipToEnd": "Aller à la fin"
+      "skipToEnd": "Aller à la fin",
+      "storageUnavailable": "La lecture est indisponible car ce navigateur bloque le stockage des données du site. Autorisez les données du site pour ce site pour commencer à enregistrer les instantanés."
     },
     "pizzint": {
       "indexSource": "Indice : World Monitor",
@@ -1159,6 +1160,7 @@
       "shareStory": "Partager l'article",
       "printPdf": "Imprimer / PDF",
       "exportData": "Exporter les données",
+      "moreActions": "Autres actions",
       "shareLink": "Partager le lien"
     },
     "relatedAssets": {
@@ -4763,7 +4765,7 @@
         "category": "Catastrophes naturelles",
         "purpose": "Affiche les séismes, les alertes de catastrophe grave et les événements actifs d'observation de la Terre, pour la conscience de situation.",
         "source": "Séismes USGS, alertes GDACS et événements NASA EONET, fusionnés dans le service des événements naturels.",
-        "freshness": "Les événements naturels sont alimentés toutes les 3 heures. Le rythme source attendu pour les séismes USGS est documenté à environ 5 minutes.",
+        "freshness": "Les événements naturels sont alimentés toutes les 30 minutes. Le rythme source attendu pour les séismes USGS est documenté à environ 5 minutes.",
         "confidence": "Solide pour les signaux publics de catastrophe qui ont été détectés. La confiance varie selon le type d'aléa et le délai de signalement en amont.",
         "limitations": {
           "0": "Les alertes GDACS de faible gravité sont filtrées pour garder la carte lisible.",
@@ -4857,5 +4859,14 @@
     "happy": {
       "map": "Carte des bonnes nouvelles"
     }
+  },
+  "pwaInstall": {
+    "title": "Installer l'application",
+    "share": "Dans Safari, touchez Partager (le carré avec une flèche vers le haut). Vous devrez peut-être d'abord ouvrir le menu Plus.",
+    "add": "Choisissez Sur l'écran d'accueil.",
+    "confirm": "Touchez Ajouter, puis ouvrez World Monitor depuis l'écran d'accueil.",
+    "close": "Fermer",
+    "alertsHint": "Installez World Monitor sur votre écran d'accueil pour recevoir des alertes sur cet iPhone ou iPad.",
+    "how": "Comment installer"
   }
 }

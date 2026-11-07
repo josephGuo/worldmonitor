@@ -132,7 +132,7 @@ Pro 订阅者（以及不愿粘贴 key 的 API Starter+ 用户）可通过其已
    https://worldmonitor.app/mcp
    ```
 
-   这是唯一的产品 MCP 传输端点。已列出的生产别名（`www`、`api` 以及各仪表盘子域）不是额外的服务器。这些主机上普通 GET/HEAD `/mcp` 与 `/api/mcp` 会 308 到 `https://worldmonitor.app/mcp`；普通 GET/HEAD `/.well-known/mcp` 与 `/.well-known/mcp.json` 会 308 到 `https://worldmonitor.app/.well-known/mcp` 与 `https://worldmonitor.app/.well-known/mcp.json`。查询字符串不会转发。传输层 POST/SSE/replay 会收到 HTTP 410，JSON-RPC `-32000` 提示客户端改用 `https://worldmonitor.app/mcp`。
+   这是唯一的产品 MCP 传输端点。已列出的生产别名（`www` 以及各仪表盘子域）不是额外的服务器。这些主机上普通 GET/HEAD `/mcp` 与 `/api/mcp` 会 308 到 `https://worldmonitor.app/mcp`；普通 GET/HEAD `/.well-known/mcp` 与 `/.well-known/mcp.json` 会 308 到 `https://worldmonitor.app/.well-known/mcp` 与 `https://worldmonitor.app/.well-known/mcp.json`。查询字符串不会转发。传输层 POST/SSE/replay 会收到 HTTP 410，JSON-RPC `-32000` 提示客户端改用 `https://worldmonitor.app/mcp`。`api` 主机继续为已按该主机配置的连接器提供传输层，其 `/.well-known/mcp` 卡片仍会重定向；新客户端请配置 `https://worldmonitor.app/mcp`。
 
 2. **在授权页点击 "Sign in with WorldMonitor Pro"**。这是默认 CTA。你会跳转到 `worldmonitor.app/mcp-grant`（受 Clerk 保护 —— 如需登录请先登录），然后回到 `api.worldmonitor.app/oauth/authorize-pro`，最后跳转到你客户端的 redirect。
 
@@ -161,7 +161,7 @@ Pro 订阅者（以及不愿粘贴 key 的 API Starter+ 用户）可通过其已
 - 登录[仪表板](https://www.worldmonitor.app/dashboard)。选择 **Settings → MCP Clients** 管理已连接的客户端。
 - 可查看每个 token 的实时 `clientName`（例如 "Claude"、"Cursor"）、`lastUsedAt` 和 `createdAt`。
 - 撤销会在下一次 MCP 请求时生效（无正向缓存）。
-- 每个用户最多 **5 个活跃 token**。超出上限的授权会静默撤销**创建时间最早**的现有 token（按创建顺序，而非最近使用时间；并发授权下的执行是最终一致的）。
+- 每个用户最多 **5 个活跃 token**。超出上限的授权会静默撤销**最久未使用**的现有 token（按最近使用时间；从未使用的按创建时间；并发授权下的执行是最终一致的）。
 
 ## 套餐与限制
 
@@ -191,6 +191,8 @@ WorldMonitor 还会在 Settings 中显示当前的 MCP 套餐限额通知，并�
 超过任何限制都会返回 HTTP `429`，并附带 `Retry-After` 头。
 
 ## 客户端配置
+
+Claude、Cursor 与 VS Code 可一键连接：[MCP 快速入门](/zh/mcp-quickstart#一键连接)中的按钮会打开对应应用并预先填好 World Monitor，另有 Claude Code、Codex 与 Gemini CLI 的单行命令。已登录用户也可以在仪表盘的 **Settings → AI Agents** 中找到同样的按钮。
 
 在 [MCP 快速入门](/zh/mcp-quickstart) 中可以找到 Claude、ChatGPT、Codex、Claude Code 与 Cursor 的分步配置与截图。
 
