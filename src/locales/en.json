@@ -979,7 +979,7 @@
   "components": {
     "webcams": {
       "paused": "Webcams paused",
-      "play": "Play",
+      "play": "Watch live",
       "previewStatus": "Ready to play",
       "connecting": "Connecting…",
       "unverified": "Can’t confirm this stream is live",
@@ -2720,8 +2720,8 @@
     },
     "proBanner": {
       "badge": "PRO",
-      "headline": "Pro is launched",
-      "tagline": "More Signal, Less Noise. More AI Briefings. A Geopolitical & Equity Researcher just for you.",
+      "headline": "Daily AI briefs by email or Slack",
+      "tagline": "plus WM Analyst, alert rules and MCP for Claude",
       "cta": "Upgrade to Pro →",
       "dismiss": "Dismiss"
     },

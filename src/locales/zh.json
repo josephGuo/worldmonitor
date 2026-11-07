@@ -869,7 +869,7 @@
         "asia": "亚洲",
         "space": "太空"
       },
-      "play": "播放",
+      "play": "观看实时直播",
       "previewStatus": "准备播放",
       "connecting": "正在连接…",
       "unverified": "无法确认此直播流是否实时",
@@ -2562,8 +2562,8 @@
     },
     "proBanner": {
       "badge": "PRO",
-      "headline": "Pro已上线",
-      "tagline": "更多信号，更少噪音。更多AI简报。专属于您的地缘政治和股票研究员。",
+      "headline": "每日AI情报摘要，通过邮件或Slack接收",
+      "tagline": "另含WM Analyst、告警规则和适用于Claude的MCP",
       "cta": "升级到Pro →",
       "dismiss": "关闭"
     },

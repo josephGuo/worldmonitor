@@ -941,7 +941,7 @@
         "asia": "ÁZSIA",
         "space": "VILÁGŰR"
       },
-      "play": "Lejátszás",
+      "play": "Nézd élőben",
       "previewStatus": "Készen áll a lejátszásra",
       "connecting": "Csatlakozás…",
       "unverified": "Nem tudjuk megerősíteni, hogy ez az élő közvetítés",
@@ -2641,8 +2641,8 @@
     },
     "proBanner": {
       "badge": "PRO",
-      "headline": "Pro elindult",
-      "tagline": "Több jel, kevesebb zaj. Több AI Brief. Egy Geopolitikai & Részvény Kutató, csak neked.",
+      "headline": "Napi AI-összefoglalók e-mailben vagy Slacken",
+      "tagline": "plusz WM Analyst, riasztási szabályok és MCP a Claudehez",
       "cta": "Frissítés Pro-ra →",
       "dismiss": "Eltüntetés"
     },

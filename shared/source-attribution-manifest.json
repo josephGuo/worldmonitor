@@ -1307,6 +1307,9 @@
           "path": "scripts/seed-economic-calendar.mjs"
         },
         {
+          "path": "scripts/seed-oecd-lt-rates.mjs"
+        },
+        {
           "path": "scripts/seed-us-cpi.mjs"
         },
         {
@@ -6873,10 +6876,7 @@
       "status": "terms-review",
       "references": [
         {
-          "path": "server/worldmonitor/infrastructure/v1/get-cable-health.ts"
-        },
-        {
-          "path": "server/worldmonitor/maritime/v1/list-navigational-warnings.ts"
+          "path": "server/_shared/nga-broadcast-warnings.ts"
         }
       ]
     },

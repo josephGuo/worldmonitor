@@ -20,38 +20,8 @@
   "wired": {
     "asFeaturedIn": "Zmíněno v"
   },
-  "twoPath": {
-    "proTitle": "World Monitor Pro",
-    "proDesc": "Váš AI analytik. Osobní zpravodajský stůl. Platforma, kterou si můžete přizpůsobit.",
-    "proF1": "WM Analyst chat — dotazování živých služeb přirozeným jazykem",
-    "proF2": "AI digest — denně, dvakrát denně nebo týdně — na Slack, Discord, Telegram, E-mail nebo webhook",
-    "proF3": "Custom Widget Builder — HTML/CSS/JS s úpravami pomocí AI",
-    "proF4": "MCP konektory — připojte WorldMonitor ke Claude, GPT nebo vlastním LLM",
-    "proF5": "Equity research, analýza akcií a backtesting",
-    "proF6": "Vyhledávání letů a porovnání cen",
-    "proF7": "Engine pravidel alertů — vlastní spouštěče, tiché hodiny, kanály šifrované AES-256",
-    "proF8": "Tržní watchlist, sledování makro a centrálních bank",
-    "proF9": "Důsledky na trhu AI a regionální zpravodajství",
-    "choosePlan": "Vyberte plán",
-    "entTitle": "World Monitor Enterprise",
-    "entDesc": "Pro týmy, které potřebují sdílený monitoring, API přístup, možnosti nasazení, TV aplikace a přímou podporu.",
-    "entF1": "Vše z Pro, navíc:",
-    "entF2": "Satelitní snímky live a SAR",
-    "entF3": "AI agenti s investor personami a MCP",
-    "entF4": "Mapované infrastrukturní prvky",
-    "entF5": "Datové konektory (Splunk, Snowflake, Sentinel...)",
-    "entF6": "REST API + webhooky + hromadný export",
-    "entF7": "Týmové workspace s SSO/MFA/RBAC",
-    "entF8": "White-label a vkládané panely",
-    "entF9": "Android TV aplikace pro SOC stěny a trading floory",
-    "entF10": "Cloud, on-premises nebo air-gapped nasazení",
-    "entF11": "Dedikovaný onboarding a podpora",
-    "entCta": "Kontaktujte prodej",
-    "freeF2": "Kurované kanály, atribuované zdroje a mapové vrstvy",
-    "proF10": "Historické vyhledávání v paměti, časové osy a hledání podobných událostí"
-  },
   "whyUpgrade": {
-    "title": "Proč upgradovat na World Monitor Pro?",
+    "title": "Dozvězte se o tom dřív než titulky",
     "noiseTitle": "Vězte první",
     "noiseDesc": "AIS anomálie → skok Brent → váš Slack za méně než minutu. Signál, ne titulky.",
     "fasterTitle": "Zeptejte se na cokoli",
@@ -142,7 +112,7 @@
   },
   "proShowcase": {
     "proTier": "PRO ÚROVEŇ",
-    "title": "Co dělá analytik World Monitor AI?",
+    "title": "AI analytik pro akcie, makroekonomii a geopolitiku",
     "subtitle": "Dashboard zdarma vám ukazuje svět. Pro vám dává analytika k dotazování, digest k odběru a primitivy ke stavbě. Akcie, makro, geopolitické riziko — a souvislosti mezi nimi.",
     "equityResearch": "Equity research",
     "equityResearchDesc": "Globální analýza akcií s vizualizací finančních dat, cenových cílů analytiků a oceňovacích metrik. Sledujte, co hýbe trhy.",
@@ -303,11 +273,11 @@
     "q7": "Mohu stále používat své vlastní API klíče?",
     "a7": "Ano. Vlastní klíče vždy fungují. Pro jednoduše znamená, že se nemusíte registrovat pro samostatné služby.",
     "q8": "Co je MCP?",
-    "a8": "MCP umožňuje AI agentům — Claude, GPT, vlastním LLM — používat WorldMonitor jako nástroj, dotazování registrovaných služeb. Zahrnuto v Pro. Enterprise přidává privátní MCP servery a vlastní nasazení.",
+    "a8": "MCP umožňuje AI agentům — Claude, GPT, vlastním LLM — používat World Monitor jako nástroj, dotazování registrovaných služeb. Zahrnuto v Pro. Enterprise přidává privátní MCP servery a vlastní nasazení.",
     "q9": "Mohu stavět vlastní panely?",
     "a9": "Ano. Pro obsahuje Custom Widget Builder — stavte panely z HTML, CSS a JavaScriptu s úpravami pomocí AI.",
-    "q10": "Mohu připojit Claude nebo GPT k WorldMonitor?",
-    "a10": "Ano. MCP je v ceně Pro — připojte WorldMonitor ke Claude, GPT nebo jakémukoliv LLM kompatibilnímu s MCP jako živý nástroj.",
+    "q10": "Mohu připojit Claude nebo GPT k World Monitor?",
+    "a10": "Ano. MCP je v ceně Pro — připojte World Monitor ke Claude, GPT nebo jakémukoliv LLM kompatibilnímu s MCP jako živý nástroj.",
     "q11": "Jak personalizovaný je digest?",
     "a11": "Zvolte si svůj rytmus — denně, dvakrát denně nebo týdně. Přehodnocujeme každý sledovaný příspěvek podle vašich pravidel upozornění a sledovacího seznamu, deduplikujeme napříč zdroji a posíláme až 30 řazených položek s AI vyhodnocením a signály k monitorování zapsanými do vašeho kontextu. Upozornění v reálném čase jsou také dostupná pro kritické události.",
     "q12": "Jaká je frekvence obnovování?",
@@ -395,7 +365,7 @@
         "description": "Vlastní řešení pro organizace",
         "features": [
           "Vše z Pro + API",
-          "Neomezené API požadavky",
+          "10 000 API požadavků za den, více dle smlouvy",
           "Vyhrazená podpora",
           "Vlastní integrace",
           "Záruka SLA",
@@ -409,7 +379,7 @@
         "cta": "Kontaktujte prodej"
       },
       "apiBusiness": {
-        "description": "Spusťte vlastní produkt na datech WorldMonitoru",
+        "description": "Spusťte vlastní produkt na datech World Monitoru",
         "features": [
           "Vše z API Starter",
           "Práva na redistribuci R1–R3 pro produkty určené zákazníkům",
@@ -481,7 +451,7 @@
       "screenshotAlt": "World Monitor live zpravodajský dashboard — globální mapa s vrstvami konfliktů, lodní dopravy a trhů",
       "plateNote": "Zachyceno z živé mapy — kliknutím ji otevřete",
       "trustBuild": "Postavte na tom:",
-      "positioningLink": "WorldMonitor není open-source Palantir",
+      "positioningLink": "World Monitor není open-source Palantir",
       "asOf": "K {{date}}",
       "whatIsTitle": "Co je World Monitor?",
       "whatIsBody": "World Monitor je bezplatný ($0), open-source (AGPL-3.0) dashboard, který používá 2M+ lidí. Streamuje {{feeds}} zpravodajských a OSINT zdrojů z {{providers}} atribuovaných poskytovatelů na jednu živou mapu světa s {{mapLayers}} typy mapových vrstev, která pokrývá geopolitiku, trhy, námořní dopravu, letectví a kybernetiku. Koreluje je tak, aby se sbíhající se události objevily dříve než se dostanou na titulky. Každá údaj má uvedený zdroj a každá metoda je zdokumentovaná.",
@@ -739,5 +709,8 @@
     "m6": "Mapa průmyslové aktivity ze satelitních dat NO2 ze Sentinel-5P",
     "m7": "Kapitálové toky pro 230 ekonomik a libovolnou dvojici zemí, pro AI agenty a API",
     "m8": "Dashboard v terminálu a přibližovatelná CLI mapa — brew install worldmonitor"
+  },
+  "sourceMarquee": {
+    "label": "Zdroje, které sledujeme"
   }
 }
