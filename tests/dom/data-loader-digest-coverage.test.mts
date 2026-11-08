@@ -47,6 +47,7 @@ interface DigestLoaderInternals {
   loadPersistedDigest(key?: string): Promise<ListFeedDigestResponse | null>;
   persistDigest(key: string, data: ListFeedDigestResponse): void;
   tryFetchDigest(): Promise<SelectedNewsDigest | null>;
+  fetchEditionDigest(edition: string, language: string): Promise<ListFeedDigestResponse | null>;
   beginNewsLoad(): number;
   commitNewsFreshness(generation: number, servedStale: boolean): boolean;
   canNotifyForCommittedNews(generation: number, servedStale: boolean): boolean;
@@ -293,6 +294,43 @@ describe('digest coverage follows the selected browser response', () => {
       expect(events[0]!.ctx.level).toBe('warning');
       expect(events[0]!.ctx.tags).toMatchObject({ 'digest.failure': 'timeout', 'digest.fallback': 'retained' });
       expect(events[0]!.ctx.fingerprint).toEqual(['news-digest-fetch', 'timeout']);
+    });
+
+    it('waits as long as the server is allowed to take (Sentry WORLDMONITOR-1D4)', async () => {
+      // The server answers a cold rebuild by RESPONSE_DEADLINE_MS. A shorter
+      // client deadline throws away digests the server was still delivering:
+      // in production, 8.3-8.7 s server responses landed just after the
+      // browser's 8 s deadline, and users with no saved copy saw empty panels.
+      const { __testing__ } = await import('../../server/worldmonitor/news/v1/list-feed-digest');
+      const { internal } = await makeLoader();
+      internal.digestCacheKey = () => 'digest:current';
+      const timeout = vi.spyOn(AbortSignal, 'timeout');
+      vi.mocked(globalThis.fetch).mockImplementation(async () => new Response(JSON.stringify(digest('complete', 3))));
+
+      // Each method mints its own deadline before publicRpcFetch adds its 30 s
+      // transport cap, so the FIRST timeout of each request is the caller's.
+      // Checking per method keeps the transport cap from standing in for a
+      // deadline a method stopped setting.
+      const callerDeadline = async (request: () => Promise<unknown>): Promise<number[]> => {
+        timeout.mockClear();
+        expect(await request()).not.toBeNull();
+        return timeout.mock.calls.map(([ms]) => ms);
+      };
+      let home: number[];
+      let edition: number[];
+      try {
+        home = await callerDeadline(() => internal.tryFetchDigest());
+        edition = await callerDeadline(() => internal.fetchEditionDigest('tech', 'en'));
+      } finally {
+        timeout.mockRestore();
+      }
+
+      for (const calls of [home, edition]) {
+        expect(calls).toHaveLength(2);
+        // The request aborts at the shorter of the two, so both must outlast the server.
+        expect(calls[0]).toBeGreaterThan(__testing__.RESPONSE_DEADLINE_MS);
+        expect(calls[1]).toBeGreaterThan(__testing__.RESPONSE_DEADLINE_MS);
+      }
     });
 
     it('counts a WebKit deadline abort as a timeout, not "other" (Sentry WORLDMONITOR-1D5)', async () => {
