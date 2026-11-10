@@ -1634,6 +1634,10 @@
       "infoTooltip": "<strong>Technologické události</strong> Nadcházející a nedávné technologické události: konference, uvedení produktů, regulační slyšení a hovory o výsledcích. Agregováno z oficiálních kalendářů a průmyslových zdrojů."
     },
     "techReadiness": {
+      "ranked": "V žebříčku",
+      "unranked": "Mimo žebříček",
+      "coverageRequirement": "Minimální pokrytí pro zařazení",
+      "coverageLabel": "Dostupné ukazatele",
       "internetUsers": "Uživatelé internetu",
       "mobileSubscriptions": "Mobilní předplatná",
       "rdSpending": "Výdaje na výzkum a vývoj",
@@ -1649,10 +1653,16 @@
       "dataPreparing": "Aktualizace dat technologické připravenosti — zobrazí se krátce."
     },
     "populationExposure": {
-      "totalAffected": "Celkem zasaženo",
-      "affectedCount": "Zasaženo: {{count}}",
-      "radiusKm": "Rádius {{km}} km",
-      "infoTooltip": "<strong>Odhady expozice obyvatelstva</strong> Odhadovaný počet obyvatel v okruhu dopadu události. Na základě dat hustoty zalidnění zemí z WorldPop.<ul><li>Konflikt: rádius 50 km</li><li>Zemětřesení: rádius 100 km</li><li>Záplavy: rádius 100 km</li><li>Požár: rádius 30 km</li></ul>"
+      "estimateWithin": "Přibližně {{count}} lidí v okruhu {{km}} km",
+      "method": "Odhady vycházejí z průměrné hustoty zalidnění dané země.",
+      "empty": "Žádné vhodné lokality událostí",
+      "infoTooltip": "Zobrazují se pouze přesně lokalizované události v zemích s údaji o hustotě zalidnění. Odhadované oblasti se mohou překrývat.",
+      "eventCount_one": "{{count}} událost",
+      "eventCount_few": "{{count}} události",
+      "eventCount_many": "{{count}} událostí",
+      "eventCount_other": "{{count}} událostí",
+      "coverageShown": "Zobrazené události: {{shown}} z {{total}}",
+      "coverageLeftOut": "Nezobrazeno: {{imprecise}} bez přesné polohy, {{noEstimate}} v zemích bez údajů o hustotě, {{otherPlaces}} za prvními 10 místy každého zdroje"
     },
     "securityAdvisories": {
       "loading": "Načítání cestovních varování...",
@@ -2393,7 +2403,15 @@
       "noData": "Údaje o energii jsou dočasně nedostupné - bude se opakovat",
       "liveTape": "Live páska",
       "liveTapeSource": "Tržní nabídky",
-      "infoTooltip": "<strong>Energetický komplex</strong> Fyzikální a obchodovatelné energetické signály na jednom místě:<ul><li><strong>Metriky US Energy Information Administration</strong>: WTI, Brent, americká produkce a zásoby</li><li><strong>Živá páska</strong>: Obchodovatelné energetické ceny jako surová ropa a zemní plyn</li><li><strong>Účel</strong>: Oddělení fyzického energetického stresu od širších maker a komoditních panelů</li></ul>"
+      "infoTooltip": "<strong>Energetický komplex</strong> Fyzikální a obchodovatelné energetické signály na jednom místě:<ul><li><strong>Metriky US Energy Information Administration</strong>: WTI, Brent, americká produkce a zásoby</li><li><strong>Živá páska</strong>: Obchodovatelné energetické ceny jako surová ropa a zemní plyn</li><li><strong>Účel</strong>: Oddělení fyzického energetického stresu od širších maker a komoditních panelů</li></ul>",
+      "marketTape": "Tržní kotace",
+      "futures": "Termínové kontrakty",
+      "dailySpot": "Denní spotová cena",
+      "eiaWeeklySpot": "Spotová cena EIA · týdenní průměr",
+      "weekEnding": "Týden končící {{date}}",
+      "unknownPriceDate": "Čas pozorování není k dispozici",
+      "unknownQuoteSource": "Zdroj kotace není k dispozici",
+      "stalePrice": "Zastaralé"
     },
     "consumerPrices": {
       "tabs": {
@@ -2732,7 +2750,8 @@
       "sections": {
         "countries": "Země s sankcemi",
         "entries": "Nedávné designace",
-        "programs": "Programy"
+        "programs": "Programy",
+        "flagRegistries": "Registry vlajek plavidel a letadel"
       },
       "empty": {
         "countries": "Žádná přiřazení zemí není dostupná.",
@@ -4523,7 +4542,15 @@
     "renameHint": "{{name}} — dvojitým kliknutím přejmenujete",
     "deleteTab": "Smazat kartu",
     "deleteTabAria": "Smazat kartu {{name}}",
-    "tabNameAria": "Název karty"
+    "tabNameAria": "Název karty",
+    "addTabTitleSaved": "Nová karta (obsahuje panely, které jste uložili)",
+    "newTabOptions": "Možnosti nové karty",
+    "newTabStartsDefault": "Nové karty začínají s výchozími panely.",
+    "newTabStartsSaved": "Nové karty začínají s panely, které jste uložili.",
+    "newTabOptionsHint": "Karty, které již máte, se nemění.",
+    "useThisTabPanels": "Použít panely této karty",
+    "useDefaultPanels": "Použít výchozí panely",
+    "newTabPanelsNotSaved": "Nepodařilo se uložit. Tento prohlížeč blokuje ukládání dat na webu."
   },
   "theaterPresets": {
     "label": "Balíčky pokrytí",

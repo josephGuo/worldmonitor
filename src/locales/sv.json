@@ -921,6 +921,10 @@
       "infoTooltip": "<strong>Teknikevenemang</strong> Kommande och senaste teknikevenemang: konferenser, produktlanseringar, regulatoriska utfrågningar och resultatsamtal. Samlade från officiella evenemangskalendrar och branschkällor."
     },
     "techReadiness": {
+      "ranked": "Rankade",
+      "unranked": "Orankade",
+      "coverageRequirement": "Minsta täckning för rankning",
+      "coverageLabel": "Tillgängliga indikatorer",
       "internetUsers": "Internetanvändare",
       "mobileSubscriptions": "Mobilabonnemang",
       "rdSpending": "Forskning- och utvecklingskostnader",
@@ -1138,10 +1142,14 @@
       "recentMissing": "Ingen data denna gång från {{countries}}; deras filer misslyckades att läsas in, vilket inte betyder noll förskjutning."
     },
     "populationExposure": {
-      "totalAffected": "Totalt påverkad",
-      "affectedCount": "{{count}} påverkas",
-      "radiusKm": "{{km}}km radie",
-      "infoTooltip": "<strong>Befolkningsexponeringsuppskattningar</strong> Uppskattad population inom händelsens påverkansradie. Baserat på WorldPop-landstäthetsdata.<ul><li>Konflikt: 50 km radie</li><li>Jordbävning: 100 km radie</li><li>Översvämning: 100 km radie</li><li>Voldbrand: 5__4 km radie"
+      "estimateWithin": "Cirka {{count}} personer inom en radie på {{km}} km",
+      "method": "Uppskattningarna bygger på landets genomsnittliga befolkningstäthet.",
+      "empty": "Inga händelseplatser uppfyller kraven",
+      "infoTooltip": "Endast händelser med en exakt plats i länder med uppgifter om befolkningstäthet visas. De uppskattade områdena kan överlappa.",
+      "eventCount_one": "{{count}} händelse",
+      "eventCount_other": "{{count}} händelser",
+      "coverageShown": "Visade händelser: {{shown}} av {{total}}",
+      "coverageLeftOut": "Visas inte: {{imprecise}} utan exakt plats, {{noEstimate}} i länder utan täthetsdata, {{otherPlaces}} efter de första 10 platserna per källa"
     },
     "countryTimeline": {
       "now": "nu",
@@ -1991,7 +1999,15 @@
       "noData": "Energidata är tillfälligt otillgänglig - försöker igen",
       "liveTape": "Direktfeed",
       "liveTapeSource": "Marknadsnoteringar",
-      "infoTooltip": "<strong>Energikomplex</strong> Fysiska och handelbara energisignaler på ett ställe:<ul><li><strong>US Energy Information Administration-mätare</strong>: WTI, Brent, amerikansk produktion och behållningar</li><li><strong>Livetape</strong>: Handelbara energipriser som råolja och naturgas</li><li><strong>Syfte</strong>: Separera fysisk energistress från bredare makro- och råvarupaneler</li></ul>"
+      "infoTooltip": "<strong>Energikomplex</strong> Fysiska och handelbara energisignaler på ett ställe:<ul><li><strong>US Energy Information Administration-mätare</strong>: WTI, Brent, amerikansk produktion och behållningar</li><li><strong>Livetape</strong>: Handelbara energipriser som råolja och naturgas</li><li><strong>Syfte</strong>: Separera fysisk energistress från bredare makro- och råvarupaneler</li></ul>",
+      "marketTape": "Marknadsnoteringar",
+      "futures": "Terminskontrakt",
+      "dailySpot": "Dagligt spotpris",
+      "eiaWeeklySpot": "EIA:s spotpris · veckomedel",
+      "weekEnding": "Vecka som slutar {{date}}",
+      "unknownPriceDate": "Observationstid saknas",
+      "unknownQuoteSource": "Kurskälla saknas",
+      "stalePrice": "Inaktuellt"
     },
     "consumerPrices": {
       "tabs": {
@@ -2328,7 +2344,8 @@
       "sections": {
         "countries": "Sanktionerade länder",
         "entries": "Senaste beteckningar",
-        "programs": "Program"
+        "programs": "Program",
+        "flagRegistries": "Flagg- och luftfartygsregister"
       },
       "empty": {
         "countries": "Ingen landsattribution tillgänglig.",
@@ -4481,7 +4498,15 @@
     "renameHint": "{{name}} — dubbelklicka för att byta namn",
     "deleteTab": "Ta bort flik",
     "deleteTabAria": "Ta bort flik {{name}}",
-    "tabNameAria": "Fliknamn"
+    "tabNameAria": "Fliknamn",
+    "addTabTitleSaved": "Ny flik (startar med de paneler du sparade)",
+    "newTabOptions": "Alternativ för ny flik",
+    "newTabStartsDefault": "Nya flikar startar med standardpanelerna.",
+    "newTabStartsSaved": "Nya flikar startar med de paneler du sparade.",
+    "newTabOptionsHint": "Flikar du redan har ändras inte.",
+    "useThisTabPanels": "Använd denna fliks paneler",
+    "useDefaultPanels": "Använd standardpanelerna",
+    "newTabPanelsNotSaved": "Kunde inte spara. Den här webbläsaren blockerar webbplatslagring."
   },
   "theaterPresets": {
     "label": "Täckningspaket",

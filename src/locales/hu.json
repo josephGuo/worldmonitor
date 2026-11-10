@@ -1064,7 +1064,15 @@
       "noData": "Energiaadatok átmenetileg nem érhetők el – újra próbálkozunk",
       "liveTape": "Élő adatcsatorna",
       "liveTapeSource": "Piaci árajánlatok",
-      "infoTooltip": "<strong>Energiakomplex</strong> Fizikai és kereskedhető energiaszignálok egy helyen:<ul><li><strong>US Energy Information Administration mutatók</strong>: WTI, Brent, amerikai termelés és készletek</li><li><strong>Élő adatok</strong>: Kereskedhető energiaárak, mint krudolaj és földgáz</li><li><strong>Cél</strong>: Fizikai energiastressz elkülönítése a szélesebb makro- és árupanelektől</li></ul>"
+      "infoTooltip": "<strong>Energiakomplex</strong> Fizikai és kereskedhető energiaszignálok egy helyen:<ul><li><strong>US Energy Information Administration mutatók</strong>: WTI, Brent, amerikai termelés és készletek</li><li><strong>Élő adatok</strong>: Kereskedhető energiaárak, mint krudolaj és földgáz</li><li><strong>Cél</strong>: Fizikai energiastressz elkülönítése a szélesebb makro- és árupanelektől</li></ul>",
+      "marketTape": "Piaci jegyzések",
+      "futures": "Határidős ügyletek",
+      "dailySpot": "Napi azonnali ár",
+      "eiaWeeklySpot": "EIA azonnali ár · heti átlag",
+      "weekEnding": "A hét vége {{date}}",
+      "unknownPriceDate": "A megfigyelés ideje nem érhető el",
+      "unknownQuoteSource": "A jegyzés forrása nem érhető el",
+      "stalePrice": "Elavult"
     },
     "supplyChain": {
       "chokepoints": "Szűk keresztmetszetek",
@@ -1789,6 +1797,10 @@
       "soon": "HAMAROSAN"
     },
     "techReadiness": {
+      "ranked": "Rangsorolt",
+      "unranked": "Rangsorolatlan",
+      "coverageRequirement": "A rangsoroláshoz szükséges lefedettség",
+      "coverageLabel": "Elérhető mutatók",
       "internetUsers": "Internethasználók",
       "mobileSubscriptions": "Mobil előfizetések",
       "rdSpending": "Kutatás és fejlesztés kiadások",
@@ -1804,10 +1816,14 @@
       "infoTooltip": "<strong>Technológiai felkészültség</strong> Világbank összetett pontszáma, 0–100. A súlyozások: kutatás és fejlesztés 35%, internet 30%, szélessáv 20% és mobil 15%. Az internetes felhasználók a lakosság százaléka; a mobil előfizetések száma 100 emberenként; a kutatási kiadások a gazdasági kibocsátás aránya. A hiányzó értékeket kötőjel jelzi. Az adatok 2019–2024 közötti időszakot foglalnak magukban."
     },
     "populationExposure": {
-      "totalAffected": "Érintett összesen",
-      "affectedCount": "{{count}} érintett",
-      "radiusKm": "{{km}} km sugár",
-      "infoTooltip": "<strong>Népességi expozícióbecslések</strong> Becsült népesség az esemény hatásvonalán belül. A WorldPop országsűrűség-adatok alapján.<ul><li>Konfliktus: 50 km sugár</li><li>Földrengés: 100 km sugár</li><li>Árvíz: 100 km sugár</li><li>Erdőtűz: 30 km sugár</li></ul>"
+      "estimateWithin": "Körülbelül {{count}} ember {{km}} km-es körzetben",
+      "method": "A becslések az ország átlagos népsűrűségén alapulnak.",
+      "empty": "Nincs megfelelő eseményhelyszín",
+      "infoTooltip": "Csak pontos helyszínnel rendelkező események jelennek meg azokban az országokban, amelyekről van népsűrűségi adat. A becsült területek átfedhetik egymást.",
+      "eventCount_one": "{{count}} esemény",
+      "eventCount_other": "{{count}} esemény",
+      "coverageShown": "Megjelenített események: {{shown}} / {{total}}",
+      "coverageLeftOut": "Nem látható: {{imprecise}} pontos hely nélkül, {{noEstimate}} sűrűségadat nélküli országokban, {{otherPlaces}} a forrásonkénti első 10 helyen túl"
     },
     "securityAdvisories": {
       "loading": "Utazási tanácsok letöltése...",
@@ -2781,7 +2797,8 @@
       "sections": {
         "countries": "Szankcionált országok",
         "entries": "Legutóbbi bejelentések",
-        "programs": "Programok"
+        "programs": "Programok",
+        "flagRegistries": "Hajólobogó- és légijármű-nyilvántartások"
       },
       "empty": {
         "countries": "Nincs országattribúció elérhető.",
@@ -4481,7 +4498,15 @@
     "renameHint": "{{name}} — dupla kattintás az átnevezéshez",
     "deleteTab": "Fül törlése",
     "deleteTabAria": "{{name}} fül törlése",
-    "tabNameAria": "Fül neve"
+    "tabNameAria": "Fül neve",
+    "addTabTitleSaved": "Új fül (az elmentett panelek alapján indít)",
+    "newTabOptions": "Új fül beállításai",
+    "newTabStartsDefault": "Az új fülek az alapértelmezett panelek alapján indulnak.",
+    "newTabStartsSaved": "Az új fülek az elmentett panelek alapján indulnak.",
+    "newTabOptionsHint": "A meglévő fülek nem változnak.",
+    "useThisTabPanels": "E fül paneljeit használja",
+    "useDefaultPanels": "Az alapértelmezett panelek használata",
+    "newTabPanelsNotSaved": "Nem sikerült menteni. A böngésző letiltotta a webhelytárolást."
   },
   "theaterPresets": {
     "label": "Lefedettségi csomagok",

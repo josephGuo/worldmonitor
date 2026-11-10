@@ -921,6 +921,10 @@
       "infoTooltip": "<strong>Tech-evenementen</strong> Aankomende en recente technologie-evenementen: conferenties, productlanceringen, regelgevende hoorzittingen en winstgesprekken. Samengesteld uit officiële evenementenkalenders en industriebronnen."
     },
     "techReadiness": {
+      "ranked": "Met rang",
+      "unranked": "Geen rang",
+      "coverageRequirement": "Minimale dekking voor rangschikking",
+      "coverageLabel": "Beschikbare indicatoren",
       "internetUsers": "Internetgebruikers",
       "mobileSubscriptions": "Mobiele abonnementen",
       "rdSpending": "Onderzoeks- en ontwikkelingsbegroting",
@@ -1138,10 +1142,14 @@
       "recentMissing": "Geen gegevens dit keer van {{countries}}; hun bestanden konden niet worden geladen, wat niet nul verplaatsing betekent."
     },
     "populationExposure": {
-      "totalAffected": "Totaal getroffen",
-      "affectedCount": "{{count}} getroffen",
-      "radiusKm": "straal van {{km}}km",
-      "infoTooltip": "<strong>Blootstellingsschattingen van de bevolking</strong> Geschatte populatie binnen de impactradius van de gebeurtenis. Gebaseerd op gegevens over de landdichtheid van WorldPop.<ul><li>Conflict: straal van 50 km</li><li>Aardbeving: straal van 100 km</li><li>Overstroming: straal van 100 km</li><li>Natuurbrand: straal van 30 km</li></ul>"
+      "estimateWithin": "Ongeveer {{count}} mensen binnen een straal van {{km}} km",
+      "method": "De schattingen zijn gebaseerd op de gemiddelde bevolkingsdichtheid van het land.",
+      "empty": "Geen geschikte gebeurtenislocaties",
+      "infoTooltip": "Alleen gebeurtenissen met een precieze locatie en beschikbare bevolkingsdichtheid voor het land worden getoond. De geschatte gebieden kunnen elkaar overlappen.",
+      "eventCount_one": "{{count}} gebeurtenis",
+      "eventCount_other": "{{count}} gebeurtenissen",
+      "coverageShown": "Getoonde gebeurtenissen: {{shown}} van {{total}}",
+      "coverageLeftOut": "Niet getoond: {{imprecise}} zonder precieze locatie, {{noEstimate}} in landen zonder dichtheidsgegevens, {{otherPlaces}} na de eerste 10 plaatsen per bron"
     },
     "countryTimeline": {
       "now": "nu",
@@ -1991,7 +1999,15 @@
       "noData": "Energiegegevens tijdelijk niet beschikbaar - wordt opnieuw geprobeerd",
       "liveTape": "Live koersen",
       "liveTapeSource": "Marktkoersen",
-      "infoTooltip": "<strong>Energy Complex</strong> Fysieke en verhandelbare energiesignalen op één plaats:<ul><li><strong>Statistieken US Energy Information Administration</strong>: WTI, Brent, Amerikaanse productie en voorraden</li><li><strong>Live tape</strong>: Verhandelbare energieprijzen zoals ruwe olie en aardgas</li><li><strong>Doel</strong>: Fysieke energiespanning scheiden van bredere macro- en commoditypanels</li></ul>"
+      "infoTooltip": "<strong>Energy Complex</strong> Fysieke en verhandelbare energiesignalen op één plaats:<ul><li><strong>Statistieken US Energy Information Administration</strong>: WTI, Brent, Amerikaanse productie en voorraden</li><li><strong>Live tape</strong>: Verhandelbare energieprijzen zoals ruwe olie en aardgas</li><li><strong>Doel</strong>: Fysieke energiespanning scheiden van bredere macro- en commoditypanels</li></ul>",
+      "marketTape": "Marktkoersen",
+      "futures": "Termijncontracten",
+      "dailySpot": "Dagelijkse spotprijs",
+      "eiaWeeklySpot": "EIA-spotprijs · weekgemiddelde",
+      "weekEnding": "Week eindigend op {{date}}",
+      "unknownPriceDate": "Waarnemingstijd niet beschikbaar",
+      "unknownQuoteSource": "Koersbron niet beschikbaar",
+      "stalePrice": "Verouderd"
     },
     "consumerPrices": {
       "tabs": {
@@ -2328,7 +2344,8 @@
       "sections": {
         "countries": "Gesanctioneerde landen",
         "entries": "Recente aanwijzingen",
-        "programs": "Programma's"
+        "programs": "Programma's",
+        "flagRegistries": "Vlaggen- en luchtvaartuigregisters"
       },
       "empty": {
         "countries": "Geen landenattributie beschikbaar.",
@@ -4481,7 +4498,15 @@
     "renameHint": "{{name}} — dubbelklik om te hernoemen",
     "deleteTab": "Tabblad verwijderen",
     "deleteTabAria": "Tabblad {{name}} verwijderen",
-    "tabNameAria": "Tabbladnaam"
+    "tabNameAria": "Tabbladnaam",
+    "addTabTitleSaved": "Nieuw tabblad (begint met de panelen die je hebt opgeslagen)",
+    "newTabOptions": "Opties voor nieuw tabblad",
+    "newTabStartsDefault": "Nieuwe tabbladen beginnen met de standaardpanelen.",
+    "newTabStartsSaved": "Nieuwe tabbladen beginnen met de panelen die je hebt opgeslagen.",
+    "newTabOptionsHint": "Tabbladen die je al hebt, veranderen niet.",
+    "useThisTabPanels": "Gebruik de panelen van dit tabblad",
+    "useDefaultPanels": "Gebruik de standaardpanelen",
+    "newTabPanelsNotSaved": "Kon niet opslaan. Deze browser blokkeert sitegegevens."
   },
   "theaterPresets": {
     "label": "Dekkingspresets",

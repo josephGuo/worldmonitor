@@ -1109,6 +1109,14 @@
     "energyComplex": {
       "noData": "Energy data temporarily unavailable - will retry",
       "liveTape": "Live Tape",
+      "marketTape": "Market quotes",
+      "futures": "Futures",
+      "dailySpot": "Daily spot",
+      "eiaWeeklySpot": "EIA spot · weekly average",
+      "weekEnding": "Week ending {{date}}",
+      "unknownPriceDate": "Observation time unavailable",
+      "unknownQuoteSource": "Quote source unavailable",
+      "stalePrice": "Stale",
       "liveTapeSource": "Market quotes",
       "infoTooltip": "<strong>Energy Complex</strong> Physical and tradeable energy signals in one place:<ul><li><strong>US Energy Information Administration metrics</strong>: WTI, Brent, US production, and inventories</li><li><strong>Live tape</strong>: Tradeable energy prices like crude and natural gas</li><li><strong>Purpose</strong>: Separate physical energy stress from broader macro and commodity panels</li></ul>"
     },
@@ -1835,6 +1843,10 @@
       "soon": "SOON"
     },
     "techReadiness": {
+      "ranked": "Ranked",
+      "unranked": "Unranked",
+      "coverageRequirement": "Minimum coverage to rank",
+      "coverageLabel": "Available indicators",
       "internetUsers": "Internet Users",
       "mobileSubscriptions": "Mobile Subscriptions",
       "rdSpending": "Research and development spending",
@@ -1850,10 +1862,14 @@
       "infoTooltip": "<strong>Technology readiness</strong> World Bank composite score, 0–100. Weights are research and development 35%, internet 30%, broadband 20%, and mobile 15%. Internet users are a population percentage; mobile subscriptions are per 100 people; research spending is a share of economic output. Missing values show a dash. Data spans 2019–2024."
     },
     "populationExposure": {
-      "totalAffected": "Total Affected",
-      "affectedCount": "{{count}} affected",
-      "radiusKm": "{{km}}km radius",
-      "infoTooltip": "<strong>Population Exposure Estimates</strong> Estimated population within event impact radius. Based on WorldPop country density data.<ul><li>Conflict: 50km radius</li><li>Earthquake: 100km radius</li><li>Flood: 100km radius</li><li>Wildfire: 30km radius</li></ul>"
+      "estimateWithin": "~{{count}} people within {{km}} km",
+      "eventCount_one": "{{count}} event",
+      "eventCount_other": "{{count}} events",
+      "method": "Estimates use country-average population density.",
+      "empty": "No eligible event locations",
+      "infoTooltip": "Only precisely located events with country density data are shown. The estimated areas can overlap.",
+      "coverageShown": "Events shown: {{shown}} of {{total}}",
+      "coverageLeftOut": "Not shown: {{imprecise}} with no precise location, {{noEstimate}} in countries without density data, {{otherPlaces}} past the first 10 places per source"
     },
     "securityAdvisories": {
       "loading": "Fetching travel advisories...",
@@ -2935,6 +2951,7 @@
       },
       "sections": {
         "countries": "Sanctioned countries",
+        "flagRegistries": "Flag and aircraft registries",
         "entries": "Recent designations",
         "programs": "Programs"
       },
@@ -4549,6 +4566,14 @@
     "tabDeleted": "Tab \"{{name}}\" deleted",
     "addTab": "Add tab",
     "addTabTitle": "New tab (starts with the default panels)",
+    "addTabTitleSaved": "New tab (starts with the panels you saved)",
+    "newTabOptions": "New tab options",
+    "newTabStartsDefault": "New tabs start with the default panels.",
+    "newTabStartsSaved": "New tabs start with the panels you saved.",
+    "newTabOptionsHint": "Tabs you already have don't change.",
+    "useThisTabPanels": "Use this tab's panels",
+    "useDefaultPanels": "Use the default panels",
+    "newTabPanelsNotSaved": "Couldn't save. This browser is blocking site storage.",
     "renameHint": "{{name}} — double-click to rename",
     "deleteTab": "Delete tab",
     "deleteTabAria": "Delete tab {{name}}",

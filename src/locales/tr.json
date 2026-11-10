@@ -1647,6 +1647,10 @@
       "infoTooltip": "<strong>Teknoloji Etkinlikleri</strong> Yaklaşan ve son teknoloji etkinlikleri: konferanslar, ürün lansmanları, düzenleyici oturumlar ve kazanç görüşmeleri. Resmi etkinlik takvimleri ve sektör kaynaklarından derlenmektedir."
     },
     "techReadiness": {
+      "ranked": "Sıralanan",
+      "unranked": "Sıralama dışı",
+      "coverageRequirement": "Sıralama için gereken asgari kapsam",
+      "coverageLabel": "Mevcut göstergeler",
       "internetUsers": "Internet Kullanicilari",
       "mobileSubscriptions": "Mobil Abonelikler",
       "rdSpending": "Araştırma ve geliştirme harcaması",
@@ -1662,10 +1666,14 @@
       "dataPreparing": "Teknoloji hazırlık verileri yenileniyor — kısa süre içinde görüntülenecek."
     },
     "populationExposure": {
-      "totalAffected": "Toplam Etkilenen",
-      "affectedCount": "{{count}} etkilenen",
-      "radiusKm": "{{km}}km yaricap",
-      "infoTooltip": "<strong>Nufus Maruziyet Tahminleri</strong> Olay etki yaricapi icindeki tahmini nufus. WorldPop ulke yogunluk verilerine dayanmaktadir.<ul><li>Catisma: 50km yaricap</li><li>Deprem: 100km yaricap</li><li>Sel: 100km yaricap</li><li>Orman yangini: 30km yaricap</li></ul>"
+      "estimateWithin": "{{km}} km yarıçap içinde yaklaşık {{count}} kişi",
+      "method": "Tahminler ülkenin ortalama nüfus yoğunluğuna dayanır.",
+      "empty": "Ölçütleri karşılayan olay konumu yok",
+      "infoTooltip": "Yalnızca konumu kesin olarak bilinen ve ülkesine ait nüfus yoğunluğu verisi bulunan olaylar gösterilir. Tahmin alanları çakışabilir.",
+      "eventCount_one": "{{count}} olay",
+      "eventCount_other": "{{count}} olay",
+      "coverageShown": "Gösterilen olaylar: {{total}} olaydan {{shown}}",
+      "coverageLeftOut": "Gösterilmeyen: kesin konumu olmayan {{imprecise}}, yoğunluk verisi olmayan ülkelerde {{noEstimate}}, kaynak başına ilk 10 yerden sonra {{otherPlaces}}"
     },
     "securityAdvisories": {
       "loading": "Seyahat uyarıları yükleniyor...",
@@ -2375,7 +2383,15 @@
       "noData": "Enerji verileri geçici olarak kullanılamıyor - yeniden denecek",
       "liveTape": "Canlı Bant",
       "liveTapeSource": "Pazar teklifleri",
-      "infoTooltip": "<strong>Enerji Kompleksi</strong> Fiziksel ve işlem gören enerji sinyalleri tek yerde:<ul><li><strong>ABD Enerji Bilgi İdaresi metrikleri</strong>: WTI, Brent, ABD üretimi ve stokları</li><li><strong>Canlı veriler</strong>: Ham petrol ve doğal gaz gibi işlem gören enerji fiyatları</li><li><strong>Amaç</strong>: Fiziksel enerji stresini daha geniş makro ve emtia panellerinden ayırmak</li></ul>"
+      "infoTooltip": "<strong>Enerji Kompleksi</strong> Fiziksel ve işlem gören enerji sinyalleri tek yerde:<ul><li><strong>ABD Enerji Bilgi İdaresi metrikleri</strong>: WTI, Brent, ABD üretimi ve stokları</li><li><strong>Canlı veriler</strong>: Ham petrol ve doğal gaz gibi işlem gören enerji fiyatları</li><li><strong>Amaç</strong>: Fiziksel enerji stresini daha geniş makro ve emtia panellerinden ayırmak</li></ul>",
+      "marketTape": "Piyasa fiyatları",
+      "futures": "Vadeli işlemler",
+      "dailySpot": "Günlük spot fiyat",
+      "eiaWeeklySpot": "EIA spot fiyatı · haftalık ortalama",
+      "weekEnding": "{{date}} tarihinde sona eren hafta",
+      "unknownPriceDate": "Gözlem zamanı bilinmiyor",
+      "unknownQuoteSource": "Fiyat kaynağı bilinmiyor",
+      "stalePrice": "Güncel değil"
     },
     "consumerPrices": {
       "tabs": {
@@ -2712,7 +2728,8 @@
       "sections": {
         "countries": "Yaptırım altındaki ülkeler",
         "entries": "Son tanımlamalar",
-        "programs": "Programlar"
+        "programs": "Programlar",
+        "flagRegistries": "Gemi bayrağı ve hava aracı sicilleri"
       },
       "empty": {
         "countries": "Ülke atılması mevcut değildir.",
@@ -4481,7 +4498,15 @@
     "renameHint": "{{name}} — yeniden adlandırmak için çift tıklayın",
     "deleteTab": "Sekmeyi sil",
     "deleteTabAria": "{{name}} sekmesini sil",
-    "tabNameAria": "Sekme adı"
+    "tabNameAria": "Sekme adı",
+    "addTabTitleSaved": "Yeni sekme (kaydettiğiniz panellerle başlar)",
+    "newTabOptions": "Yeni sekme seçenekleri",
+    "newTabStartsDefault": "Yeni sekmeler varsayılan panellerle başlar.",
+    "newTabStartsSaved": "Yeni sekmeler kaydettiğiniz panellerle başlar.",
+    "newTabOptionsHint": "Zaten sahip olduğunuz sekmeler değişmez.",
+    "useThisTabPanels": "Bu sekmenin panellerini kullan",
+    "useDefaultPanels": "Varsayılan panelleri kullan",
+    "newTabPanelsNotSaved": "Kaydedilemedi. Bu tarayıcı site depolamayı engelliyor."
   },
   "theaterPresets": {
     "label": "Kapsama ön ayarları",

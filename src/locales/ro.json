@@ -1651,6 +1651,10 @@
       "infoTooltip": "<strong>Evenimente tech</strong> Evenimente tehnologice viitoare și recente: conferințe, lansări de produse, audieri de reglementare și apeluri de rezultate. Agregate din calendare oficiale de evenimente și surse din industrie."
     },
     "techReadiness": {
+      "ranked": "Clasificate",
+      "unranked": "Neclasificate",
+      "coverageRequirement": "Acoperire minimă pentru clasificare",
+      "coverageLabel": "Indicatori disponibili",
       "internetUsers": "Utilizatori de Internet",
       "mobileSubscriptions": "Abonamente mobile",
       "rdSpending": "Cheltuieli de cercetare și dezvoltare",
@@ -1666,10 +1670,15 @@
       "dataPreparing": "Se reîmprospătează datele de tech readiness — vor apărea în scurt timp."
     },
     "populationExposure": {
-      "totalAffected": "Total afectat",
-      "affectedCount": "{{count}} afectat",
-      "radiusKm": "{{km}}km rază",
-      "infoTooltip": "<strong>Estimări ale expunerii populației</strong> Populația estimată în raza de impact a evenimentului. Pe baza datelor WorldPop despre densitatea țării.<ul><li>Conflict: rază de 50 km</li><li>Cutremur: rază de 100 km</li><li>Inundație: rază de 100 km</li><li>Incendiu: rază de 30 km</li></ul>"
+      "estimateWithin": "Aproximativ {{count}} de persoane pe o rază de {{km}} km",
+      "method": "Estimările se bazează pe densitatea medie a populației din țară.",
+      "empty": "Nicio locație de eveniment eligibilă",
+      "infoTooltip": "Sunt afișate doar evenimentele cu localizare precisă din țări cu date despre densitatea populației. Zonele estimate se pot suprapune.",
+      "eventCount_one": "{{count}} eveniment",
+      "eventCount_few": "{{count}} evenimente",
+      "eventCount_other": "{{count}} de evenimente",
+      "coverageShown": "Evenimente afișate: {{shown}} din {{total}}",
+      "coverageLeftOut": "Neafișate: {{imprecise}} fără locație precisă, {{noEstimate}} în țări fără date de densitate, {{otherPlaces}} după primele 10 locuri pe sursă"
     },
     "securityAdvisories": {
       "loading": "Se preiau avizele de călătorie...",
@@ -2384,7 +2393,15 @@
       "noData": "Datele energetice temporar indisponibile - va reîncerca",
       "liveTape": "Bandă Live",
       "liveTapeSource": "Cote de piață",
-      "infoTooltip": "<strong>Complexul energetic</strong> Semnale energetice fizice și tranzacționabile într-un singur loc:<ul><li><strong>Metrice US Energy Information Administration</strong>: WTI, Brent, producție SUA și stocuri</li><li><strong>Bandă live</strong>: Prețuri energetice tranzacționabile precum crude și gaze naturale</li><li><strong>Scop</strong>: Separarea stresului energetic fizic de panouri macroeconomice și de mărfuri mai largi</li></ul>"
+      "infoTooltip": "<strong>Complexul energetic</strong> Semnale energetice fizice și tranzacționabile într-un singur loc:<ul><li><strong>Metrice US Energy Information Administration</strong>: WTI, Brent, producție SUA și stocuri</li><li><strong>Bandă live</strong>: Prețuri energetice tranzacționabile precum crude și gaze naturale</li><li><strong>Scop</strong>: Separarea stresului energetic fizic de panouri macroeconomice și de mărfuri mai largi</li></ul>",
+      "marketTape": "Cotații de piață",
+      "futures": "Contracte futures",
+      "dailySpot": "Preț spot zilnic",
+      "eiaWeeklySpot": "Preț spot EIA · medie săptămânală",
+      "weekEnding": "Săptămâna încheiată la {{date}}",
+      "unknownPriceDate": "Ora observației nu este disponibilă",
+      "unknownQuoteSource": "Sursa cotației nu este disponibilă",
+      "stalePrice": "Neactualizat"
     },
     "consumerPrices": {
       "tabs": {
@@ -2722,7 +2739,8 @@
       "sections": {
         "countries": "Țări sancționate",
         "entries": "Desemnări recente",
-        "programs": "Programe"
+        "programs": "Programe",
+        "flagRegistries": "Registre de pavilion ale navelor și de înmatriculare a aeronavelor"
       },
       "empty": {
         "countries": "Nicio atribuire de țară disponibilă.",
@@ -4502,7 +4520,15 @@
     "renameHint": "{{name}} — dublu clic pentru redenumire",
     "deleteTab": "Șterge fila",
     "deleteTabAria": "Șterge fila {{name}}",
-    "tabNameAria": "Numele filei"
+    "tabNameAria": "Numele filei",
+    "addTabTitleSaved": "Filă nouă (începe cu panourile pe care le-ai salvat)",
+    "newTabOptions": "Opțiuni pentru fila nouă",
+    "newTabStartsDefault": "Filele noi încep cu panourile implicite.",
+    "newTabStartsSaved": "Filele noi încep cu panourile pe care le-ai salvat.",
+    "newTabOptionsHint": "Filele pe care le ai deja nu se schimbă.",
+    "useThisTabPanels": "Folosiți panourile acestei file",
+    "useDefaultPanels": "Folosiți panourile implicite",
+    "newTabPanelsNotSaved": "Nu s-a putut salva. Acest browser blochează stocarea pentru site."
   },
   "theaterPresets": {
     "label": "Preseturi de acoperire",

@@ -6976,7 +6976,7 @@ paths:
             tags:
                 - DisplacementService
             summary: GetPopulationExposure
-            description: GetPopulationExposure lists population and density for 20 priority countries, or estimates people near a point from the nearest one's average density.
+            description: GetPopulationExposure lists population and density for 20 priority countries, or estimates people near a point as the average density of the country containing it times the circle area. A point outside those 20 countries gets no exposure.
             operationId: GetPopulationExposure
             parameters:
                 - name: mode
@@ -7475,10 +7475,10 @@ paths:
                                 "prices":
                                     - "change": 1.5
                                       "commodity": "example"
+                                      "frequency": "example"
                                       "name": "WorldMonitor Analyst"
                                       "price": 75.25
                                       "priceAt": 1717200000000
-                                      "unit": "example"
                             schema:
                                 $ref: '#/components/schemas/worldmonitor_economic_v1_GetEnergyPricesResponse'
                 "400":
@@ -21532,7 +21532,7 @@ paths:
                   style: form
                   explode: true
                   example:
-                      - "GC=F"
+                      - "BZ=F"
                   schema:
                     type: array
                     items:
@@ -21552,13 +21552,20 @@ paths:
                         application/json:
                             example:
                                 "quotes":
-                                    - "change": 1.5
-                                      "display": "example"
-                                      "name": "WorldMonitor Analyst"
-                                      "price": 75.25
+                                    - "change": -1.05
+                                      "display": "Brent"
+                                      "name": "Brent Crude Oil"
+                                      "price": 91.6
+                                      "priceAt": 1794291360000
+                                      "priceBasis": "futures"
+                                      "priceSource": "Yahoo Finance"
                                       "sparkline":
-                                          - 1.5
-                                      "symbol": "GC=F"
+                                          - 93
+                                          - 92
+                                          - 91.6
+                                      "sparklineIntervalSeconds": 300
+                                      "sparklineStartAt": 1794290700000
+                                      "symbol": "BZ=F"
                             schema:
                                 $ref: '#/components/schemas/worldmonitor_market_v1_ListCommodityQuotesResponse'
                 "400":
@@ -43192,6 +43199,12 @@ components:
                 sourceOriginal:
                     type: string
                     description: Original source of the event report.
+                hasPreciseLocation:
+                    type: boolean
+                    description: True when UCDP identifies a specific event location (where_prec 1).
+                locationName:
+                    type: string
+                    description: Name of the location represented by the event coordinates.
             required:
                 - id
             description: UcdpViolenceEvent represents a georeferenced violence event from the UCDP dataset.
@@ -44353,12 +44366,12 @@ components:
                     description: Radius used for the estimate in km.
                 nearestCountry:
                     type: string
-                    description: ISO3 code of nearest priority country.
+                    description: ISO3 code of the priority country containing the point, whose density was used.
                 densityPerKm2:
                     type: integer
                     format: int32
                     description: Population density used for the estimate.
-            description: ExposureResult contains the population exposure estimate.
+            description: ExposureResult contains the population exposure estimate. It is absent for a point outside every priority country.
         worldmonitor_economic_v1_GetFredSeriesRequest:
             type: object
             properties:
@@ -44510,7 +44523,7 @@ components:
                 price:
                     type: number
                     format: double
-                    description: Current price in USD.
+                    description: Observed price in USD. Check stale before treating it as current.
                 unit:
                     type: string
                     description: Unit of measurement (e.g., "$/barrel", "$/MMBtu").
@@ -44521,7 +44534,16 @@ components:
                 priceAt:
                     type: integer
                     format: int64
-                    description: 'Price date, as Unix epoch milliseconds.. Warning: Values > 2^53 may lose precision in JavaScript'
+                    description: 'Observation date as Unix epoch milliseconds. For weekly prices, the week ending date.. Warning: Values > 2^53 may lose precision in JavaScript'
+                priceSource:
+                    type: string
+                priceBasis:
+                    type: string
+                frequency:
+                    type: string
+                stale:
+                    type: boolean
+                    description: True when the observation is undated, future-dated, or older than the freshness budget.
             required:
                 - commodity
             description: EnergyPrice represents a current energy commodity price from EIA.
@@ -53810,10 +53832,30 @@ components:
                     items:
                         type: number
                         format: double
-                        description: Sparkline data points.
+                        description: Sparkline closes, oldest first. Bars with no trades are left out.
+                priceSource:
+                    type: string
+                    description: Observed price provider, when known for Brent and WTI.
+                priceBasis:
+                    type: string
+                    description: '"futures" for a futures quote, "spot" for a daily spot observation.'
+                priceAt:
+                    type: integer
+                    format: int64
+                    description: 'Provider observation time in Unix epoch milliseconds, with daily spot dates represented at midnight UTC. Warning: Values > 2^53 may lose precision in JavaScript'
+                sparklineIntervalSeconds:
+                    type: integer
+                    format: int32
+                    description: 'Width of each sparkline bar in seconds: 300 for the 24-hour intraday series, 86400 for daily closes.'
+                sparklineStartAt:
+                    type: integer
+                    format: int64
+                    description: |-
+                        Start of the first sparkline bar in Unix epoch milliseconds. Later bars follow in trading order with
+                         closed periods left out, so only the first point's time is defined.. Warning: Values > 2^53 may lose precision in JavaScript
             required:
                 - symbol
-            description: CommodityQuote represents a commodity price quote from Yahoo Finance.
+            description: CommodityQuote represents a commodity price observation.
         worldmonitor_market_v1_GetPhysicalPremiumsRequest:
             type: object
             properties:
@@ -59358,6 +59400,12 @@ components:
                 semaError:
                     type: string
                     description: Present when the SEMA source failed while other sanctions data remained available.
+                unattributed:
+                    $ref: '#/components/schemas/worldmonitor_sanctions_v1_UnattributedSanctionsPressure'
+                flagRegistries:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/worldmonitor_sanctions_v1_FlagRegistrySanctionsPressure'
             description: ListSanctionsPressureResponse contains normalized OFAC pressure summaries and recent entries.
         worldmonitor_sanctions_v1_SanctionsEntry:
             type: object
@@ -59431,6 +59479,43 @@ components:
                     type: integer
                     format: int32
             description: ProgramSanctionsPressure summarizes designation volume and recent additions by OFAC program.
+        worldmonitor_sanctions_v1_UnattributedSanctionsPressure:
+            type: object
+            properties:
+                entryCount:
+                    type: integer
+                    format: int32
+                vesselCount:
+                    type: integer
+                    format: int32
+                aircraftCount:
+                    type: integer
+                    format: int32
+        worldmonitor_sanctions_v1_FlagRegistrySanctionsPressure:
+            type: object
+            properties:
+                countryCode:
+                    type: string
+                countryName:
+                    type: string
+                vesselCount:
+                    type: integer
+                    format: int32
+                newVesselCount:
+                    type: integer
+                    format: int32
+                aircraftCount:
+                    type: integer
+                    format: int32
+                    description: Zero in snapshots written before aircraft registries were counted.
+                newAircraftCount:
+                    type: integer
+                    format: int32
+            description: |-
+                FlagRegistrySanctionsPressure counts sanctioned vessels by flag and sanctioned aircraft
+                 by the state of registry in their tail number. The response lists at most 12 registries,
+                 ordered by new vessels and aircraft, then all vessels and aircraft, so an omitted
+                 registry may still register sanctioned assets. Older snapshots return none.
         worldmonitor_sanctions_v1_LookupSanctionEntityRequest:
             type: object
             properties:
@@ -60752,7 +60837,7 @@ components:
                 officialLatestDate:
                     type: string
                     description: |-
-                        IMF PortWatch latest published day, YYYY-MM-DD (~4-day lag); empty means
+                        IMF PortWatch latest published day, YYYY-MM-DD (lag of several days); empty means
                          withhold official_latest_total and official_avg_7d (absent below 7 days).
                 officialLatestTotal:
                     type: integer
@@ -63869,6 +63954,9 @@ components:
                     items:
                         type: string
                         description: Source article URLs, when provided by the upstream feed.
+                hasPreciseLocation:
+                    type: boolean
+                    description: True when the source identifies a specific event location, such as ACLED geo_precision 1.
             required:
                 - id
             description: |-

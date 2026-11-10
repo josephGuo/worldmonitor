@@ -1643,6 +1643,10 @@
       "infoTooltip": "<strong>Sự kiện công nghệ</strong> Các sự kiện công nghệ sắp tới và gần đây: hội nghị, ra mắt sản phẩm, phiên điều trần quản lý và cuộc gọi thu nhập. Tổng hợp từ lịch sự kiện chính thức và nguồn ngành."
     },
     "techReadiness": {
+      "ranked": "Có xếp hạng",
+      "unranked": "Không có xếp hạng",
+      "coverageRequirement": "Số chỉ số tối thiểu để xếp hạng",
+      "coverageLabel": "Chỉ số có dữ liệu",
       "internetUsers": "Người dùng Internet",
       "mobileSubscriptions": "Thuê bao Di động",
       "rdSpending": "Chi phí nghiên cứu và phát triển",
@@ -1658,10 +1662,13 @@
       "dataPreparing": "Đang làm mới dữ liệu sẵn sàng công nghệ — sẽ xuất hiện ngay."
     },
     "populationExposure": {
-      "totalAffected": "Tổng bị Ảnh hưởng",
-      "affectedCount": "{{count}} bị ảnh hưởng",
-      "radiusKm": "bán kính {{km}}km",
-      "infoTooltip": "<strong>Ước tính Dân số bị Phơi nhiễm</strong> Dân số ước tính trong bán kính tác động sự kiện. Dựa trên dữ liệu mật độ quốc gia WorldPop.<ul><li>Xung đột: bán kính 50km</li><li>Động đất: bán kính 100km</li><li>Lũ lụt: bán kính 100km</li><li>Cháy rừng: bán kính 30km</li></ul>"
+      "estimateWithin": "Khoảng {{count}} người trong bán kính {{km}} km",
+      "method": "Ước tính dựa trên mật độ dân số trung bình của quốc gia.",
+      "empty": "Không có địa điểm sự kiện đủ điều kiện",
+      "infoTooltip": "Chỉ hiển thị các sự kiện có vị trí chính xác tại quốc gia có dữ liệu mật độ dân số. Các khu vực ước tính có thể chồng lấn.",
+      "eventCount_other": "{{count}} sự kiện",
+      "coverageShown": "Sự kiện được hiển thị: {{shown}} trên {{total}}",
+      "coverageLeftOut": "Không hiển thị: {{imprecise}} không có vị trí chính xác, {{noEstimate}} ở các quốc gia không có dữ liệu mật độ, {{otherPlaces}} sau 10 địa điểm đầu tiên của mỗi nguồn"
     },
     "securityAdvisories": {
       "loading": "Đang tải cảnh báo du lịch...",
@@ -2366,7 +2373,15 @@
       "noData": "Dữ liệu năng lượng tạm thời không khả dụng - sẽ thử lại",
       "liveTape": "Bản ghi trực tiếp",
       "liveTapeSource": "Báo giá thị trường",
-      "infoTooltip": "<strong>Phức hợp năng lượng</strong> Các tín hiệu năng lượng vật lý và có thể giao dịch trong một nơi:<ul><li><strong>Số liệu Cục Thông tin Năng lượng Hoa Kỳ</strong>: WTI, Brent, sản xuất Hoa Kỳ và hàng tồn kho</li><li><strong>Tape trực tiếp</strong>: Các giá năng lượng có thể giao dịch như dầu thô và khí tự nhiên</li><li><strong>Mục đích</strong>: Tách căng thẳng năng lượng vật lý khỏi các bảng điều khiển vĩ mô và hàng hóa rộng hơn</li></ul>"
+      "infoTooltip": "<strong>Phức hợp năng lượng</strong> Các tín hiệu năng lượng vật lý và có thể giao dịch trong một nơi:<ul><li><strong>Số liệu Cục Thông tin Năng lượng Hoa Kỳ</strong>: WTI, Brent, sản xuất Hoa Kỳ và hàng tồn kho</li><li><strong>Tape trực tiếp</strong>: Các giá năng lượng có thể giao dịch như dầu thô và khí tự nhiên</li><li><strong>Mục đích</strong>: Tách căng thẳng năng lượng vật lý khỏi các bảng điều khiển vĩ mô và hàng hóa rộng hơn</li></ul>",
+      "marketTape": "Báo giá thị trường",
+      "futures": "Hợp đồng tương lai",
+      "dailySpot": "Giá giao ngay hằng ngày",
+      "eiaWeeklySpot": "Giá giao ngay EIA · trung bình tuần",
+      "weekEnding": "Tuần kết thúc ngày {{date}}",
+      "unknownPriceDate": "Không có thời điểm quan sát",
+      "unknownQuoteSource": "Không có nguồn báo giá",
+      "stalePrice": "Đã cũ"
     },
     "consumerPrices": {
       "tabs": {
@@ -2702,7 +2717,8 @@
       "sections": {
         "countries": "Quốc gia bị trừng phạt",
         "entries": "Chỉ định gần đây",
-        "programs": "Chương trình"
+        "programs": "Chương trình",
+        "flagRegistries": "Sổ đăng ký cờ tàu và tàu bay"
       },
       "empty": {
         "countries": "Không có quy trách nhiệm quốc gia nào.",
@@ -4460,7 +4476,15 @@
     "renameHint": "{{name}} — nhấp đúp để đổi tên",
     "deleteTab": "Xóa tab",
     "deleteTabAria": "Xóa tab {{name}}",
-    "tabNameAria": "Tên tab"
+    "tabNameAria": "Tên tab",
+    "addTabTitleSaved": "Tab mới (bắt đầu với các bảng điều khiển bạn đã lưu)",
+    "newTabOptions": "Tùy chọn tab mới",
+    "newTabStartsDefault": "Tab mới bắt đầu với các bảng điều khiển mặc định.",
+    "newTabStartsSaved": "Tab mới bắt đầu với các bảng điều khiển bạn đã lưu.",
+    "newTabOptionsHint": "Các tab bạn đã có sẵn sẽ không thay đổi.",
+    "useThisTabPanels": "Sử dụng các bảng điều khiển của tab này",
+    "useDefaultPanels": "Sử dụng các bảng điều khiển mặc định",
+    "newTabPanelsNotSaved": "Không thể lưu. Trình duyệt này đang chặn lưu trữ trang web."
   },
   "theaterPresets": {
     "label": "Gói phủ khu vực",

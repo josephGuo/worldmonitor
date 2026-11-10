@@ -1643,6 +1643,10 @@
       "infoTooltip": "<strong>테크 이벤트</strong> 예정 및 최근 기술 이벤트: 컨퍼런스, 제품 출시, 규제 청문회, 실적 콜. 공식 이벤트 캘린더 및 업계 소스에서 집계."
     },
     "techReadiness": {
+      "ranked": "순위 포함",
+      "unranked": "순위 제외",
+      "coverageRequirement": "순위 산정에 필요한 최소 지표 수",
+      "coverageLabel": "사용 가능한 지표",
       "internetUsers": "인터넷 사용자",
       "mobileSubscriptions": "모바일 가입",
       "rdSpending": "연구개발 지출",
@@ -1658,10 +1662,13 @@
       "dataPreparing": "기술 준비도 데이터 새로고침 중 — 곧 표시됩니다."
     },
     "populationExposure": {
-      "totalAffected": "총 영향 인구",
-      "affectedCount": "{{count}}명 영향",
-      "radiusKm": "{{km}}km 반경",
-      "infoTooltip": "<strong>인구 노출 추정</strong> 사건 영향 반경 내 추정 인구. WorldPop 국가 밀도 데이터 기반.<ul><li>분쟁: 50km 반경</li><li>지진: 100km 반경</li><li>홍수: 100km 반경</li><li>산불: 30km 반경</li></ul>"
+      "estimateWithin": "반경 {{km}}km 내 약 {{count}}명",
+      "method": "추정에는 해당 국가의 평균 인구 밀도를 사용합니다.",
+      "empty": "조건에 맞는 사건 위치 없음",
+      "infoTooltip": "위치가 정확하고 국가 인구 밀도 데이터가 있는 사건만 표시합니다. 추정 범위는 서로 겹칠 수 있습니다.",
+      "eventCount_other": "{{count}}개 사건",
+      "coverageShown": "표시된 이벤트: {{total}}건 중 {{shown}}건",
+      "coverageLeftOut": "표시 안 됨: 정확한 위치 없음 {{imprecise}}건, 인구 밀도 데이터가 없는 국가 {{noEstimate}}건, 출처별 처음 10곳 이후 {{otherPlaces}}건"
     },
     "securityAdvisories": {
       "loading": "여행 주의보 가져오는 중...",
@@ -2366,7 +2373,15 @@
       "noData": "에너지 데이터를 일시적으로 사용할 수 없습니다 - 재시도 예정",
       "liveTape": "실시간 테이프",
       "liveTapeSource": "시장 호가",
-      "infoTooltip": "<strong>에너지 복합</strong> 물리적 및 거래 가능한 에너지 신호를 한 곳에서 확인:<ul><li><strong>미국 에너지정보청 지표</strong>: WTI, Brent, 미국 생산, 재고</li><li><strong>라이브 시장</strong>: 원유 및 천연가스 같은 거래 가능한 에너지 가격</li><li><strong>목적</strong>: 물리적 에너지 스트레스를 광범위한 거시 및 상품 패널과 분리</li></ul>"
+      "infoTooltip": "<strong>에너지 복합</strong> 물리적 및 거래 가능한 에너지 신호를 한 곳에서 확인:<ul><li><strong>미국 에너지정보청 지표</strong>: WTI, Brent, 미국 생산, 재고</li><li><strong>라이브 시장</strong>: 원유 및 천연가스 같은 거래 가능한 에너지 가격</li><li><strong>목적</strong>: 물리적 에너지 스트레스를 광범위한 거시 및 상품 패널과 분리</li></ul>",
+      "marketTape": "시장 시세",
+      "futures": "선물",
+      "dailySpot": "일일 현물가",
+      "eiaWeeklySpot": "EIA 현물가 · 주간 평균",
+      "weekEnding": "{{date}}에 끝나는 주",
+      "unknownPriceDate": "관측 시각을 알 수 없음",
+      "unknownQuoteSource": "시세 출처를 알 수 없음",
+      "stalePrice": "갱신 지연"
     },
     "consumerPrices": {
       "tabs": {
@@ -2702,7 +2717,8 @@
       "sections": {
         "countries": "제재 대상국",
         "entries": "최근 지정",
-        "programs": "프로그램"
+        "programs": "프로그램",
+        "flagRegistries": "선박 국적 및 항공기 등록부"
       },
       "empty": {
         "countries": "국가 귀속 정보가 없습니다.",
@@ -4460,7 +4476,15 @@
     "renameHint": "{{name}} — 더블 클릭하여 이름 변경",
     "deleteTab": "탭 삭제",
     "deleteTabAria": "탭 {{name}} 삭제",
-    "tabNameAria": "탭 이름"
+    "tabNameAria": "탭 이름",
+    "addTabTitleSaved": "새 탭 (저장한 패널로 시작)",
+    "newTabOptions": "새 탭 옵션",
+    "newTabStartsDefault": "새 탭은 기본 패널로 시작합니다.",
+    "newTabStartsSaved": "새 탭은 저장한 패널로 시작합니다.",
+    "newTabOptionsHint": "이미 있는 탭은 변경되지 않습니다.",
+    "useThisTabPanels": "이 탭의 패널 사용",
+    "useDefaultPanels": "기본 패널 사용",
+    "newTabPanelsNotSaved": "저장할 수 없습니다. 이 브라우저가 사이트 저장소를 차단하고 있습니다."
   },
   "theaterPresets": {
     "label": "커버리지 프리셋",

@@ -1071,7 +1071,15 @@
       "noData": "Energetski podaci privremeno nisu dostupni — pokušaj će se ponoviti",
       "liveTape": "Uživo Trak",
       "liveTapeSource": "Tržišne cijene",
-      "infoTooltip": "<strong>Energetski kompleks</strong> Fizički i trgovinski signali energije na jednom mjestu:<ul><li><strong>Metrike Administracije za energetske informacije SAD-a</strong>: WTI, Brent, proizvodnja SAD-a i zalihe</li><li><strong>Uživo</strong>: Trgovinski cijeni energije kao što su sirova nafta i prirodni plin</li><li><strong>Svrha</strong>: Odvojenost fizičkog stresa energije od šire makroekonomske i robe panela</li></ul>"
+      "infoTooltip": "<strong>Energetski kompleks</strong> Fizički i trgovinski signali energije na jednom mjestu:<ul><li><strong>Metrike Administracije za energetske informacije SAD-a</strong>: WTI, Brent, proizvodnja SAD-a i zalihe</li><li><strong>Uživo</strong>: Trgovinski cijeni energije kao što su sirova nafta i prirodni plin</li><li><strong>Svrha</strong>: Odvojenost fizičkog stresa energije od šire makroekonomske i robe panela</li></ul>",
+      "marketTape": "Tržišne kotacije",
+      "futures": "Terminski ugovori",
+      "dailySpot": "Dnevna spot cijena",
+      "eiaWeeklySpot": "Spot cijena EIA-e · tjedni prosjek",
+      "weekEnding": "Tjedan koji završava {{date}}",
+      "unknownPriceDate": "Vrijeme opažanja nije dostupno",
+      "unknownQuoteSource": "Izvor kotacije nije dostupan",
+      "stalePrice": "Zastarjelo"
     },
     "supplyChain": {
       "chokepoints": "Uska Grla",
@@ -1798,6 +1806,10 @@
       "soon": "USKORO"
     },
     "techReadiness": {
+      "ranked": "Rangirane",
+      "unranked": "Nerangirane",
+      "coverageRequirement": "Minimalna pokrivenost za rangiranje",
+      "coverageLabel": "Dostupni pokazatelji",
       "internetUsers": "Korisnici interneta",
       "mobileSubscriptions": "Mobilne pretplate",
       "rdSpending": "Troškovi istraživanja i razvoja",
@@ -1813,10 +1825,15 @@
       "infoTooltip": "<strong>Tehnološka spremnost</strong> Kompozitni rezultat Svjetske banke, 0–100. Težine su istraživanje i razvoj 35%, internet 30%, širokopojasna veza 20% i mobilni 15%. Korisnici interneta su postotak populacije; mobilne pretplate su na 100 osoba; rashodi istraživanja su dio ekonomskog rezultata. Nedostajuće vrijednosti prikazuju crtu. Podaci obuhvaćaju 2019–2024."
     },
     "populationExposure": {
-      "totalAffected": "Ukupno pogođenih",
-      "affectedCount": "{{count}} pogođenih",
-      "radiusKm": "Radijus od {{km}} km",
-      "infoTooltip": "<strong>Procjene izloženosti stanovništva</strong> Procijenjena populacija u radijusu utjecaja događaja. Na osnovu podataka gustoće stanovništva WorldPop.<ul><li>Konflikt: 50 km radijus</li><li>Potres: 100 km radijus</li><li>Poplava: 100 km radijus</li><li>Požar: 30 km radijus</li></ul>"
+      "estimateWithin": "Oko {{count}} ljudi u krugu od {{km}} km",
+      "method": "Procjene se temelje na prosječnoj gustoći stanovništva države.",
+      "empty": "Nema odgovarajućih lokacija događaja",
+      "infoTooltip": "Prikazuju se samo događaji s preciznom lokacijom u državama za koje postoje podaci o gustoći stanovništva. Procijenjena se područja mogu preklapati.",
+      "eventCount_one": "{{count}} događaj",
+      "eventCount_few": "{{count}} događaja",
+      "eventCount_other": "{{count}} događaja",
+      "coverageShown": "Prikazani događaji: {{shown}} od {{total}}",
+      "coverageLeftOut": "Nisu prikazani: {{imprecise}} bez točne lokacije, {{noEstimate}} u zemljama bez podataka o gustoći, {{otherPlaces}} nakon prvih 10 mjesta po izvoru"
     },
     "securityAdvisories": {
       "loading": "Preuzimanje putnih savjeta...",
@@ -2798,7 +2815,8 @@
       "sections": {
         "countries": "Zemlje pod sankcijama",
         "entries": "Nedavne designacije",
-        "programs": "Programi"
+        "programs": "Programi",
+        "flagRegistries": "Registri zastava plovila i zrakoplova"
       },
       "empty": {
         "countries": "Nema dostupne atribucije zemlje.",
@@ -4513,7 +4531,15 @@
     "renameHint": "{{name}} — dvaput kliknite za preimenovanje",
     "deleteTab": "Obriši karticu",
     "deleteTabAria": "Obriši karticu {{name}}",
-    "tabNameAria": "Naziv kartice"
+    "tabNameAria": "Naziv kartice",
+    "addTabTitleSaved": "Nova kartica (počinje s panelima koje ste spremili)",
+    "newTabOptions": "Opcije nove kartice",
+    "newTabStartsDefault": "Nove kartice počinju s zadanim panelima.",
+    "newTabStartsSaved": "Nove kartice počinju s panelima koje ste spremili.",
+    "newTabOptionsHint": "Kartice koje već imate se ne mijenjaju.",
+    "useThisTabPanels": "Koristi panele ove kartice",
+    "useDefaultPanels": "Koristi zadane panele",
+    "newTabPanelsNotSaved": "Nije moguće spremiti. Ovaj preglednik blokira spremanje podataka na web-mjestu."
   },
   "theaterPresets": {
     "label": "Paketi pokrivenosti",

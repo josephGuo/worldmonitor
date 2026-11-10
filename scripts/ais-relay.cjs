@@ -123,6 +123,8 @@ const { pizzintVenuePoint } = require('./shared/pizzint-location.cjs');
 const { getUsEquitySession, isMultiMarketEquityTradingDay } = require('./shared/market-hours.cjs');
 const { mergeLastGoodQuotes, planYahooRefresh, resolveMergedQuotesAsOf } = require('./shared/market-quote-refresh.cjs');
 const { PREVIOUS_SESSION_CHART_QUERY, awaitsSessionOpen, previousSessionClose } = require('./shared/yahoo-closed-session.cjs');
+const { SPARKLINE_HISTORY_QUERY, buildQuoteSparkline } = require('./shared/quote-sparkline.cjs');
+const { crudeOilQuoteProvenance } = require('./shared/oil-quote-provenance.cjs');
 // ESM module loaded via require(esm) (Node >= 22.12; relay image is node:24).
 // Same implementation the RPC handler scores with — see the module header for
 // why it lives in shared/ rather than beside the other scoring helpers.
@@ -3027,6 +3029,7 @@ const {
   fetchCandidatePages: ucdpFetchCandidatePages,
   capWithAnnualFloor: ucdpCapWithAnnualFloor,
   candidateContentMeta: ucdpCandidateContentMeta,
+  hasPreciseUcdpLocation,
 } = require('./shared/ucdp-candidate.cjs');
 const UCDP_MAX_EVENTS = 2000; // Default capacity. Complete candidate rows plus the annual floor take precedence.
 // CII accepts two years, but these newest annual pages and the candidate release
@@ -3213,6 +3216,8 @@ async function seedUcdpEvents() {
       dateEnd: Date.parse(e.date_end) || 0,
       location: { latitude: Number(e.latitude) || 0, longitude: Number(e.longitude) || 0 },
       country: e.country || '',
+      hasPreciseLocation: hasPreciseUcdpLocation(e),
+      locationName: (e.where_coordinates || '').substring(0, 200),
       sideA: (e.side_a || '').substring(0, 200),
       sideB: (e.side_b || '').substring(0, 200),
       deathsBest: Number(e.best) || 0,
@@ -3545,6 +3550,25 @@ async function _withPreviousSessionChange(symbol, quote) {
   return { ...quote, change: ((quote.price - cached.close) / cached.close) * 100 };
 }
 
+// History bars before the default chart's first bar never change, so one
+// history request per symbol per session covers every 5-minute cycle.
+const _sparklineHistories = new Map();
+
+async function _commoditySparkline(symbol, quote) {
+  const firstBarAt = quote.chart?.chart?.result?.[0]?.timestamp?.[0] ?? quote.lastTradeAt;
+  const cacheable = Number.isFinite(firstBarAt);
+  let cached = cacheable ? _sparklineHistories.get(symbol) : null;
+  if (!cached || cached.firstBarAt !== firstBarAt) {
+    await sleep(150);
+    const history = await _fetchYahooChartOnce(symbol, SPARKLINE_HISTORY_QUERY);
+    cached = { firstBarAt, chart: history?.chart ?? null };
+    if (history && cacheable) _sparklineHistories.set(symbol, cached);
+    if (!history) logThrottled('warn', `market-sparkline-history:${symbol}`, `[Market] ${symbol} sparkline history unavailable; publishing today's bars only`);
+  }
+  const { sparkline, ...labels } = buildQuoteSparkline(quote.chart, cached.chart);
+  return { sparkline: sparkline.map((value) => (value !== 0 ? Number(value.toPrecision(7)) : value)), ...labels };
+}
+
 function fetchYahooChartDirect(symbol, query = '') {
   return _fetchYahooChartOnce(symbol, query)
     .then((quote) => (!query && quote?.awaitingSessionOpen ? _withPreviousSessionChange(symbol, quote) : quote));
@@ -3780,10 +3804,15 @@ async function seedMarketQuotes() {
 async function seedCommodityQuotes() {
   const quotes = [];
   const missing = [];
+  const toQuote = async (symbol, meta, yahoo) => ({
+    symbol, name: meta.name, display: meta.display, price: yahoo.price, change: yahoo.change,
+    ...(await _commoditySparkline(symbol, yahoo)),
+    ...crudeOilQuoteProvenance(symbol, 'Yahoo Finance', 'futures', yahoo.lastTradeAt * 1000),
+  });
   for (const s of COMMODITY_SYMBOLS) {
     const meta = COMMODITY_META.get(s) || { name: s, display: s };
     const yahoo = await fetchYahooChartDirect(s);
-    if (yahoo) quotes.push({ symbol: s, name: meta.name, display: meta.display, price: yahoo.price, change: yahoo.change, sparkline: yahoo.sparkline });
+    if (yahoo) quotes.push(await toQuote(s, meta, yahoo));
     else missing.push(s);
     await sleep(150);
   }
@@ -3793,7 +3822,7 @@ async function seedCommodityQuotes() {
     for (const s of missing) {
       const meta = COMMODITY_META.get(s);
       const yahoo = await fetchYahooChartDirect(s);
-      if (yahoo) quotes.push({ symbol: s, name: meta.name, display: meta.display, price: yahoo.price, change: yahoo.change, sparkline: yahoo.sparkline });
+      if (yahoo) quotes.push(await toQuote(s, meta, yahoo));
       await sleep(200);
     }
   }
@@ -7392,10 +7421,7 @@ const WB_TTL_SECONDS = 7 * 24 * 3600; // 7 days
 const WB_BOOTSTRAP_KEY = 'economic:worldbank-techreadiness:v1';
 const WB_PROGRESS_KEY = 'economic:worldbank-progress:v1';
 const WB_RENEWABLE_KEY = 'economic:worldbank-renewable:v1';
-const { buildWorldBankTechObservations } = require('./_wb-tech-readiness-projection.cjs');
-
-const WB_WEIGHTS = { internet: 30, mobile: 15, broadband: 20, rdSpend: 35 };
-const WB_NORMALIZE_MAX = { internet: 100, mobile: 150, broadband: 50, rdSpend: 5 };
+const { computeWorldBankTechRankings: wbComputeRankings } = require('./_wb-tech-readiness-projection.cjs');
 
 const WB_INDICATORS = [
   { key: 'internet',  id: 'IT.NET.USER.ZS', dateRange: '2019:2024' },
@@ -7466,43 +7492,6 @@ async function wbFetchIndicator(indicatorId, dateRange) {
     }
   }
   return latestByCountry;
-}
-
-function wbNormalize(val, max) {
-  if (val === undefined || val === null) return null;
-  return Math.min(100, (val / max) * 100);
-}
-
-function wbComputeRankings(indicatorData) {
-  const allCountries = new Set();
-  for (const data of Object.values(indicatorData)) {
-    Object.keys(data).forEach(c => allCountries.add(c));
-  }
-  const scores = [];
-  for (const cc of allCountries) {
-    const components = {
-      internet:  wbNormalize(indicatorData.internet[cc]?.value, WB_NORMALIZE_MAX.internet),
-      mobile:    wbNormalize(indicatorData.mobile[cc]?.value, WB_NORMALIZE_MAX.mobile),
-      broadband: wbNormalize(indicatorData.broadband[cc]?.value, WB_NORMALIZE_MAX.broadband),
-      rdSpend:   wbNormalize(indicatorData.rdSpend[cc]?.value, WB_NORMALIZE_MAX.rdSpend),
-    };
-    let totalWeight = 0, weightedSum = 0;
-    for (const [key, weight] of Object.entries(WB_WEIGHTS)) {
-      if (components[key] !== null) { weightedSum += components[key] * weight; totalWeight += weight; }
-    }
-    const score = totalWeight > 0 ? weightedSum / totalWeight : 0;
-    const name = indicatorData.internet[cc]?.name || indicatorData.mobile[cc]?.name || cc;
-    const observations = buildWorldBankTechObservations({
-      internet: indicatorData.internet[cc],
-      mobile: indicatorData.mobile[cc],
-      broadband: indicatorData.broadband[cc],
-      rdSpend: indicatorData.rdSpend[cc],
-    });
-    scores.push({ country: cc, countryName: name, score: Math.round(score * 10) / 10, rank: 0, components, observations });
-  }
-  scores.sort((a, b) => b.score - a.score);
-  scores.forEach((s, i) => { s.rank = i + 1; });
-  return scores;
 }
 
 async function wbFetchProgress() {
@@ -7578,7 +7567,7 @@ async function seedWorldBank() {
       console.log(`[WB]   ${id}: ${Object.keys(indicatorData[key]).length} countries`);
     }
     const rankings = wbComputeRankings(indicatorData);
-    console.log(`[WB] Rankings: ${rankings.length} countries`);
+    console.log(`[WB] Rankings: ${rankings.filter(entry => entry.rank !== null).length}/${rankings.length} countries ranked`);
 
     console.log('[WB] Fetching progress indicators...');
     const progressData = await wbFetchProgress();

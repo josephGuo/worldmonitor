@@ -1482,6 +1482,10 @@
       "infoTooltip": "<strong>Eventi tech</strong> Eventi tecnologici imminenti e recenti: conferenze, lanci di prodotti, audizioni regolatorie e chiamate sugli utili. Aggregati da calendari ufficiali e fonti del settore."
     },
     "techReadiness": {
+      "ranked": "In classifica",
+      "unranked": "Fuori classifica",
+      "coverageRequirement": "Copertura minima per la classifica",
+      "coverageLabel": "Indicatori disponibili",
       "internetUsers": "Utenti di Internet",
       "mobileSubscriptions": "Abbonamenti mobili",
       "rdSpending": "Spesa per ricerca e sviluppo",
@@ -1675,10 +1679,15 @@
       "recentMissing": "Nessun dato in questo momento da {{countries}}; i loro file non si sono caricati, il che non significa zero sfollati."
     },
     "populationExposure": {
-      "totalAffected": "Totale esposto",
-      "affectedCount": "{{count}} interessati",
-      "radiusKm": "raggio {{km}} km",
-      "infoTooltip": "<strong>Stime di esposizione della popolazione</strong> Popolazione stimata nel raggio di impatto dell'evento. In base ai dati sulla densità dei paesi WorldPop.<ul><li>Conflitto: raggio di 50 km</li><li>Terremoto: raggio di 100 km</li><li>Alluvione: raggio di 100 km</li><li>Incendio: raggio di 30 km</li></ul>"
+      "estimateWithin": "Circa {{count}} persone entro {{km}} km",
+      "method": "Le stime si basano sulla densità media di popolazione del paese.",
+      "empty": "Nessun luogo di evento soddisfa i criteri",
+      "infoTooltip": "Sono mostrati solo gli eventi con una posizione precisa in paesi per cui sono disponibili dati sulla densità di popolazione. Le aree stimate possono sovrapporsi.",
+      "eventCount_one": "{{count}} evento",
+      "eventCount_many": "{{count}} eventi",
+      "eventCount_other": "{{count}} eventi",
+      "coverageShown": "Eventi mostrati: {{shown}} su {{total}}",
+      "coverageLeftOut": "Non mostrati: {{imprecise}} senza posizione precisa, {{noEstimate}} in paesi senza dati di densità, {{otherPlaces}} oltre i primi 10 luoghi per fonte"
     },
     "countryTimeline": {
       "now": "ora",
@@ -2384,7 +2393,15 @@
       "noData": "Dati energetici temporaneamente non disponibili - nuovo tentativo in corso",
       "liveTape": "Nastro in tempo reale",
       "liveTapeSource": "Quotazioni di mercato",
-      "infoTooltip": "<strong>Complesso energetico</strong> Segnali energetici fisici e negoziabili in un unico posto:<ul><li><strong>Metriche US Energy Information Administration</strong>: WTI, Brent, produzione US e giacenze</li><li><strong>Live tape</strong>: Prezzi energetici negoziabili come greggio e gas naturale</li><li><strong>Scopo</strong>: Separare lo stress energetico fisico dai pannelli macro e delle materie prime più generali</li></ul>"
+      "infoTooltip": "<strong>Complesso energetico</strong> Segnali energetici fisici e negoziabili in un unico posto:<ul><li><strong>Metriche US Energy Information Administration</strong>: WTI, Brent, produzione US e giacenze</li><li><strong>Live tape</strong>: Prezzi energetici negoziabili come greggio e gas naturale</li><li><strong>Scopo</strong>: Separare lo stress energetico fisico dai pannelli macro e delle materie prime più generali</li></ul>",
+      "marketTape": "Quotazioni di mercato",
+      "futures": "Contratti a termine",
+      "dailySpot": "Prezzo a pronti giornaliero",
+      "eiaWeeklySpot": "Prezzo a pronti EIA · media settimanale",
+      "weekEnding": "Settimana conclusa il {{date}}",
+      "unknownPriceDate": "Ora di osservazione non disponibile",
+      "unknownQuoteSource": "Fonte della quotazione non disponibile",
+      "stalePrice": "Non aggiornato"
     },
     "consumerPrices": {
       "tabs": {
@@ -2722,7 +2739,8 @@
       "sections": {
         "countries": "Paesi sanzionati",
         "entries": "Designazioni recenti",
-        "programs": "Programmi"
+        "programs": "Programmi",
+        "flagRegistries": "Registri di bandiera delle navi e degli aeromobili"
       },
       "empty": {
         "countries": "Nessuna attribuzione di paese disponibile.",
@@ -4502,7 +4520,15 @@
     "renameHint": "{{name}} — doppio clic per rinominare",
     "deleteTab": "Elimina scheda",
     "deleteTabAria": "Elimina scheda {{name}}",
-    "tabNameAria": "Nome scheda"
+    "tabNameAria": "Nome scheda",
+    "addTabTitleSaved": "Nuova scheda (inizia con i pannelli che hai salvato)",
+    "newTabOptions": "Opzioni nuova scheda",
+    "newTabStartsDefault": "Le nuove schede iniziano con i pannelli predefiniti.",
+    "newTabStartsSaved": "Le nuove schede iniziano con i pannelli che hai salvato.",
+    "newTabOptionsHint": "Le schede che hai già non cambiano.",
+    "useThisTabPanels": "Usa i pannelli di questa scheda",
+    "useDefaultPanels": "Usa i pannelli predefiniti",
+    "newTabPanelsNotSaved": "Impossibile salvare. Questo browser blocca l'archiviazione del sito."
   },
   "theaterPresets": {
     "label": "Preset di copertura",

@@ -1,11 +1,14 @@
 import { spokenChokepointStatus, spokenForecastPredictions, spokenPredictionMarkets } from '../spoken-narrators';
 import { CROSS_BORDER_SOURCES, projectCrossBorderSnapshots } from '../../../server/worldmonitor/displacement/v1/cross-border-data';
 import { screenSanctions } from '../../../server/_shared/sanctions-screen';
+import { normalizeFlagRegistries, splitSanctionsAttribution } from '../../../shared/sanctions-attribution';
+import type { ListSanctionsPressureResponse } from '../../../src/generated/server/worldmonitor/sanctions/v1/service_server';
 import { COUNTRY_HISTORY_TOOL } from './country-history-tool';
 import { projectSupplyChainData } from './_shipping-freight';
 import { CAPITAL_FLOW_PAIR_LEG_SCHEMA, CAPITAL_FLOWS_MAX_COUNTRIES, CAPITAL_FLOWS_PAIRS_LABEL, CAPITAL_FLOWS_SORTS, projectCapitalFlows, type CapitalFlowsSort } from './_capital-flows';
 import ISO2_TO_ISO3 from '../../../shared/iso2-to-iso3.js';
 import { MARKET_ASSET_CLASSES } from '../../../shared/panel-admission';
+import { eiaWeeklySpotProvenance, isCrudeOilTicker, isStaleOilPrice, oilTapeMaxAgeMs } from '../../../shared/oil-price-observation';
 import { normalizeSocialVelocity } from '../../_social-velocity.js';
 // @ts-expect-error - existing Edge-safe JavaScript module has no declaration.
 import { assessContentAge } from '../../_content-age.js';
@@ -1041,7 +1044,7 @@ export const CACHE_TOOLS: ToolDef[] = [
     name: 'get_market_data',
     title: 'Market quotes and commodity prices',
     _outputBudgetBytes: 131072,
-    description: 'Return the seeded market snapshot: equity, commodity, crypto and Gulf-market quotes, sector performance with explicit valuation coverage, ETF flows and the Fear & Greed index; subscriptions also get SGE physical-vs-COMEX premiums and physical-divergence regimes, which a free account receives as `locked` with an upgradeUrl. Quotes are flagged stale after 30 minutes. Covers the curated symbol universe only: symbols filters that snapshot and cannot look up arbitrary tickers. Seeded-cache read with no live fetch: weight 1 on API plans, included in the signed-in free allowance. asset_class selects classes, limit caps each per-class list (default 30, 0 for no cap). Dedicated paid plans open or reuse one market panel allocation across filters; refresh with request_id starts a new one. API plans retain per-tool billing.',
+    description: 'Return the seeded market snapshot: equity, commodity, crypto and Gulf-market quotes, sector performance with explicit valuation coverage, ETF flows and the Fear & Greed index; subscriptions also get SGE physical-vs-COMEX premiums and physical-divergence regimes, which a free account receives as `locked` with an upgradeUrl. Quotes stale after 30m. Brent/WTI: spot 4d; futures normal NYMEX breaks plus 30m restart grace. Covers the curated symbol universe only: symbols filters that snapshot and cannot look up arbitrary tickers. Seeded-cache read with no live fetch: weight 1 on API plans, included in the signed-in free allowance. asset_class selects classes, limit caps each per-class list (default 30, 0 for no cap). Dedicated paid plans open or reuse one market panel allocation across filters; refresh with request_id starts a new one. API plans retain per-tool billing.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1082,7 +1085,13 @@ export const CACHE_TOOLS: ToolDef[] = [
       'commodities-bootstrap': {
         type: ['object', 'null'],
         properties: {
-          quotes: { type: 'array', items: { type: 'object', properties: { symbol: { type: 'string' }, price: { type: 'number' }, change: { type: 'number', description: 'Percent change vs prior close.' } } } },
+          quotes: { type: 'array', items: { type: 'object', properties: {
+            symbol: { type: 'string' }, price: { type: 'number' }, change: { type: 'number', description: 'Percent change vs prior observation.' },
+            priceSource: { type: 'string', description: 'Price provider for Brent and WTI, when known.' },
+            priceBasis: { type: 'string', enum: ['futures', 'spot'], description: 'Futures quote or daily spot observation for Brent and WTI.' },
+            priceAt: { type: 'number', description: 'Provider observation time in epoch milliseconds. Daily spot dates use midnight UTC.' },
+            stale: { type: 'boolean', description: 'Brent or WTI quote is undated or exceeds its observation age budget.' },
+          } } },
         },
       },
       'physical-premium': PHYSICAL_PREMIUM_OUTPUT_SCHEMA,
@@ -1210,6 +1219,18 @@ export const CACHE_TOOLS: ToolDef[] = [
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     _postFilter: (data, params) => {
       normalizePhysicalDivergenceDataset(data);
+      const commodities = data['commodities-bootstrap'] as {
+        quotes?: Array<{ symbol: string; priceBasis?: string; priceAt?: number }>;
+      } | null;
+      if (Array.isArray(commodities?.quotes)) {
+        const now = Date.now();
+        data['commodities-bootstrap'] = {
+          ...commodities,
+          quotes: commodities.quotes.map(quote => isCrudeOilTicker(quote.symbol) ? {
+            ...quote, stale: isStaleOilPrice(quote.priceAt, oilTapeMaxAgeMs(quote.priceBasis), now),
+          } : quote),
+        };
+      }
       const symbols = argStrList(params.symbols);
       if (symbols.length > 0) {
         for (const label of ['stocks-bootstrap', 'commodities-bootstrap', 'crypto', 'gulf-quotes']) {
@@ -2552,6 +2573,13 @@ export const CACHE_TOOLS: ToolDef[] = [
           countries: { type: 'array', items: { type: 'object', properties: {
             countryCode: { type: 'string' }, pressureScore: { type: 'number' },
           } } },
+          unattributed: { type: 'object', description: 'Counts across the full pressure snapshot before country or entity filters.', properties: {
+            entryCount: { type: 'integer' }, vesselCount: { type: 'integer' }, aircraftCount: { type: 'integer' },
+          } },
+          flagRegistries: { type: 'array', description: 'Top vessel flag and aircraft registries. A flag or registry is often one of convenience and is not counted in countries.', items: { type: 'object', properties: {
+            countryCode: { type: 'string' }, countryName: { type: 'string' }, vesselCount: { type: 'integer' }, newVesselCount: { type: 'integer' },
+            aircraftCount: { type: 'integer' }, newAircraftCount: { type: 'integer' },
+          } } },
         },
       },
       changes: {
@@ -2578,6 +2606,14 @@ export const CACHE_TOOLS: ToolDef[] = [
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     _postFilter: (data, params) => {
       const { countries, days, cursor } = sanctionsArguments(params);
+      const pressure = data.pressure as ListSanctionsPressureResponse | null | undefined;
+      if (Array.isArray(pressure?.countries)) {
+        data.pressure = {
+          ...pressure,
+          ...splitSanctionsAttribution(pressure.countries, pressure.unattributed),
+          ...(Array.isArray(pressure.flagRegistries) ? { flagRegistries: normalizeFlagRegistries(pressure.flagRegistries) } : {}),
+        };
+      }
       const etype = argStr(params.entity_type);
       const query = argStr(params.query);
       const limit = (argNum(params.limit) ?? DEFAULT_LIST_LIMIT);
@@ -3035,8 +3071,11 @@ export const CACHE_TOOLS: ToolDef[] = [
     outputSchema: cacheEnvelope({
       'eia-petroleum': { type: ['object', 'null'], additionalProperties: {
         type: 'object', properties: {
-          current: { type: 'number' }, previous: { type: ['number', 'null'] }, date: { type: 'string' },
+          current: { type: 'number' }, previous: { type: ['number', 'null'] },
+          date: { type: 'string', description: 'EIA observation date. For spot prices, the week ending date.' },
           unit: { type: 'string', description: 'Source unit. Stocks and production use thousand barrels and thousand barrels per day; prices use USD per barrel.' },
+          priceSource: { const: 'EIA' }, priceBasis: { const: 'spot' }, frequency: { const: 'weekly' },
+          stale: { type: 'boolean', description: 'Weekly spot observation is missing, invalid, future-dated, or older than 14 days.' },
         },
       } },
       index: { type: ['object', 'null'], properties: { regions: { type: 'array', items: { type: 'object' } } } },
@@ -3104,6 +3143,20 @@ export const CACHE_TOOLS: ToolDef[] = [
     }),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     _postFilter: (data, params) => {
+      const petroleum = data['eia-petroleum'] as Record<string, { date?: string }> | null;
+      if (petroleum && typeof petroleum === 'object' && !Array.isArray(petroleum)) {
+        const annotated: Record<string, unknown> = { ...petroleum };
+        const now = Date.now();
+        for (const commodity of ['brent', 'wti']) {
+          const point = petroleum[commodity];
+          if (!point || typeof point !== 'object') continue;
+          annotated[commodity] = {
+            ...point,
+            ...eiaWeeklySpotProvenance(Date.parse(point.date ?? ''), now),
+          };
+        }
+        data['eia-petroleum'] = annotated;
+      }
       const countries = resolveCountryFilter(params.country, 'country');
       if (countries.length > 0) {
         data._all = pickMapKeys(data._all, countries);

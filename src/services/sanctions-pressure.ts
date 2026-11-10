@@ -4,8 +4,11 @@ import { premiumFetch } from '@/services/premium-fetch';
 import { getHydratedData } from '@/services/bootstrap';
 import { hasPremiumAccess } from '@/services/panel-gating';
 import { toApiUrl } from '@/services/runtime';
-import type { SanctionsEntry as ProtoSanctionsEntry, SanctionsEntityType as ProtoSanctionsEntityType, CountrySanctionsPressure as ProtoCountryPressure, ProgramSanctionsPressure as ProtoProgramPressure, ListSanctionsPressureResponse } from '@/generated/client/worldmonitor/sanctions/v1/service_client';
+import type { SanctionsEntry as ProtoSanctionsEntry, SanctionsEntityType as ProtoSanctionsEntityType, CountrySanctionsPressure as ProtoCountryPressure, ProgramSanctionsPressure as ProtoProgramPressure, ListSanctionsPressureResponse, UnattributedSanctionsPressure, FlagRegistrySanctionsPressure } from '@/generated/client/worldmonitor/sanctions/v1/service_client';
 import { SanctionsServiceClient } from '@/services/generated-rpc-clients';
+import { normalizeFlagRegistries, splitSanctionsAttribution } from '../../shared/sanctions-attribution';
+
+export type { FlagRegistrySanctionsPressure };
 
 export type SanctionsEntityType = 'entity' | 'individual' | 'vessel' | 'aircraft';
 
@@ -49,6 +52,8 @@ export interface SanctionsPressureResult {
   vesselCount: number;
   aircraftCount: number;
   countries: CountrySanctionsPressure[];
+  unattributed?: UnattributedSanctionsPressure;
+  flagRegistries: FlagRegistrySanctionsPressure[];
   programs: ProgramSanctionsPressure[];
   entries: SanctionsEntry[];
 }
@@ -78,6 +83,7 @@ const emptyResult: SanctionsPressureResult = {
   vesselCount: 0,
   aircraftCount: 0,
   countries: [],
+  flagRegistries: [],
   programs: [],
   entries: [],
 };
@@ -95,6 +101,8 @@ function reviveNullableDate(value: Date | null): Date | null {
 function reviveSanctionsPressureResult(result: SanctionsPressureResult): SanctionsPressureResult {
   return {
     ...result,
+    ...splitSanctionsAttribution(result.countries ?? [], result.unattributed),
+    flagRegistries: normalizeFlagRegistries(result.flagRegistries),
     fetchedAt: reviveDate(result.fetchedAt),
     datasetDate: reviveNullableDate(result.datasetDate),
     entries: result.entries.map((entry) => ({
@@ -159,6 +167,7 @@ function toProgram(raw: ProtoProgramPressure): ProgramSanctionsPressure {
 }
 
 
+
 function toResult(response: ListSanctionsPressureResponse): SanctionsPressureResult {
   return {
     fetchedAt: parseEpoch(response.fetchedAt as string | number | undefined) || new Date(),
@@ -171,7 +180,8 @@ function toResult(response: ListSanctionsPressureResponse): SanctionsPressureRes
     newEntryCount: response.newEntryCount ?? 0,
     vesselCount: response.vesselCount ?? 0,
     aircraftCount: response.aircraftCount ?? 0,
-    countries: (response.countries ?? []).map(toCountry),
+    ...splitSanctionsAttribution((response.countries ?? []).map(toCountry), response.unattributed),
+    flagRegistries: normalizeFlagRegistries(response.flagRegistries),
     programs: (response.programs ?? []).map(toProgram),
     entries: (response.entries ?? []).map(toEntry),
   };

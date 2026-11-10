@@ -1485,6 +1485,19 @@ describe('api/mcp.ts — PRO MCP Server', () => {
     assert.ok(!('stocks-bootstrap' in out.data), 'asset_class crypto → stocks slice dropped');
   });
 
+  it('get_market_data: Friday crude closes stay fresh on Saturday and undated quotes stay stale', async (t) => {
+    t.mock.method(Date, 'now', () => Date.parse('2026-11-07T15:00:00Z'));
+    const priceAt = Date.parse('2026-11-06T21:59:00Z');
+    const brent = { symbol: 'BZ=F', price: 91.60, priceBasis: 'futures', priceSource: 'Yahoo Finance', priceAt };
+    const wti = { symbol: 'CL=F', price: 85 };
+    mockCacheKeys({ 'market:commodities-bootstrap:v1': { quotes: [brent, wti] } });
+    const out = await callTool('get_market_data', { asset_class: ['commodity'] });
+    assert.deepEqual(out.data['commodities-bootstrap'].quotes, [
+      { ...brent, stale: false },
+      { ...wti, stale: true },
+    ]);
+  });
+
   it('get_economic_data: China v2 aliases, dataset filter, country filter, and schema stay aligned', async () => {
     // Live clock: this test asserts on the MCP projection, which re-derives
     // transport freshness against Date.now(). A pinned fixture time expires
@@ -3085,7 +3098,10 @@ describe('api/mcp.ts — PRO MCP Server', () => {
     process.env.UPSTASH_REDIS_REST_URL = 'https://fake.upstash.io';
     process.env.UPSTASH_REDIS_REST_TOKEN = 'fake_token';
 
-    const eiaPayload = { weeklySeries: [{ week: '2026-W18', stocks: 832.1 }] };
+    const eiaPayload = {
+      brent: { date: new Date(Date.now() - 11 * 86_400_000).toISOString().slice(0, 10), current: 121.17 },
+      stocks: { current: 832.1 },
+    };
     const electricityPayload = { countries: [{ iso: 'DE', priceEurMwh: 88 }] };
     const emberPayload = { regions: [{ id: 'EU', cleanShare: 0.62 }] };
     const gasStoragePayload = { countries: [{ iso: 'DE', fillPct: 71 }] };
@@ -3166,7 +3182,10 @@ describe('api/mcp.ts — PRO MCP Server', () => {
     assert.equal(payload.stale, false, 'all 12 metas within their per-key budgets must yield stale=false');
     assert.equal(payload.cached_at, new Date(crisisPolicyFetchedAt).toISOString(), 'cached_at reflects oldest valid fetchedAt (crisis-policies, 30d old, within ~400d budget)');
     // Label-walk slice names per NON_LABEL=/^(v\d+|\d+|stale|sebuf)$/:
-    assert.deepEqual(payload.data['eia-petroleum'], eiaPayload);
+    assert.deepEqual(payload.data['eia-petroleum'], {
+      ...eiaPayload,
+      brent: { ...eiaPayload.brent, priceBasis: 'spot', priceSource: 'EIA', frequency: 'weekly', stale: false },
+    });
     assert.deepEqual(payload.data['index'], electricityPayload, 'energy:electricity:v1:index → "index"');
     assert.deepEqual(payload.data['_all'], emberPayload, 'energy:ember:v1:_all → "_all"');
     assert.deepEqual(payload.data['_countries'], gasStoragePayload, 'energy:gas-storage:v1:_countries → "_countries"');
@@ -4808,6 +4827,23 @@ describe('get_sanctions_data screening contract', () => {
     for (const key of ['seed-meta:sanctions:entities', 'seed-meta:sanctions:pressure']) {
       assert.ok(tool._freshnessChecks.some(check => check.key === key));
     }
+  });
+  it('separates legacy unattributed counts before applying country filters', () => {
+    const unattributed = { entryCount: 8, vesselCount: 3, aircraftCount: 1 };
+    const countries = [{ countryCode: 'RU', entryCount: 4 }];
+    const legacy = { entries: [], countries: [{ countryCode: 'XX', ...unattributed }, ...countries] };
+    const current = { entries: [], countries, unattributed };
+    for (const pressure of [legacy, current]) {
+      const result = tool._postFilter(structuredClone({ pressure }), { country: 'RU' });
+      assert.deepEqual(result.pressure, current);
+    }
+  });
+  it('fills aircraft counts on flag registries from snapshots that predate them', () => {
+    const pressure = { entries: [], countries: [], flagRegistries: [{ countryCode: 'PA', countryName: 'Panama', vesselCount: 3, newVesselCount: 1 }] };
+    const result = tool._postFilter(structuredClone({ pressure }), {});
+    assert.deepEqual(result.pressure.flagRegistries, [
+      { countryCode: 'PA', countryName: 'Panama', vesselCount: 3, newVesselCount: 1, aircraftCount: 0, newAircraftCount: 0 },
+    ]);
   });
   it('screens aliases before limiting and composes country, type and primary-name filters', () => {
     const data = { entities: index, pressure: { entries: [], countries: [] } };
