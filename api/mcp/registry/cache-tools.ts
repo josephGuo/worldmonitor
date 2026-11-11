@@ -1227,7 +1227,7 @@ export const CACHE_TOOLS: ToolDef[] = [
         data['commodities-bootstrap'] = {
           ...commodities,
           quotes: commodities.quotes.map(quote => isCrudeOilTicker(quote.symbol) ? {
-            ...quote, stale: isStaleOilPrice(quote.priceAt, oilTapeMaxAgeMs(quote.priceBasis), now),
+            ...quote, stale: isStaleOilPrice(quote.priceAt, oilTapeMaxAgeMs(quote.priceBasis, now), now),
           } : quote),
         };
       }
@@ -2580,6 +2580,10 @@ export const CACHE_TOOLS: ToolDef[] = [
             countryCode: { type: 'string' }, countryName: { type: 'string' }, vesselCount: { type: 'integer' }, newVesselCount: { type: 'integer' },
             aircraftCount: { type: 'integer' }, newAircraftCount: { type: 'integer' },
           } } },
+          regulationTargets: { type: 'array', description: 'Top SEMA regulation target states for people and entities; excluded from country risk and brief counts.', items: { type: 'object', properties: {
+            countryCode: { type: 'string' }, countryName: { type: 'string' }, entryCount: { type: 'integer' }, newEntryCount: { type: 'integer' },
+            vesselCount: { type: 'integer' }, aircraftCount: { type: 'integer' },
+          } } },
         },
       },
       changes: {
@@ -2607,10 +2611,11 @@ export const CACHE_TOOLS: ToolDef[] = [
     _postFilter: (data, params) => {
       const { countries, days, cursor } = sanctionsArguments(params);
       const pressure = data.pressure as ListSanctionsPressureResponse | null | undefined;
-      if (Array.isArray(pressure?.countries)) {
+      if (pressure) {
         data.pressure = {
           ...pressure,
-          ...splitSanctionsAttribution(pressure.countries, pressure.unattributed),
+          regulationTargets: pressure.regulationTargets ?? [],
+          ...(Array.isArray(pressure.countries) ? splitSanctionsAttribution(pressure.countries, pressure.unattributed) : {}),
           ...(Array.isArray(pressure.flagRegistries) ? { flagRegistries: normalizeFlagRegistries(pressure.flagRegistries) } : {}),
         };
       }
@@ -3075,7 +3080,7 @@ export const CACHE_TOOLS: ToolDef[] = [
           date: { type: 'string', description: 'EIA observation date. For spot prices, the week ending date.' },
           unit: { type: 'string', description: 'Source unit. Stocks and production use thousand barrels and thousand barrels per day; prices use USD per barrel.' },
           priceSource: { const: 'EIA' }, priceBasis: { const: 'spot' }, frequency: { const: 'weekly' },
-          stale: { type: 'boolean', description: 'Weekly spot observation is missing, invalid, future-dated, or older than 14 days.' },
+          stale: { type: 'boolean', description: 'Weekly spot observation is missing, invalid, future-dated, or past the next scheduled EIA release plus a 24-hour refresh grace.' },
         },
       } },
       index: { type: ['object', 'null'], properties: { regions: { type: 'array', items: { type: 'object' } } } },

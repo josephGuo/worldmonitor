@@ -1673,10 +1673,13 @@
       "estimateWithin": "Aproximativ {{count}} de persoane pe o rază de {{km}} km",
       "method": "Estimările se bazează pe densitatea medie a populației din țară.",
       "empty": "Nicio locație de eveniment eligibilă",
-      "infoTooltip": "Sunt afișate doar evenimentele cu localizare precisă din țări cu date despre densitatea populației. Zonele estimate se pot suprapune.",
+      "infoTooltip": "Sunt afișate evenimentele cu date despre densitatea populației țării. Locațiile din date mai vechi fără informații despre precizie sunt marcate ca așteptând actualizarea. Zonele estimate se pot suprapune.",
       "eventCount_one": "{{count}} eveniment",
       "eventCount_few": "{{count}} evenimente",
       "eventCount_other": "{{count}} de evenimente",
+      "locationPending": "Precizia locației așteaptă actualizarea",
+      "unrestCoverage": "Acoperirea tulburărilor",
+      "ucdpPending": "Acoperirea UCDP așteaptă actualizarea",
       "coverageShown": "Evenimente afișate: {{shown}} din {{total}}",
       "coverageLeftOut": "Neafișate: {{imprecise}} fără locație precisă, {{noEstimate}} în țări fără date de densitate, {{otherPlaces}} după primele 10 locuri pe sursă"
     },
@@ -2740,7 +2743,8 @@
         "countries": "Țări sancționate",
         "entries": "Desemnări recente",
         "programs": "Programe",
-        "flagRegistries": "Registre de pavilion ale navelor și de înmatriculare a aeronavelor"
+        "flagRegistries": "Registre de pavilion ale navelor și de înmatriculare a aeronavelor",
+        "regulationTargets": "Țări vizate de reglementările SEMA"
       },
       "empty": {
         "countries": "Nicio atribuire de țară disponibilă.",
@@ -2764,7 +2768,8 @@
         "program": "Program",
         "undated": "fără dată"
       },
-      "designations_few": "{{count}} desemnări"
+      "designations_few": "{{count}} desemnări",
+      "targetExplanation": "Țările vizate de reglementări nu constituie dovezi privind naționalitatea sau adresa. Sunt excluse din scorurile de risc ale țărilor și din sinteze."
     },
     "radiationWatch": {
       "title": "Monitorizare Radiații",

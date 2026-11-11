@@ -1591,11 +1591,14 @@
       "estimateWithin": "Około {{count}} osób w promieniu {{km}} km",
       "method": "Szacunki opierają się na średniej gęstości zaludnienia kraju.",
       "empty": "Brak lokalizacji zdarzeń spełniających kryteria",
-      "infoTooltip": "Wyświetlane są tylko zdarzenia o dokładnej lokalizacji w krajach z dostępnymi danymi o gęstości zaludnienia. Szacowane obszary mogą się nakładać.",
+      "infoTooltip": "Wyświetlane są zdarzenia z danymi o gęstości zaludnienia kraju. Lokalizacje ze starszych danych bez informacji o dokładności są oznaczane jako oczekujące na aktualizację. Szacowane obszary mogą się nakładać.",
       "eventCount_one": "{{count}} zdarzenie",
       "eventCount_few": "{{count}} zdarzenia",
       "eventCount_many": "{{count}} zdarzeń",
       "eventCount_other": "{{count}} zdarzeń",
+      "locationPending": "Dokładność lokalizacji oczekuje na aktualizację",
+      "unrestCoverage": "Zakres danych o niepokojach",
+      "ucdpPending": "Zakres danych UCDP oczekuje na aktualizację",
       "coverageShown": "Pokazane zdarzenia: {{shown}} z {{total}}",
       "coverageLeftOut": "Niepokazane: {{imprecise}} bez dokładnej lokalizacji, {{noEstimate}} w krajach bez danych o gęstości, {{otherPlaces}} poza pierwszymi 10 miejscami z każdego źródła"
     },
@@ -2751,7 +2754,8 @@
         "countries": "Kraje objęte sankcjami",
         "entries": "Niedawne desygnacje",
         "programs": "Programy",
-        "flagRegistries": "Rejestry bander statków i statków powietrznych"
+        "flagRegistries": "Rejestry bander statków i statków powietrznych",
+        "regulationTargets": "Państwa objęte przepisami SEMA"
       },
       "empty": {
         "countries": "Brak przypisania kraju.",
@@ -2776,7 +2780,8 @@
         "undated": "bez daty"
       },
       "designations_few": "{{count}} desygnacje",
-      "designations_many": "{{count}} desygnacji"
+      "designations_many": "{{count}} desygnacji",
+      "targetExplanation": "Państwa objęte przepisami nie stanowią dowodu obywatelstwa ani adresu. Są wyłączone z ocen ryzyka krajów i raportów skrótowych."
     },
     "radiationWatch": {
       "title": "Monitoring promieniowania",

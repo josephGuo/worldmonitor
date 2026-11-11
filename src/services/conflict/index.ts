@@ -90,7 +90,7 @@ function toUcdpGeoEvent(proto: ProtoUcdpEvent): UcdpGeoEvent {
     date_end: proto.dateEnd ? new Date(proto.dateEnd).toISOString().substring(0, 10) : '',
     latitude: proto.location?.latitude ?? 0,
     longitude: proto.location?.longitude ?? 0,
-    hasPreciseLocation: proto.hasPreciseLocation === true,
+    hasPreciseLocation: proto.hasPreciseLocation,
     locationName: proto.locationName,
     country: proto.country,
     side_a: proto.sideA,
@@ -127,11 +127,7 @@ export type UcdpExposureInput =
   | { source: 'full-feed'; events: UcdpExposureEvent[] }
   | { source: 'projection'; events: UcdpExposureEvent[]; coverage?: ExposureCoverage };
 
-// UCDP appends a former name: "Yemen (North Yemen)", "DR Congo (Zaire)".
-// Classification and forecast code key on the raw name, so strip it for display only.
-export function currentUcdpCountryName(country: string): string {
-  return country.replace(/\s*\([^)]*\)\s*$/, '').trim() || country;
-}
+export { currentUcdpCountryName } from '../../../shared/ucdp-display';
 
 import type { UcdpConflictStatus } from './ucdp-classify';
 export { deriveConflictHistory, deriveUcdpClassifications } from './ucdp-classify';

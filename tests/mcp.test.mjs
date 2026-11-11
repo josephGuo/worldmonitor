@@ -1498,6 +1498,31 @@ describe('api/mcp.ts — PRO MCP Server', () => {
     ]);
   });
 
+  it('get_market_data: Christmas closing quotes stay fresh until the holiday weekend ends', async (t) => {
+    t.mock.method(Date, 'now', () => Date.parse('2026-12-26T12:00:00Z'));
+    const quote = { symbol: 'CL=F', price: 85, priceBasis: 'futures', priceAt: Date.parse('2026-12-24T18:44Z') };
+    mockCacheKeys({ 'market:commodities-bootstrap:v1': { quotes: [quote] } });
+    const out = await callTool('get_market_data', { asset_class: ['commodity'] });
+    assert.deepEqual(out.data['commodities-bootstrap'].quotes, [{ ...quote, stale: false }]);
+  });
+
+  it('get_energy_intelligence: observation freshness follows the next EIA release', async (t) => {
+    for (const [date, now, stale] of [
+      ['2025-12-12', '2025-12-29T21:59Z', false],
+      ['2025-12-12', '2025-12-30T22:01Z', true],
+      ['2026-11-06', '2026-11-19T23:59Z', true],
+      ['2026-11-13', '2026-11-19T23:59Z', false],
+    ]) {
+      t.mock.method(Date, 'now', () => Date.parse(now));
+      mockCacheKeys({ 'energy:eia-petroleum:v1': { brent: { date, current: 85 } } }, {
+        'seed-meta:energy:eia-petroleum': { fetchedAt: Date.parse(now) - 60_000, recordCount: 1 },
+      });
+      const out = await callTool('get_energy_intelligence', { dataset: ['eia-petroleum'] });
+      assert.equal(out.data['eia-petroleum'].brent.stale, stale, now);
+      t.mock.restoreAll();
+    }
+  });
+
   it('get_economic_data: China v2 aliases, dataset filter, country filter, and schema stay aligned', async () => {
     // Live clock: this test asserts on the MCP projection, which re-derives
     // transport freshness against Date.now(). A pinned fixture time expires
@@ -3098,8 +3123,10 @@ describe('api/mcp.ts — PRO MCP Server', () => {
     process.env.UPSTASH_REDIS_REST_URL = 'https://fake.upstash.io';
     process.env.UPSTASH_REDIS_REST_TOKEN = 'fake_token';
 
+    const latestFriday = new Date();
+    latestFriday.setUTCDate(latestFriday.getUTCDate() - ((latestFriday.getUTCDay() + 2) % 7));
     const eiaPayload = {
-      brent: { date: new Date(Date.now() - 11 * 86_400_000).toISOString().slice(0, 10), current: 121.17 },
+      brent: { date: latestFriday.toISOString().slice(0, 10), current: 121.17 },
       stocks: { current: 832.1 },
     };
     const electricityPayload = { countries: [{ iso: 'DE', priceEurMwh: 88 }] };
@@ -4835,7 +4862,7 @@ describe('get_sanctions_data screening contract', () => {
     const current = { entries: [], countries, unattributed };
     for (const pressure of [legacy, current]) {
       const result = tool._postFilter(structuredClone({ pressure }), { country: 'RU' });
-      assert.deepEqual(result.pressure, current);
+      assert.deepEqual(result.pressure, { ...current, regulationTargets: [] });
     }
   });
   it('fills aircraft counts on flag registries from snapshots that predate them', () => {
@@ -4844,6 +4871,19 @@ describe('get_sanctions_data screening contract', () => {
     assert.deepEqual(result.pressure.flagRegistries, [
       { countryCode: 'PA', countryName: 'Panama', vesselCount: 3, newVesselCount: 1, aircraftCount: 0, newAircraftCount: 0 },
     ]);
+  });
+  it('exposes regulation targets separately without treating a country filter as target attribution', () => {
+    const regulationTargets = [{ countryCode: 'IR', countryName: 'Iran', entryCount: 500, newEntryCount: 0, vesselCount: 0, aircraftCount: 0 }];
+    const result = tool._postFilter({ pressure: { entries: [], countries: [], regulationTargets } }, { country: 'IR' });
+    assert.deepEqual(result.pressure.regulationTargets, regulationTargets);
+    assert.deepEqual(result.pressure.countries, []);
+    assert.ok(tool.outputSchema.properties.data.properties.pressure.properties.regulationTargets);
+  });
+  it('defaults regulation targets for older snapshots and preserves cache misses', () => {
+    for (const pressure of [{ entries: [], countries: [] }, {}]) {
+      assert.deepEqual(tool._postFilter({ pressure }, {}).pressure.regulationTargets, []);
+    }
+    assert.equal(tool._postFilter({ pressure: null }, {}).pressure, null);
   });
   it('screens aliases before limiting and composes country, type and primary-name filters', () => {
     const data = { entities: index, pressure: { entries: [], countries: [] } };
