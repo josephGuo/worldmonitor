@@ -1669,7 +1669,7 @@
       "estimateWithin": "{{km}} km yarıçap içinde yaklaşık {{count}} kişi",
       "method": "Tahminler ülkenin ortalama nüfus yoğunluğuna dayanır.",
       "empty": "Ölçütleri karşılayan olay konumu yok",
-      "infoTooltip": "Ülkenin nüfus yoğunluğu verileri bulunan olaylar gösterilir. Doğruluk bilgisi olmayan eski verilerdeki konumlar, güncelleme bekliyor olarak işaretlenir. Tahmini alanlar örtüşebilir.",
+      "infoTooltip": "Ülkenin nüfus yoğunluğu verileri bulunan olaylar gösterilir. Doğruluk bilgisi olmayan eski verilerdeki konumlar, güncelleme bekliyor olarak işaretlenir. Tahmini alanlar örtüşebilir. Huzursuzluk olayları kesin konum gerektirir; kesin olmayan UCDP olayları hariç tutulur. İki kaynaktan (huzursuzluk ve UCDP) bildirilen aynı yer iki satırda gösterilir.",
       "eventCount_one": "{{count}} olay",
       "eventCount_other": "{{count}} olay",
       "locationPending": "Konum doğruluğu güncelleme bekliyor",
@@ -2112,7 +2112,8 @@
       "channelOrVideoUrl": "YouTube kanal veya video URL'si",
       "channelUrlHint": "Kanal URL'si (youtube.com/channel/UC…) veya canlı video URL'si yapıştırın",
       "youtubeChannel": "YouTube kanalı",
-      "httpsStreamHint": "Tarayıcılar güvensiz (http) yayınları engeller. Güvenli (https) bir yayın URL'si yapıştırın"
+      "httpsStreamHint": "Tarayıcılar güvensiz (http) yayınları engeller. Güvenli (https) bir yayın URL'si yapıştırın",
+      "tapToPlay": "Oynatmak için dokunun"
     },
     "map": {
       "showMap": "Haritayı Göster",
@@ -2719,7 +2720,7 @@
     },
     "sanctionsPressure": {
       "title": "Yaptırımlar ve Tanımlamalar",
-      "infoTooltip": "Yabancı Varlıklar Kontrol Ofisi Özel Olarak Belirlenen Vatandaşlar ve Birleştirilmiş Listeler artı Global İşler Kanada SEMA/JVCFOA listeleme ekleri. Hangi ülkelerin en yüksek listeleme baskısı altında olduğunu, hangi programların bunu çalıştırdığını ve son güncellemeden bu yana yeni eklenenler gösterir.",
+      "infoTooltip": "OFAC SDN ve birleştirilmiş listeler ile Kanada SEMA/JVCFOA yaptırımları. Ülke satırları doğrudan bağlantıları kullanır. Gemi bayrakları ve uçak tescilleri sicillerde ayrı sayılır; bir ülkenin varlık sayısının sıfır olması yaptırıma tabi varlık bulunmadığı anlamına gelmez. Ana kuruluşların ülkeleri adres kanıtlarından ayrı tutulur ve risk puanlarına katılmaz.",
       "loading": "Yaptırım verileri yükleniyor...",
       "unavailable": "Yaptırım verileri kullanılamıyor.",
       "summary": {
@@ -4511,7 +4512,9 @@
     "newTabOptionsHint": "Zaten sahip olduğunuz sekmeler değişmez.",
     "useThisTabPanels": "Bu sekmenin panellerini kullan",
     "useDefaultPanels": "Varsayılan panelleri kullan",
-    "newTabPanelsNotSaved": "Kaydedilemedi. Bu tarayıcı site depolamayı engelliyor."
+    "newTabPanelsNotSaved": "Kaydedilemedi. Bu tarayıcı site depolamayı engelliyor.",
+    "team": "Takım",
+    "teamDashboards": "Takım panoları"
   },
   "theaterPresets": {
     "label": "Kapsama ön ayarları",
@@ -4883,5 +4886,22 @@
     "close": "Kapat",
     "alertsHint": "Bu iPhone veya iPad'de uyarı almak için World Monitor'ı ana ekranınıza yükleyin.",
     "how": "Nasıl yüklenir"
+  },
+  "teamDashboards": {
+    "desc": "Takımınızın paylaştığı panolar. Yeni sekme olarak eklemek için bir tanesini açın.",
+    "empty": "Takımınız henüz bir pano paylaşmamış. Panonun tüm panellerini, boyutlarını ve haritasını takımınızın herkes tarafından görmesi için bu sekmeyi paylaşın.",
+    "open": "{{name}} öğesini yeni sekme olarak aç",
+    "stopSharing": "{{name}} öğesini paylaşmayı durdur",
+    "confirmStop": "{{name}} öğesini takımınızla paylaşmayı durdursun? Kişilerin zaten açtıkları sekmeler olduğu gibi kalır.",
+    "shareTab": "Bu sekmeyi takımınızla paylaş",
+    "shareChanges": "Bu sekmedeki değişiklikleri takımınızla paylaş",
+    "behind": "Takımınız bu panoyu açtıktan sonra değiştirdi.",
+    "getLatest": "En son sürümü al",
+    "opened": "{{name}} öğesi takımınızdan açıldı.",
+    "shared": "{{name}} öğesi takımınızla paylaşıldı.",
+    "updated": "Bu sekme artık takımınızın en son sürümünü içeriyor.",
+    "stopped": "{{name}} öğesini paylaşmak durduruldu.",
+    "failed": "Takımınızın panolarına ulaşılamadı. Lütfen tekrar deneyin.",
+    "limit": "Takımınız burada zaten {{limit}} pano paylaşıyor. Önce bir tanesini paylaşmayı durdurun."
   }
 }

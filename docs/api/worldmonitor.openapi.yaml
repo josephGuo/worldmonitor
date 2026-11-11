@@ -7033,7 +7033,7 @@ paths:
                                     "densityPerKm2": 1
                                     "exposedPopulation": 1
                                     "exposureRadiusKm": 1.5
-                                    "nearestCountry": "US"
+                                    "nearestCountry": "ISR"
                                 "success": true
                             schema:
                                 $ref: '#/components/schemas/worldmonitor_displacement_v1_GetPopulationExposureResponse'
@@ -44366,7 +44366,10 @@ components:
                     description: Radius used for the estimate in km.
                 nearestCountry:
                     type: string
+                    examples:
+                        - ISR
                     description: ISO3 code of the priority country containing the point, whose density was used.
+                    example: ISR
                 densityPerKm2:
                     type: integer
                     format: int32
@@ -59460,6 +59463,17 @@ components:
                     type: boolean
                 note:
                     type: string
+                parentCountryCodes:
+                    type: array
+                    items:
+                        type: string
+                        description: |-
+                            Direct linked-parent countries for addressless entities. These are not
+                             address/nationality evidence and do not feed country risk counts.
+                parentCountryNames:
+                    type: array
+                    items:
+                        type: string
             description: SanctionsEntry is a normalized OFAC sanctions designation.
         worldmonitor_sanctions_v1_CountrySanctionsPressure:
             type: object
@@ -59477,9 +59491,15 @@ components:
                 vesselCount:
                     type: integer
                     format: int32
+                    description: |-
+                        Assets with a direct country association only. Zero does not mean this
+                         country has no sanctioned vessels; flag counts are in flagRegistries.
                 aircraftCount:
                     type: integer
                     format: int32
+                    description: |-
+                        Assets with a direct country association only; registry counts are in
+                         ListSanctionsPressureResponse.flagRegistries, not this field.
             description: CountrySanctionsPressure summarizes designation volume and recent additions by country.
         worldmonitor_sanctions_v1_ProgramSanctionsPressure:
             type: object

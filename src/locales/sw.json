@@ -1819,7 +1819,7 @@
       "estimateWithin": "Takriban watu {{count}} ndani ya eneo la kilomita {{km}}",
       "method": "Makadirio yanatumia wastani wa msongamano wa watu nchini.",
       "empty": "Hakuna maeneo ya matukio yanayokidhi vigezo",
-      "infoTooltip": "Matukio yenye data ya msongamano wa watu wa nchi yanaonyeshwa. Maeneo kutoka data ya zamani bila taarifa za usahihi yanawekwa alama ya kusubiri sasisho. Maeneo yanayokadiriwa yanaweza kuingiliana.",
+      "infoTooltip": "Matukio yenye data ya msongamano wa watu wa nchi yanaonyeshwa. Maeneo kutoka data ya zamani bila taarifa za usahihi yanawekwa alama ya kusubiri sasisho. Maeneo yanayokadiriwa yanaweza kuingiliana. Matukio ya machafuko yanahitaji eneo sahihi; matukio ya UCDP yaliyowekwa alama ya eneo lisilo sahihi hayajumuishwi. Eneo moja kutoka vyanzo viwili (machafuko na UCDP) huonekana katika safu mbili.",
       "eventCount_one": "{{count}} tukio",
       "eventCount_other": "{{count}} matukio",
       "locationPending": "Usahihi wa eneo unasubiri sasisho",
@@ -2458,7 +2458,8 @@
       "channelUrlHint": "Bandika URL ya chaneli (youtube.com/channel/UC…) au URL ya video ya moja kwa moja",
       "youtubeChannel": "Chaneli ya YouTube",
       "insecureStream": "{{name}} inatumia mtiririko usioaminifu (http), ambao vivinjari huzuia. Ongeza tena kwa URL ya mtiririko salama (https)",
-      "httpsStreamHint": "Vivinjari huzuia mitiririko isiyo salama (http). Bandika URL ya mtiririko salama (https)"
+      "httpsStreamHint": "Vivinjari huzuia mitiririko isiyo salama (http). Bandika URL ya mtiririko salama (https)",
+      "tapToPlay": "Gusa ili kuanza"
     },
     "map": {
       "showMap": "Onyesha Ramani",
@@ -2684,7 +2685,7 @@
     },
     "sanctionsPressure": {
       "title": "Vikwazo na Uteuzi",
-      "infoTooltip": "Office of Foreign Assets Control Specially Designated Nationals na Consolidated Lists pamoja na Global Affairs Canada SEMA/JVCFOA designations. Inaonyesha nchi ipi inakabali mkazo wa juu wa designation, programu gani inayokamatisha, na nini kilichoongezwa mapya tangu sasisho la mwisho.",
+      "infoTooltip": "Orodha za OFAC SDN na zilizounganishwa pamoja na vikwazo vya Kanada vya SEMA/JVCFOA. Safu za nchi hutumia mahusiano ya moja kwa moja. Bendera za meli na usajili wa ndege huhesabiwa kando katika sajili; idadi ya mali ya nchi ikiwa sifuri haimaanishi hakuna mali iliyowekewa vikwazo. Nchi za taasisi mama hutenganishwa na ushahidi wa anwani na hazijumuishwi katika alama za hatari.",
       "loading": "Inapakia data ya vikwazo...",
       "unavailable": "Data ya vikwazo haipatikani.",
       "summary": {
@@ -4511,7 +4512,9 @@
     "newTabOptionsHint": "Vichupo ulivyonavyo tayari havibadiliki.",
     "useThisTabPanels": "Tumia paneli za kichupo hiki",
     "useDefaultPanels": "Tumia paneli chaguo-msingi",
-    "newTabPanelsNotSaved": "Haikuweza kuhifadhi. Kivinjari hiki kinazuia uhifadhi wa tovuti."
+    "newTabPanelsNotSaved": "Haikuweza kuhifadhi. Kivinjari hiki kinazuia uhifadhi wa tovuti.",
+    "team": "Timu",
+    "teamDashboards": "Dashboards za timu"
   },
   "theaterPresets": {
     "label": "Mipangilio ya ufuatiliaji",
@@ -4883,5 +4886,22 @@
     "close": "Funga",
     "alertsHint": "Sakinisha World Monitor kwenye Skrini ya Mwanzo ili kupata arifa kwenye iPhone au iPad hii.",
     "how": "Jinsi ya kusakinisha"
+  },
+  "teamDashboards": {
+    "desc": "Dashboards ambazo timu yako inashiriki. Fungua moja ili kuiongeza kama kichupo kipya.",
+    "empty": "Timu yako haijashiriki dashboard hata moja. Shiriki kichupo hiki ili kuwapa kila mtu katika timu yako paneli zake, ukubwa na ramani.",
+    "open": "Fungua {{name}} kama kichupo kipya",
+    "stopSharing": "Acha kushiriki {{name}}",
+    "confirmStop": "Acha kushiriki {{name}} na timu yako? Micheza ambayo watu tayari waliyofungua kutoka hapo itabaki kama ilivyokuwa.",
+    "shareTab": "Shiriki kichupo hiki na timu yako",
+    "shareChanges": "Shiriki mabadiliko ya kichupo hiki na timu yako",
+    "behind": "Timu yako ilibadilisha dashboard hii baada ya kulifungua.",
+    "getLatest": "Pata toleo la hivi karibuni",
+    "opened": "Ilifungua {{name}} kutoka timu yako.",
+    "shared": "Ilishiriki {{name}} na timu yako.",
+    "updated": "Kichupo hiki sasa kina toleo la hivi karibuni la timu yako.",
+    "stopped": "Ikacha kushiriki {{name}}.",
+    "failed": "Haikuweza kufikia dashboards za timu yako. Jaribu tena.",
+    "limit": "Timu yako tayari inashiriki dashboards {{limit}} hapa. Acha kushiriki moja kwanza."
   }
 }

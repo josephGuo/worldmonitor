@@ -1656,7 +1656,7 @@
       "estimateWithin": "Přibližně {{count}} lidí v okruhu {{km}} km",
       "method": "Odhady vycházejí z průměrné hustoty zalidnění dané země.",
       "empty": "Žádné vhodné lokality událostí",
-      "infoTooltip": "Zobrazují se události s údaji o hustotě obyvatelstva země. Polohy ze starších dat bez údajů o přesnosti jsou označeny jako čekající na aktualizaci. Odhadované oblasti se mohou překrývat.",
+      "infoTooltip": "Zobrazují se události s údaji o hustotě obyvatelstva země. Polohy ze starších dat bez údajů o přesnosti jsou označeny jako čekající na aktualizaci. Odhadované oblasti se mohou překrývat. Nepokoje vyžadují přesnou polohu; události UCDP označené jako nepřesné se nezobrazují. Jedno místo ze dvou zdrojů (nepokoje a UCDP) se zobrazí ve dvou řádcích.",
       "eventCount_one": "{{count}} událost",
       "eventCount_few": "{{count}} události",
       "eventCount_many": "{{count}} událostí",
@@ -2101,7 +2101,8 @@
       "channelUrlHint": "Vložte adresu kanálu (youtube.com/channel/UC…) nebo adresu živého videa",
       "youtubeChannel": "Kanál YouTube",
       "insecureStream": "{{name}} používá nezabezpečený (http) stream, který prohlížeče blokují. Přidejte jej znovu se zabezpečenou (https) adresou streamu",
-      "httpsStreamHint": "Prohlížeče blokují nezabezpečené (http) streamy. Vložte zabezpečenou (https) adresu streamu"
+      "httpsStreamHint": "Prohlížeče blokují nezabezpečené (http) streamy. Vložte zabezpečenou (https) adresu streamu",
+      "tapToPlay": "Klepnutím spustit"
     },
     "map": {
       "showMap": "Zobrazit mapu",
@@ -2741,7 +2742,7 @@
     },
     "sanctionsPressure": {
       "title": "Sankce a designace",
-      "infoTooltip": "Office of Foreign Assets Control Special Designated Nationals a Consolidated Lists plus Global Affairs Canada SEMA/JVCFOA designace. Ukazuje, které země čelí nejvyššímu tlaku designace, které programy to řídí a co bylo nově přidáno od poslední aktualizace.",
+      "infoTooltip": "Seznamy OFAC SDN a konsolidované seznamy spolu s kanadskými sankcemi SEMA/JVCFOA. Řádky zemí používají přímé vazby. Vlajky plavidel a registrace letadel se počítají odděleně v registrech; nulový počet aktiv u země neznamená, že neexistují sankcionovaná aktiva. Země mateřských subjektů jsou odděleny od údajů o adrese a nevstupují do skóre rizika.",
       "loading": "Načítání dat sankcí...",
       "unavailable": "Data sankcí není dostupná.",
       "summary": {
@@ -4555,7 +4556,9 @@
     "newTabOptionsHint": "Karty, které již máte, se nemění.",
     "useThisTabPanels": "Použít panely této karty",
     "useDefaultPanels": "Použít výchozí panely",
-    "newTabPanelsNotSaved": "Nepodařilo se uložit. Tento prohlížeč blokuje ukládání dat na webu."
+    "newTabPanelsNotSaved": "Nepodařilo se uložit. Tento prohlížeč blokuje ukládání dat na webu.",
+    "team": "Tým",
+    "teamDashboards": "Týmové dashboardy"
   },
   "theaterPresets": {
     "label": "Balíčky pokrytí",
@@ -4927,5 +4930,22 @@
     "close": "Zavřít",
     "alertsHint": "Nainstalujte World Monitor na plochu, abyste na tomto iPhonu nebo iPadu dostávali upozornění.",
     "how": "Jak nainstalovat"
+  },
+  "teamDashboards": {
+    "desc": "Dashboardy, které si váš tým sdílí. Otevřete jeden a přidejte jej jako novou kartu.",
+    "empty": "Váš tým zatím nesdílí žádný dashboard. Sdílejte tuto kartu a předejte všem členům týmu její panely, velikosti a mapu.",
+    "open": "Otevřít {{name}} jako novou kartu",
+    "stopSharing": "Přestat sdílet {{name}}",
+    "confirmStop": "Přestat sdílet {{name}} se svým týmem? Karty, které si lidé z něj už otevřeli, zůstanou jak jsou.",
+    "shareTab": "Sdílet tuto kartu se svým týmem",
+    "shareChanges": "Sdílet změny v této kartě se svým týmem",
+    "behind": "Váš tým změnil tento dashboard poté, co jste jej otevřeli.",
+    "getLatest": "Získat nejnovější verzi",
+    "opened": "{{name}} otevřen z vašeho týmu.",
+    "shared": "{{name}} sdílen s vaším týmem.",
+    "updated": "Tato karta má nyní nejnovější verzi vašeho týmu.",
+    "stopped": "Sdílení {{name}} zastaveno.",
+    "failed": "Nelze se připojit k dashboardům vašeho týmu. Zkuste to znovu.",
+    "limit": "Váš tým zde již sdílí {{limit}} dashboardů. Nejprve přestanete sdílet jeden."
   }
 }

@@ -86,8 +86,8 @@ function getRowSpan(element: HTMLElement): number {
   const spanClass = getSpanClass(element);
   if (spanClass !== null && element.classList.contains('resized')) return spanClass;
 
-  // Otherwise the rendered span is the resize baseline the user sees. Natural
-  // wide video panels take three rows (#8276), and the CLS-pinned span-2
+  // Otherwise the rendered span is the resize baseline the user sees. The
+  // natural webcam wall takes three rows (#8276), and the CLS-pinned span-2
   // defaults take four on desktop, so their classes understate it.
   if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
     const match = /^span\s+([1-4])(?:\s|$)/.exec(window.getComputedStyle(element).gridRowStart);
@@ -228,6 +228,9 @@ export class Panel {
   private connectedFallbackTimer: ReturnType<typeof setTimeout> | null = null;
   private destroyed = false;
 
+  /** The built-in row span from PanelOptions, kept for applySharedSize. */
+  private readonly defaultRowSpan: number | null;
+
   constructor(options: PanelOptions) {
     this.panelId = options.id;
     this.element = document.createElement('div');
@@ -364,6 +367,7 @@ export class Panel {
     this.setupColResizeHandlers();
 
     // Apply default row span (before restore, so saved preferences win)
+    this.defaultRowSpan = options.defaultRowSpan && options.defaultRowSpan > 1 ? options.defaultRowSpan : null;
     if (options.defaultRowSpan && options.defaultRowSpan > 1) {
       this.element.classList.add(`span-${options.defaultRowSpan}`);
     }
@@ -1234,6 +1238,7 @@ export class Panel {
     // The CTA opens the /pro plan picker, which shows the Terms above every
     // plan button (#6976), so no assent line is needed here.
     const ctaBtn = h('button', { type: 'button', className: 'panel-locked-cta' }, 'Upgrade to Pro');
+    ctaBtn.dataset.dashboardInteraction = 'upgrade';
     ctaBtn.addEventListener('click', () => {
       import('@/services/upgrade-flow').then((m) => m.openUpgradePlans()).catch(() => {
         window.open('https://worldmonitor.app/pro', '_blank', 'noopener,noreferrer');
@@ -1328,6 +1333,10 @@ export class Panel {
     const descEl = h('div', { className: 'panel-locked-desc' }, entry.desc);
 
     const ctaBtn = h('button', { type: 'button', className: 'panel-locked-cta' }, entry.cta);
+    if (reason === PanelGateReason.ANONYMOUS) ctaBtn.dataset.dashboardInteraction = 'signin';
+    else if (reason === PanelGateReason.FREE_TIER || reason === PanelGateReason.LAPSED) {
+      ctaBtn.dataset.dashboardInteraction = 'upgrade';
+    }
     ctaBtn.addEventListener('click', onAction);
 
     this.replaceContent(h('div', { className: 'panel-locked-state' }, iconEl, descEl, ctaBtn));
@@ -1746,6 +1755,29 @@ export class Panel {
     clearColSpanClass(this.element);
     clearPanelColSpan(this.panelId);
     this.syncKeyboardColResizeAria();
+  }
+
+  /**
+   * Take the size a shared layout gives this panel: a span sets it the way a
+   * resize would, and no span puts the panel back to its built-in size.
+   */
+  public applySharedSize(rows: number | undefined, cols: number | undefined): void {
+    if (rows === undefined) {
+      this.resetHeight();
+      if (this.defaultRowSpan) this.element.classList.add(`span-${this.defaultRowSpan}`);
+      this.syncKeyboardRowResizeAria();
+    } else {
+      setSpanClass(this.element, rows);
+      savePanelSpan(this.panelId, rows);
+      this.syncKeyboardRowResizeAria();
+    }
+    if (cols === undefined) {
+      this.resetWidth();
+    } else {
+      setColSpanClass(this.element, clampColSpan(cols, MAX_PANEL_COL_SPAN));
+      savePanelColSpan(this.panelId, clampColSpan(cols, MAX_PANEL_COL_SPAN));
+      this.syncKeyboardColResizeAria();
+    }
   }
 
   protected get signal(): AbortSignal {

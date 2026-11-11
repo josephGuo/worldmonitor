@@ -1498,6 +1498,22 @@ describe('api/mcp.ts — PRO MCP Server', () => {
     ]);
   });
 
+  it('get_market_data: passes the captured clock to oilTapeMaxAgeMs when Date.now advances', (t) => {
+    const captured = Date.parse('2026-12-26T12:00:00Z');
+    const ambient = Date.parse('2026-12-29T16:00:00Z');
+    let clock = captured;
+    t.mock.method(Date, 'now', () => clock);
+    const quote = {
+      symbol: 'CL=F', priceAt: Date.parse('2026-12-24T18:44Z'),
+      // Advance only once the quote is read, after the filter captures its clock.
+      get priceBasis() { clock = ambient; return 'futures'; },
+    };
+    const tool = TOOL_REGISTRY.find(t => t.name === 'get_market_data');
+    const out = tool._postFilter({ 'commodities-bootstrap': { quotes: [quote] } }, {});
+    assert.deepEqual(out['commodities-bootstrap'].quotes, [{ ...quote, stale: false }]);
+    assert.equal(Date.now(), ambient, 'ambient clock differs from the captured clock');
+  });
+
   it('get_market_data: Christmas closing quotes stay fresh until the holiday weekend ends', async (t) => {
     t.mock.method(Date, 'now', () => Date.parse('2026-12-26T12:00:00Z'));
     const quote = { symbol: 'CL=F', price: 85, priceBasis: 'futures', priceAt: Date.parse('2026-12-24T18:44Z') };
@@ -4871,6 +4887,14 @@ describe('get_sanctions_data screening contract', () => {
     assert.deepEqual(result.pressure.flagRegistries, [
       { countryCode: 'PA', countryName: 'Panama', vesselCount: 3, newVesselCount: 1, aircraftCount: 0, newAircraftCount: 0 },
     ]);
+  });
+  it('narrows registry rows with the country filter even when no direct country rows match', () => {
+    const flagRegistries = ['PA', 'IR', 'RU'].map(countryCode => ({ countryCode, vesselCount: 2, aircraftCount: 1 }));
+    for (const [country, expected] of [['PA', ['PA']], [['PA', 'IR'], ['PA', 'IR']], ['GB', []]]) {
+      const result = tool._postFilter({ pressure: { entries: [], countries: [], flagRegistries } }, { country });
+      assert.deepEqual(result.pressure.flagRegistries.map(row => row.countryCode), expected);
+      assert.deepEqual(result.pressure.countries, []);
+    }
   });
   it('exposes regulation targets separately without treating a country filter as target attribution', () => {
     const regulationTargets = [{ countryCode: 'IR', countryName: 'Iran', entryCount: 500, newEntryCount: 0, vesselCount: 0, aircraftCount: 0 }];

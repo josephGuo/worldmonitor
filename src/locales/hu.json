@@ -1819,7 +1819,7 @@
       "estimateWithin": "Körülbelül {{count}} ember {{km}} km-es körzetben",
       "method": "A becslések az ország átlagos népsűrűségén alapulnak.",
       "empty": "Nincs megfelelő eseményhelyszín",
-      "infoTooltip": "Az ország népsűrűségi adataival rendelkező események jelennek meg. A régebbi adatokból származó, pontossági információ nélküli helyek frissítésre váró jelölést kapnak. A becsült területek átfedhetik egymást.",
+      "infoTooltip": "Az ország népsűrűségi adataival rendelkező események jelennek meg. A régebbi adatokból származó, pontossági információ nélküli helyek frissítésre váró jelölést kapnak. A becsült területek átfedhetik egymást. A zavargásokhoz pontos hely szükséges; a pontatlannak jelölt UCDP-események kimaradnak. Egy két forrásban (zavargások és UCDP) szereplő hely két sorban jelenik meg.",
       "eventCount_one": "{{count}} esemény",
       "eventCount_other": "{{count}} esemény",
       "locationPending": "A hely pontossága frissítésre vár",
@@ -2455,7 +2455,8 @@
       "channelOrVideoUrl": "YouTube-csatorna vagy videó URL",
       "channelUrlHint": "Illesszen be egy csatorna URL-t (youtube.com/channel/UC…) vagy egy élő videó URL-t",
       "youtubeChannel": "YouTube-csatorna",
-      "httpsStreamHint": "A böngészők blokkolják a nem biztonságos (http) streameket. Illesszen be egy biztonságos (https) stream URL-t"
+      "httpsStreamHint": "A böngészők blokkolják a nem biztonságos (http) streameket. Illesszen be egy biztonságos (https) stream URL-t",
+      "tapToPlay": "Koppintson a lejátszáshoz"
     },
     "map": {
       "showMap": "Térkép megjelenítése",
@@ -2788,7 +2789,7 @@
     },
     "sanctionsPressure": {
       "title": "Szankciók & Kijelölések",
-      "infoTooltip": "Az Office of Foreign Assets Control Kijelölt Nationals és Consolidated Lists, valamint a Global Affairs Canada SEMA/JVCFOA lezárások. Megmutatja, mely országok szembesülnek a legmagasabb lezárási nyomással, mely programok hajtják azt, és mi volt az utolsó frissítés óta új hozzáadott.",
+      "infoTooltip": "OFAC SDN és összevont listák, valamint Kanada SEMA/JVCFOA szankciói. Az országok sorai közvetlen kapcsolatokat használnak. A hajólobogók és a repülőgép-lajstromok külön szerepelnek a nyilvántartásokban; egy ország nulla eszközszáma nem jelenti a szankcionált eszközök hiányát. Az anyaszervezetek országai elkülönülnek a címadatoktól, és nem számítanak bele a kockázati pontszámokba.",
       "loading": "Szankció adatok betöltése...",
       "unavailable": "Szankció adatok nem érhetőek el.",
       "summary": {
@@ -4511,7 +4512,9 @@
     "newTabOptionsHint": "A meglévő fülek nem változnak.",
     "useThisTabPanels": "E fül paneljeit használja",
     "useDefaultPanels": "Az alapértelmezett panelek használata",
-    "newTabPanelsNotSaved": "Nem sikerült menteni. A böngésző letiltotta a webhelytárolást."
+    "newTabPanelsNotSaved": "Nem sikerült menteni. A böngésző letiltotta a webhelytárolást.",
+    "team": "Csapat",
+    "teamDashboards": "Csapat-irányítópultok"
   },
   "theaterPresets": {
     "label": "Lefedettségi csomagok",
@@ -4883,5 +4886,22 @@
     "close": "Bezárás",
     "alertsHint": "Telepítse a World Monitort a főképernyőre, hogy értesítéseket kapjon ezen az iPhone-on vagy iPaden.",
     "how": "Telepítési útmutató"
+  },
+  "teamDashboards": {
+    "desc": "A csapatod által megosztott irányítópultok. Nyiss meg egyet, és új fülként kerül a többi mellé.",
+    "empty": "A csapatod még nem osztott meg irányítópultot. Oszd meg ezt a fület, és a csapat minden tagja megkapja a paneljeit, méreteit és térképét.",
+    "open": "{{name}} megnyitása új fülön",
+    "stopSharing": "{{name}} megosztásának leállítása",
+    "confirmStop": "Leállítod a(z) {{name}} megosztását a csapattal? A belőle már megnyitott fülek változatlanok maradnak.",
+    "shareTab": "Oszd meg ezt a fület a csapattal",
+    "shareChanges": "Oszd meg a fül módosításait a csapattal",
+    "behind": "A csapat megváltoztatta ezt az irányítópultot, miután megnyitottad.",
+    "getLatest": "Legújabb verzió letöltése",
+    "opened": "{{name}} megnyitva a csapattól.",
+    "shared": "{{name}} megosztva a csapattal.",
+    "updated": "Ez a fül most a csapat legújabb verzióját tartalmazza.",
+    "stopped": "{{name}} megosztása leállítva.",
+    "failed": "Nem sikerült elérni a csapat irányítópultjait. Próbáld újra.",
+    "limit": "A csapat már {{limit}} irányítópultot oszt meg itt. Előbb állítsd le az egyik megosztását."
   }
 }

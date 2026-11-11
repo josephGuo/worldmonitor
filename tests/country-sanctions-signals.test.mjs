@@ -1,10 +1,11 @@
+import { COUNTRY_NAME_TO_ISO2, normalizeCountryToken } from '../scripts/shared/country-name-to-iso2.cjs';
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { projectCountrySanctions, MAX_COUNTRY_SANCTIONS_BYTES } from '../shared/country-sanctions-signals.mjs';
-import { mergeSanctionEntries, parseSemaXml, SEMA_SOURCE, SEMA_TIMEOUT_MS, SANCTIONS_SOURCE_VERSION, sanctionsListContentMeta } from '../scripts/_sema-sanctions.mjs';
+import { mergeSanctionEntries, semaTargetCountry, parseSemaXml, SEMA_SOURCE, SEMA_TIMEOUT_MS, SANCTIONS_SOURCE_VERSION, sanctionsListContentMeta } from '../scripts/_sema-sanctions.mjs';
 import { CSL_ROW_ID, CSL_SOURCES, CSL_TIMEOUT_MS } from '../scripts/_csl-sanctions.mjs';
 import { buildSanctionsChanges } from '../scripts/_sanctions-changes.mjs';
 
@@ -29,10 +30,10 @@ async function produce({ previousState = { entryIds: ['SDN:1', 'CONSOLIDATED:1',
   publications = { SDN: now - 86400000, CONSOLIDATED: now - 86400000, [SEMA_SOURCE]: now - 2 * 86400000 } } = {}) {
   let options;
   const context = vm.createContext({
-    console: { log() {}, warn() {} }, Buffer, gzipSync, gunzipSync,
+    console: { log() {}, warn() {} }, Buffer, gzipSync, gunzipSync, COUNTRY_NAME_TO_ISO2, normalizeCountryToken,
     Date: class extends Date { static now() { return at; } },
     SEMA_SOURCE, SEMA_TIMEOUT_MS, CSL_TIMEOUT_MS, SANCTIONS_SOURCE_VERSION, SANCTIONS_MAX_CONTENT_AGE_MIN: 43200, projectCountrySanctions,
-    mergeSanctionEntries, sanctionsListContentMeta, buildSanctionsChanges,
+    mergeSanctionEntries, semaTargetCountry, sanctionsListContentMeta, buildSanctionsChanges,
     verifySeedKey: async () => previousState,
     readSeedSnapshot: async key => key === 'sanctions:source-snapshots:v1' ? stored : null,
     fetchSource: async ({ label }) => {

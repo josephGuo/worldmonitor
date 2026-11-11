@@ -110,8 +110,9 @@ Dynamic Client Registration is **not** open to arbitrary redirects. A `redirect_
 | Conductor | `https://api.conductor.build/oauth/callback` ([client metadata](https://api.conductor.build/oauth/client-metadata.json)) |
 | Skydive | `https://www.skydive.com/api/v1/external-oauth/callback` ([client metadata](https://www.skydive.com/api/v1/external-oauth/client-metadata)) |
 | MCPJam | `https://app.mcpjam.com/oauth/callback`, `https://score.mcpjam.com/oauth/callback` ([client metadata](https://www.mcpjam.com/.well-known/oauth/client-metadata.json)) |
+| Manufact Cloud | `https://manufact.com/inspector/oauth/callback` ([client metadata](https://manufact.com/oauth/client-metadata.json)) |
 
-Claude Code, Cursor desktop, VS Code desktop, Codex, Gemini CLI, goose, Zed, and MCP Inspector use the loopback form. Notion, Linear, Lovable, Factory, Conductor, Skydive, and MCPJam prefer Client ID Metadata Documents and now connect that way (see below); their callbacks stay listed for clients that still register. A registration may list up to 8 `redirect_uris`, and one unlisted entry rejects the whole request with `400 invalid_redirect_uri`. Gemini is the one prefix match, on the six prefixes Google publishes. Other clients with per-user or per-tenant callbacks, such as Microsoft Copilot Studio, cannot be exact-matched and are not supported.
+Claude Code, Cursor desktop, VS Code desktop, Codex, Gemini CLI, goose, Zed, and MCP Inspector use the loopback form. Notion, Linear, Lovable, Factory, Conductor, Skydive, MCPJam, and Manufact Cloud prefer Client ID Metadata Documents and now connect that way (see below); their callbacks stay listed for clients that still register. A registration may list up to 8 `redirect_uris`, and one unlisted entry rejects the whole request with `400 invalid_redirect_uri`. Gemini is the one prefix match, on the six prefixes Google publishes. Other clients with per-user or per-tenant callbacks, such as Microsoft Copilot Studio, cannot be exact-matched and are not supported.
 
 ### Client ID Metadata Documents
 
@@ -143,6 +144,7 @@ The document is fetched over HTTPS with redirects refused, a 3-second timeout, a
 | Conductor | `https://api.conductor.build/oauth/client-metadata.json` |
 | Skydive | `https://www.skydive.com/api/v1/external-oauth/client-metadata` |
 | MCPJam | `https://www.mcpjam.com/.well-known/oauth/client-metadata.json` |
+| Manufact Cloud | `https://manufact.com/oauth/client-metadata.json` |
 | Vercel Connect | `https://connect.vercel.com/connectors/<connector id>`, one document per connector, with the callback pinned to `https://connect.vercel.com/callback` ([Vercel Connect provider docs](https://vercel.com/docs/connect/providers)) |
 
 ChatGPT's document prefers `private_key_jwt` but also lists `none`; WorldMonitor advertises only `none`, so ChatGPT uses PKCE without a client assertion. Make.com's published client URL redirects instead of serving a document, so it is not on the list. A client whose document is not listed gets an "Unknown Client" error; ask for it to be added.
@@ -616,8 +618,8 @@ The server supports [MCP Apps](https://modelcontextprotocol.io/extensions/apps/b
 | `ui://worldmonitor/natural-disasters-v3.html` | `get_natural_disasters` | Recent M4.5+ earthquakes (USGS and Earthquakes Canada / NRCan: magnitude, place, time, source) and active wildfires (NASA FIRMS), grouped. |
 | `ui://worldmonitor/prediction-markets-v3.html` | `get_prediction_markets` | Active event-contract odds grouped by category (geopolitical, tech, finance) with a probability bar per market. Full-envelope projections and summary samples preserve loaded contracts and snapshot metadata. Missing or malformed categories and unknown freshness remain explicit. |
 | `ui://worldmonitor/forecasts-v4.html` | `get_forecast_predictions` | Loaded forecast cards and local filters, with original case evidence read under the same signed opening allocation. |
-| `ui://worldmonitor/news-dashboard-v3.html` | `open_news_dashboard` | Dashboard news panels and interactive map. |
-| `ui://worldmonitor/country-view-v3.html` | `open_country_brief` | Shared country sections, topics, evidence and exports. |
+| `ui://worldmonitor/news-dashboard-v4.html` | `open_news_dashboard` | Dashboard news panels and interactive map. |
+| `ui://worldmonitor/country-view-v4.html` | `open_country_brief` | Shared country sections, topics, evidence and exports. |
 
 Country Risk v2 preserves supplied original and projected objects, including nested CII components and upstream availability. Missing or malformed advisory values remain unknown; an explicit empty native string still means no advisory. Result replacement clears prior risk details. The original `ui://worldmonitor/country-risk.html` remains a private read alias for installed metadata and can be removed when that metadata is retired.
 

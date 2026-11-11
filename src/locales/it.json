@@ -1682,7 +1682,7 @@
       "estimateWithin": "Circa {{count}} persone entro {{km}} km",
       "method": "Le stime si basano sulla densità media di popolazione del paese.",
       "empty": "Nessun luogo di evento soddisfa i criteri",
-      "infoTooltip": "Sono mostrati gli eventi con dati sulla densità di popolazione del paese. Le posizioni di dati precedenti senza informazioni sulla precisione sono contrassegnate come in attesa di aggiornamento. Le aree stimate possono sovrapporsi.",
+      "infoTooltip": "Sono mostrati gli eventi con dati sulla densità di popolazione del paese. Le posizioni di dati precedenti senza informazioni sulla precisione sono contrassegnate come in attesa di aggiornamento. Le aree stimate possono sovrapporsi. I disordini richiedono una posizione precisa; gli eventi UCDP contrassegnati come imprecisi sono esclusi. Un luogo segnalato da due fonti (disordini e UCDP) appare in due righe.",
       "eventCount_one": "{{count}} evento",
       "eventCount_many": "{{count}} eventi",
       "eventCount_other": "{{count}} eventi",
@@ -2064,7 +2064,8 @@
       "channelUrlHint": "Incolla un URL del canale (youtube.com/channel/UC…) o un URL di video in diretta",
       "youtubeChannel": "Canale YouTube",
       "insecureStream": "{{name}} utilizza un flusso non sicuro (http), bloccato dai browser. Aggiungilo di nuovo con un URL di flusso sicuro (https)",
-      "httpsStreamHint": "I browser bloccano i flussi non sicuri (http). Incolla un URL di flusso sicuro (https)"
+      "httpsStreamHint": "I browser bloccano i flussi non sicuri (http). Incolla un URL di flusso sicuro (https)",
+      "tapToPlay": "Tocca per riprodurre"
     },
     "securityAdvisories": {
       "loading": "Caricamento avvisi di viaggio...",
@@ -2730,7 +2731,7 @@
     },
     "sanctionsPressure": {
       "title": "Sanzioni e designazioni",
-      "infoTooltip": "Office of Foreign Assets Control Specially Designated Nationals and Consolidated Lists più designazioni Global Affairs Canada SEMA/JVCFOA. Mostra quali paesi affrontano la massima pressione di designazione, quali programmi la guidano e cosa è stato aggiunto di recente dall'ultimo aggiornamento.",
+      "infoTooltip": "Liste OFAC SDN e consolidate, oltre alle designazioni SEMA/JVCFOA del Canada. Le righe dei paesi usano associazioni dirette. Le bandiere delle navi e i registri degli aeromobili sono conteggiati separatamente nei registri; un conteggio pari a zero per un paese non indica assenza di beni sanzionati. I paesi delle entità madri sono separati dalle prove di indirizzo ed esclusi dai punteggi di rischio.",
       "loading": "Caricamento dati sanzioni in corso...",
       "unavailable": "Dati sanzioni non disponibili.",
       "summary": {
@@ -4533,7 +4534,9 @@
     "newTabOptionsHint": "Le schede che hai già non cambiano.",
     "useThisTabPanels": "Usa i pannelli di questa scheda",
     "useDefaultPanels": "Usa i pannelli predefiniti",
-    "newTabPanelsNotSaved": "Impossibile salvare. Questo browser blocca l'archiviazione del sito."
+    "newTabPanelsNotSaved": "Impossibile salvare. Questo browser blocca l'archiviazione del sito.",
+    "team": "Team",
+    "teamDashboards": "Dashboard del team"
   },
   "theaterPresets": {
     "label": "Preset di copertura",
@@ -4905,5 +4908,22 @@
     "close": "Chiudi",
     "alertsHint": "Installa World Monitor sulla schermata Home per ricevere avvisi su questo iPhone o iPad.",
     "how": "Come installare"
+  },
+  "teamDashboards": {
+    "desc": "Dashboard che il tuo team condivide. Aprine uno per aggiungerlo come nuova scheda.",
+    "empty": "Il tuo team non ha ancora condiviso nessun dashboard. Condividi questa scheda per dare a tutti nel team i suoi pannelli, dimensioni e mappa.",
+    "open": "Apri {{name}} come nuova scheda",
+    "stopSharing": "Interrompi la condivisione di {{name}}",
+    "confirmStop": "Interrompere la condivisione di {{name}} con il tuo team? Le schede che le persone hanno già aperto rimangono come sono.",
+    "shareTab": "Condividi questa scheda con il tuo team",
+    "shareChanges": "Condividi i cambiamenti di questa scheda con il tuo team",
+    "behind": "Il tuo team ha modificato questo dashboard dopo che l'hai aperto.",
+    "getLatest": "Ottieni la versione più recente",
+    "opened": "Aperto {{name}} dal tuo team.",
+    "shared": "Condiviso {{name}} con il tuo team.",
+    "updated": "Questa scheda ora ha la versione più recente del tuo team.",
+    "stopped": "Interrotta la condivisione di {{name}}.",
+    "failed": "Impossibile raggiungere i dashboard del tuo team. Riprova.",
+    "limit": "Il tuo team condivide già {{limit}} dashboard qui. Interrompi la condivisione di uno prima."
   }
 }

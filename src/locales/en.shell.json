@@ -718,7 +718,7 @@
       "title": "Pentagon Pizza Index"
     },
     "populationExposure": {
-      "infoTooltip": "Events with country density data are shown. Locations from older data without precision information are marked pending update. The estimated areas can overlap."
+      "infoTooltip": "Country density required. Unrest needs a precise location; UCDP marked imprecise is excluded, unknown is pending. One place from two sources shows as two rows. Areas may overlap."
     },
     "positioning247": {
       "infoTooltip": "<strong>24/7 Positioning</strong> Perpetual contract positioning stress from Hyperliquid. Trades around the clock, showing what's building when traditional markets are closed. Composite score (0-100) from funding rate, volume, open interest, and spot-perp basis. Green = longs crowded (bullish lean), red = shorts crowded (bearish lean).",
@@ -738,7 +738,7 @@
       "infoTooltip": "<strong>Renewable Energy</strong> Share of electricity generation from renewables by region and year, plus US installed capacity for solar, wind, and coal (MW). Sources: World Bank (EG.ELC.RNEW.ZS) and US Energy Information Administration."
     },
     "sanctionsPressure": {
-      "infoTooltip": "Office of Foreign Assets Control Specially Designated Nationals and Consolidated Lists plus Global Affairs Canada SEMA/JVCFOA designations. Shows which countries face the highest designation pressure, what programs are driving it, and what has been newly added since the last update.",
+      "infoTooltip": "OFAC SDN and Consolidated Lists plus Canada SEMA/JVCFOA designations. Country rows use direct associations. Vessel flags and aircraft registries are counted separately under registries; zero country asset counts do not mean no sanctioned assets. Parent countries are separate from address evidence and excluded from risk scores.",
       "title": "Sanctions & Designations"
     },
     "satelliteFires": {
@@ -939,8 +939,11 @@
     "renameHint": "{{name}} — double-click to rename",
     "deleteTab": "Delete tab",
     "deleteTabAria": "Delete tab {{name}}",
-    "tabNameAria": "Tab name"
+    "tabNameAria": "Tab name",
+    "team": "Team",
+    "teamDashboards": "Team dashboards"
   },
   "preferences":{"panelFontScale":"Text size","followGlobalFontScale":"Use global"},
-  "countryHistory":{"title":"Daily country history"}
+  "countryHistory":{"title":"Daily country history"},
+  "teamDashboards":{"desc":"Dashboards your team shares. Open one to add it as a new tab.","empty":"Your team hasn't shared a dashboard yet. Share this tab to give everyone on your team its panels, sizes and map.","open":"Open {{name}} as a new tab","stopSharing":"Stop sharing {{name}}","shareTab":"Share this tab with your team","shareChanges":"Share this tab's changes with your team","behind":"Your team changed this dashboard after you opened it.","getLatest":"Get the latest version"}
 }

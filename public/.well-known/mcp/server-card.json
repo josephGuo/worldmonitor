@@ -5,15 +5,33 @@
   "description": "Real-time global intelligence on conflict, markets, energy, trade, shipping and cyber.",
   "kind": "product",
   "icon": "https://www.worldmonitor.app/favico/apple-touch-icon.png",
-  "version": "1.50.0",
+  "version": "1.51.0",
   "url": "https://worldmonitor.app/mcp",
   "serverUrl": "https://worldmonitor.app/mcp",
   "serverInfo": {
     "name": "worldmonitor",
-    "version": "1.50.0",
+    "title": "WorldMonitor",
+    "version": "1.51.0",
     "description": "WorldMonitor's live global-intelligence stack as an MCP server, with per-outlet source ratings and a publicly scored forecast record, serving real-time data and AI-generated briefs in these domains: markets, commodities and macro; energy; conflicts, country risk, sanctions, cyber threats and chokepoints; maritime, aviation and supply chains; climate and natural disasters; health signals; displacement and humanitarian crises; AI briefs, forecasts and intel history; tariffs and trade policy.",
     "vendor": "WorldMonitor",
-    "homepage": "https://www.worldmonitor.app"
+    "homepage": "https://www.worldmonitor.app",
+    "websiteUrl": "https://www.worldmonitor.app",
+    "icons": [
+      {
+        "src": "https://worldmonitor.app/.well-known/mcp/icon-512.png",
+        "mimeType": "image/png",
+        "sizes": [
+          "512x512"
+        ]
+      },
+      {
+        "src": "https://worldmonitor.app/.well-known/mcp/icon-1024.png",
+        "mimeType": "image/png",
+        "sizes": [
+          "1024x1024"
+        ]
+      }
+    ]
   },
   "protocolVersion": "2025-11-25",
   "transport": {
@@ -60,7 +78,7 @@
     },
     {
       "name": "get_market_data",
-      "description": "Return the seeded market snapshot: equity, commodity, crypto and Gulf-market quotes, sector performance with explicit valuation coverage, ETF flows and the Fear & Greed index; subscriptions also get SGE physical-vs-COMEX premiums and physical-divergence regimes, which a free account receives as `locked` with an upgradeUrl. Quotes stale after 30m. Brent/WTI: spot 4d; futures normal NYMEX breaks plus 30m restart grace. Covers the curated symbol universe only: symbols filters that snapshot and cannot look up arbitrary tickers. Seeded-cache read with no live fetch: weight 1 on API plans, included in the signed-in free allowance. asset_class selects classes, limit caps each per-class list (default 30, 0 for no cap). Dedicated paid plans open or reuse one market panel allocation across filters; refresh with request_id starts a new one. API plans retain per-tool billing.",
+      "description": "Return the seeded market snapshot: equity, commodity, crypto and Gulf-market quotes, sector performance with explicit valuation coverage, ETF flows and the Fear & Greed index; subscriptions also get SGE physical-vs-COMEX premiums and physical-divergence regimes, which a free account receives as `locked` with an upgradeUrl. Quotes stale after 30m. Brent/WTI: spot 4d; futures NYMEX breaks and CME energy holidays (2026–2027) plus 30m restart grace. Curated symbols only: symbols filters this snapshot, not arbitrary tickers. Seeded-cache read with no live fetch: weight 1 on API plans, included in the signed-in free allowance. asset_class selects classes, limit caps each per-class list (default 30, 0 for no cap). Dedicated paid plans open or reuse one market panel allocation across filters; refresh with request_id starts a new one. API plans retain per-tool billing.",
       "_meta": {
         "ui": {
           "resourceUri": "ui://worldmonitor/market-radar-v3.html"
@@ -626,7 +644,7 @@
     },
     {
       "name": "get_population_exposure",
-      "description": "Population exposure: estimated people within the impact radius of active earthquakes, wildfires, and conflict events. Same method as the dashboard: the average density (population / area) of the country the point is in, times the event-type circle area (50 km for conflict, 100 km for earthquakes and floods, 30 km for fires). Only the 20 countries in the countries table have a density; anywhere else gets no estimate (point mode returns exposure null, events mode leaves the event out). Conflict events need a precise point location. Modes: events (default) ranks the seeded feeds by exposed population; point estimates around a lat/lon; countries returns the table. Coarse screening numbers with no city-level data behind them: ranking signals, not casualty projections.",
+      "description": "Estimated people within earthquake (100 km), wildfire (30 km), or conflict (50 km) radii, using country average density × circle area. Only the 20 countries in the population table are supported; other points return null or are omitted in events mode. Conflicts require precise points and fold into one row per location (3 decimal coordinates); eventCount counts folded events. Names use Place, Country (Palestine for PSE density). limit caps locations, not underlying conflict events. Unprojected events responses can exceed the 64 KB output budget; use jmespath or a limit. Modes: events (default) ranks feeds by exposure; point estimates at lat/lon; countries lists the table. Coarse screening estimates, not casualty projections.",
       "_meta": {
         "worldmonitor/access": "subscription",
         "worldmonitor/category": "geopolitical-security"
@@ -765,7 +783,7 @@
       "description": "Open the embedded WorldMonitor news and map dashboard and return the full feed digest (categories with items, publication dates, source provenance, coordinates, feedStatuses, coverage) plus requestedView. The view arguments (query, source, category, country, time_range, renderer, map_layers, map center and zoom) configure the rendered instance; requestedView echoes what was requested, not an already-open map's applied state, and empty arguments open the default dashboard. Requires a paid plan; weight 2 on API plans. On dedicated paid plans one dashboard request covers the news load and bounded map snapshot loads, repeat opens reuse it for at least five minutes, and refresh with request_id starts one new request. Read-only; up to 1 MB of digest.",
       "_meta": {
         "ui": {
-          "resourceUri": "ui://worldmonitor/news-dashboard-v3.html"
+          "resourceUri": "ui://worldmonitor/news-dashboard-v4.html"
         },
         "worldmonitor/access": "subscription",
         "worldmonitor/category": "meta"
@@ -824,7 +842,7 @@
       "description": "Open the interactive WorldMonitor country brief for one country and return {countryCode, topic, panelRequest}; the host renders the embedded view, which then loads its assessment, source evidence, resilience, security, economy, resources and society sections progressively over the authenticated connection. The tool itself returns only the resolved country and topic: no assessment text, scores or section data reach the caller. topic (default overview) selects which section group the view opens on. Requires a paid plan; weight 2 on API plans. On dedicated paid plans one country request covers the view's internal section loads, same-country opens reuse it for five minutes, and refresh with request_id starts a new request. Read-only.",
       "_meta": {
         "ui": {
-          "resourceUri": "ui://worldmonitor/country-view-v3.html"
+          "resourceUri": "ui://worldmonitor/country-view-v4.html"
         },
         "worldmonitor/access": "subscription",
         "worldmonitor/category": "geopolitical-security"
@@ -993,10 +1011,10 @@
         "ui://worldmonitor/natural-disasters-v3.html",
         "ui://worldmonitor/prediction-markets-v3.html",
         "ui://worldmonitor/forecasts-v4.html",
-        "ui://worldmonitor/news-dashboard-v3.html",
-        "ui://worldmonitor/country-view-v3.html"
+        "ui://worldmonitor/news-dashboard-v4.html",
+        "ui://worldmonitor/country-view-v4.html"
       ],
-      "note": "MCP Apps support: tools with an interactive surface carry `_meta.ui.resourceUri` (get_country_risk → country-risk-v3.html, get_world_brief → world-brief-v2.html, get_country_brief → country-brief-v3.html, get_market_data → market-radar-v3.html, get_chokepoint_status → chokepoint-monitor-v2.html, get_news_intelligence → news-intelligence-v3.html, get_conflict_events → conflict-events-v2.html, get_natural_disasters → natural-disasters-v3.html, get_prediction_markets → prediction-markets-v3.html, get_forecast_predictions → forecasts-v4.html, open_news_dashboard → news-dashboard-v3.html, open_country_brief → country-view-v3.html). Issue `resources/list` to enumerate ui:// app shells and `resources/read` to fetch them — ui:// reads are public + quota-exempt (static, data-free templates); live data reaches the shell via host postMessage after a normal tools/call."
+      "note": "MCP Apps support: tools with an interactive surface carry `_meta.ui.resourceUri` (get_country_risk → country-risk-v3.html, get_world_brief → world-brief-v2.html, get_country_brief → country-brief-v3.html, get_market_data → market-radar-v3.html, get_chokepoint_status → chokepoint-monitor-v2.html, get_news_intelligence → news-intelligence-v3.html, get_conflict_events → conflict-events-v2.html, get_natural_disasters → natural-disasters-v3.html, get_prediction_markets → prediction-markets-v3.html, get_forecast_predictions → forecasts-v4.html, open_news_dashboard → news-dashboard-v4.html, open_country_brief → country-view-v4.html). Issue `resources/list` to enumerate ui:// app shells and `resources/read` to fetch them — ui:// reads are public + quota-exempt (static, data-free templates); live data reaches the shell via host postMessage after a normal tools/call."
     }
   },
   "features": {

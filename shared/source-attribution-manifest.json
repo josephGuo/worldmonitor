@@ -5542,6 +5542,20 @@
       ]
     },
     {
+      "host": "id.usembassy.gov",
+      "provider": "id.usembassy.gov",
+      "kind": "structured",
+      "observed": true,
+      "license": "Provider terms for this upstream API/dataset; verify before redistribution",
+      "attribution": "Credit id.usembassy.gov and link to the original upstream API/dataset.",
+      "status": "terms-review",
+      "references": [
+        {
+          "path": "scripts/seed-security-advisories.mjs"
+        }
+      ]
+    },
+    {
       "host": "identity.dataspace.copernicus.eu",
       "provider": "identity.dataspace.copernicus.eu",
       "kind": "structured",
@@ -6019,6 +6033,20 @@
       "references": [
         {
           "path": "shared/news-catalog.json"
+        }
+      ]
+    },
+    {
+      "host": "kh.usembassy.gov",
+      "provider": "kh.usembassy.gov",
+      "kind": "structured",
+      "observed": true,
+      "license": "Provider terms for this upstream API/dataset; verify before redistribution",
+      "attribution": "Credit kh.usembassy.gov and link to the original upstream API/dataset.",
+      "status": "terms-review",
+      "references": [
+        {
+          "path": "scripts/seed-security-advisories.mjs"
         }
       ]
     },
@@ -6910,6 +6938,20 @@
       "observed": true,
       "license": "Provider terms for this upstream API/dataset; verify before redistribution",
       "attribution": "Credit mx.usembassy.gov and link to the original upstream API/dataset.",
+      "status": "terms-review",
+      "references": [
+        {
+          "path": "scripts/seed-security-advisories.mjs"
+        }
+      ]
+    },
+    {
+      "host": "my.usembassy.gov",
+      "provider": "my.usembassy.gov",
+      "kind": "structured",
+      "observed": true,
+      "license": "Provider terms for this upstream API/dataset; verify before redistribution",
+      "attribution": "Credit my.usembassy.gov and link to the original upstream API/dataset.",
       "status": "terms-review",
       "references": [
         {
@@ -7840,6 +7882,20 @@
       "references": [
         {
           "path": "scripts/shared/regional-energy-feeds.json"
+        }
+      ]
+    },
+    {
+      "host": "ph.usembassy.gov",
+      "provider": "ph.usembassy.gov",
+      "kind": "structured",
+      "observed": true,
+      "license": "Provider terms for this upstream API/dataset; verify before redistribution",
+      "attribution": "Credit ph.usembassy.gov and link to the original upstream API/dataset.",
+      "status": "terms-review",
+      "references": [
+        {
+          "path": "scripts/seed-security-advisories.mjs"
         }
       ]
     },
@@ -9202,6 +9258,20 @@
       "references": [
         {
           "path": "scripts/_weather-alert-select.mjs"
+        }
+      ]
+    },
+    {
+      "host": "sg.usembassy.gov",
+      "provider": "sg.usembassy.gov",
+      "kind": "structured",
+      "observed": true,
+      "license": "Provider terms for this upstream API/dataset; verify before redistribution",
+      "attribution": "Credit sg.usembassy.gov and link to the original upstream API/dataset.",
+      "status": "terms-review",
+      "references": [
+        {
+          "path": "scripts/seed-security-advisories.mjs"
         }
       ]
     },
@@ -10835,6 +10905,20 @@
       ]
     },
     {
+      "host": "vn.usembassy.gov",
+      "provider": "vn.usembassy.gov",
+      "kind": "structured",
+      "observed": true,
+      "license": "Provider terms for this upstream API/dataset; verify before redistribution",
+      "attribution": "Credit vn.usembassy.gov and link to the original upstream API/dataset.",
+      "status": "terms-review",
+      "references": [
+        {
+          "path": "scripts/seed-security-advisories.mjs"
+        }
+      ]
+    },
+    {
       "host": "vnexpress.net",
       "provider": "vnexpress.net",
       "kind": "feed",
@@ -11122,6 +11206,9 @@
         },
         {
           "path": "api/mcp/skill-extension/generated.ts"
+        },
+        {
+          "path": "api/mcp/ui/shell.ts"
         },
         {
           "path": "api/miit-news.js"
@@ -15444,6 +15531,9 @@
           "path": "scripts/check-live-video-sources.mjs"
         },
         {
+          "path": "scripts/check-population-exposure.mjs"
+        },
+        {
           "path": "scripts/comparison-shortlist.mjs"
         },
         {
@@ -15523,6 +15613,9 @@
         },
         {
           "path": "src/components/RuntimeConfigPanel.ts"
+        },
+        {
+          "path": "src/config/dashboard-reference-links.ts"
         },
         {
           "path": "src/config/docs-locale-seo.ts"

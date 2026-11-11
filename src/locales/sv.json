@@ -1145,7 +1145,7 @@
       "estimateWithin": "Cirka {{count}} personer inom en radie på {{km}} km",
       "method": "Uppskattningarna bygger på landets genomsnittliga befolkningstäthet.",
       "empty": "Inga händelseplatser uppfyller kraven",
-      "infoTooltip": "Händelser med uppgifter om landets befolkningstäthet visas. Platser från äldre data utan precisionsuppgifter markeras som väntande på uppdatering. De uppskattade områdena kan överlappa.",
+      "infoTooltip": "Händelser med uppgifter om landets befolkningstäthet visas. Platser från äldre data utan precisionsuppgifter markeras som väntande på uppdatering. De uppskattade områdena kan överlappa. Oroligheter kräver en exakt plats; UCDP-händelser markerade som oprecisa utesluts. En plats från två källor (oroligheter och UCDP) visas på två rader.",
       "eventCount_one": "{{count}} händelse",
       "eventCount_other": "{{count}} händelser",
       "locationPending": "Platsens precision väntar på uppdatering",
@@ -1581,7 +1581,8 @@
       "channelUrlHint": "Klistra in en kanal-URL (youtube.com/channel/UC…) eller en live-video-URL",
       "youtubeChannel": "YouTube-kanal",
       "insecureStream": "{{name}} använder en osäker (http) ström som webbläsare blockerar. Lägg till den igen med en säker (https) ström-URL",
-      "httpsStreamHint": "Webbläsare blockerar osäkra (http) strömmar. Klistra in en säker (https) ström-URL"
+      "httpsStreamHint": "Webbläsare blockerar osäkra (http) strömmar. Klistra in en säker (https) ström-URL",
+      "tapToPlay": "Tryck för att spela"
     },
     "securityAdvisories": {
       "loading": "Hämtar resevarningar...",
@@ -2335,7 +2336,7 @@
     },
     "sanctionsPressure": {
       "title": "Sanktioner och beteckningar",
-      "infoTooltip": "Office of Foreign Assets Control särskilt utnämnda medborgare och konsoliderade listor plus Global Affairs Canada SEMA/JVCFOA-utseenden. Visar vilka länder som står inför högst utseendestryck, vilka program som driver det och vad som nyligen lagts till sedan senaste uppdateringen.",
+      "infoTooltip": "OFAC:s SDN- och konsoliderade listor samt Kanadas SEMA/JVCFOA-sanktioner. Landsrader använder direkta kopplingar. Fartygsflaggor och flygplansregistreringar räknas separat under register; noll tillgångar för ett land betyder inte att sanktionerade tillgångar saknas. Moderorganisationers länder hålls åtskilda från adressuppgifter och ingår inte i riskpoäng.",
       "loading": "Läser in sanktionsdata...",
       "unavailable": "Sanktionsdata är inte tillgänglig.",
       "summary": {
@@ -4511,7 +4512,9 @@
     "newTabOptionsHint": "Flikar du redan har ändras inte.",
     "useThisTabPanels": "Använd denna fliks paneler",
     "useDefaultPanels": "Använd standardpanelerna",
-    "newTabPanelsNotSaved": "Kunde inte spara. Den här webbläsaren blockerar webbplatslagring."
+    "newTabPanelsNotSaved": "Kunde inte spara. Den här webbläsaren blockerar webbplatslagring.",
+    "team": "Team",
+    "teamDashboards": "Team-instrumentpaneler"
   },
   "theaterPresets": {
     "label": "Täckningspaket",
@@ -4883,5 +4886,22 @@
     "close": "Stäng",
     "alertsHint": "Installera World Monitor på hemskärmen för att få aviseringar på denna iPhone eller iPad.",
     "how": "Så installerar du"
+  },
+  "teamDashboards": {
+    "desc": "Instrumentpaneler som ditt team delar. Öppna en för att lägga till den som en ny flik.",
+    "empty": "Ditt team har inte delat någon instrumentpanel än. Dela denna flik för att ge alla i ditt team dess paneler, storlekar och karta.",
+    "open": "Öppna {{name}} som en ny flik",
+    "stopSharing": "Sluta dela {{name}}",
+    "confirmStop": "Sluta dela {{name}} med ditt team? Flikar som människor redan har öppnat från den förblir som de är.",
+    "shareTab": "Dela denna flik med ditt team",
+    "shareChanges": "Dela denna fliks ändringar med ditt team",
+    "behind": "Ditt team ändrade denna instrumentpanel efter att du öppnade den.",
+    "getLatest": "Hämta den senaste versionen",
+    "opened": "Öppnade {{name}} från ditt team.",
+    "shared": "Delade {{name}} med ditt team.",
+    "updated": "Denna flik har nu din teams senaste version.",
+    "stopped": "Slutade dela {{name}}.",
+    "failed": "Kunde inte nå din teams instrumentpaneler. Försök igen.",
+    "limit": "Ditt team delar redan {{limit}} instrumentpaneler här. Sluta dela en först."
   }
 }

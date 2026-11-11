@@ -15,6 +15,7 @@ import {
 } from '@/app/panel-mount-deferral';
 import {
   SPLIT_LAYOUT_MIN_WIDTH,
+  isSplitLayoutViewport,
   clampMapColWidthPercent,
   mapRightClassForVisualSide,
   type MapVisualSide,
@@ -34,6 +35,11 @@ import type { AviationCommandBar } from '@/components/AviationCommandBar';
 import { MobilePanelNav } from '@/components/MobilePanelNav';
 import { debounce, loadFromStorage, saveToStorage } from '@/utils';
 import { escapeHtml } from '@/utils/sanitize';
+import {
+  DASHBOARD_EXTERNAL_SITE_LINKS,
+  resolveDashboardSiteOrigin,
+} from '@/config/dashboard-reference-links';
+import { dashboardReferenceAnchorsHtml } from '@/utils/dashboard-site-links';
 import { safeStorageGet } from '@/utils/safe-storage';
 import {
   CANONICAL_FEEDS,
@@ -58,7 +64,7 @@ import { loadStoredMissionPreset } from '@/services/mission-presets';
 import { peekPendingMissionAttribution } from '@/services/analytics';
 import { getStoredMapModePreference } from '@/services/map-mode-preference';
 import { loadWidgets, saveWidget, isProUser, isProTierResolved, subscribeWidgetAccess } from '@/services/widget-store';
-import { sanitizeLockedLayers, shouldSanitizeLockedLayers } from '@/config/map-layer-definitions';
+import { LAYER_REGISTRY, sanitizeLockedLayers, shouldSanitizeLockedLayers } from '@/config/map-layer-definitions';
 import type { CustomWidgetSpec } from '@/services/widget-store';
 import {
   panelGateStateChanged,
@@ -90,6 +96,17 @@ import {
   hasNewTabPanels,
   saveNewTabPanels,
 } from '@/services/tab-store';
+import { TeamDashboardsStore, publishOrShareAsNew } from '@/services/team-dashboards-store';
+import {
+  captureTeamDashboardLayout,
+  loadTeamDashboards,
+  publishTeamDashboard,
+  removeTeamDashboard,
+  teamDashboardErrorKind,
+  toTeamDashboardTab,
+  type PanelSize,
+  type TeamDashboardMap,
+} from '@/services/team-dashboards';
 import type { PanelTab, TabsPersistReceipt, TabsState } from '@/services/tab-store';
 import {
   DASHBOARD_TAB_UNAVAILABLE_RESULT,
@@ -133,7 +150,15 @@ import { markLcpDebug } from '@/utils/lcp-debug';
 import type { Panel } from '@/components/Panel';
 import type { SupplyChainPanel } from '@/components/SupplyChainPanel';
 import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
-import { loadPanelCollapsed, loadPanelColSpans, loadPanelSpans } from '@/utils/panel-storage';
+import {
+  clearPanelColSpanEntry,
+  clearPanelSpanEntry,
+  loadPanelCollapsed,
+  loadPanelColSpans,
+  loadPanelSpans,
+  savePanelColSpan,
+  savePanelSpan,
+} from '@/utils/panel-storage';
 import { observePanelGridColumns } from '@/utils/panel-grid';
 import { registerSettingsExportFlush } from '@/utils/settings-persistence';
 import { measure, mutate } from '@/utils/layout-batch';
@@ -239,13 +264,6 @@ const LATE_REGISTERED_PANEL_KEYS = new Set(['live-news']);
 const CW_PRO_GATE_TAB_RECOVERY_KEY = 'worldmonitor-cw-pro-gate-tab-recovery-v1';
 const STORAGE_ATLAS_PANEL_KEY = 'storage-facility-map';
 
-const DASHBOARD_REFERENCE_LINKS = [
-  { label: 'Countries', path: '/countries/' },
-  { label: 'Chokepoints', path: '/chokepoints/' },
-  { label: 'Crises', path: '/crises/' },
-  { label: 'Tools', path: '/tools/' },
-  { label: 'Accuracy', path: '/accuracy/' },
-] as const;
 
 export const VARIANT_SWITCHER_DASHBOARD_URLS = {
   full: 'https://www.worldmonitor.app/dashboard',
@@ -466,6 +484,7 @@ export class PanelLayoutManager implements AppModule {
   private ctx: AppContext;
   private callbacks: PanelLayoutManagerCallbacks;
   private panelDragCleanupHandlers: Array<() => void> = [];
+  private variantPlacementCleanup: (() => void) | null = null;
   private deferredPanelMounts: Map<string, DeferredPanelMount> = new Map();
   private lazyPanelRegistrations: Map<string, LazyPanelRegistration> = new Map();
   private observedHydrationPanels = new WeakSet<Panel>();
@@ -488,6 +507,15 @@ export class PanelLayoutManager implements AppModule {
   private boundWidgetCreatorHandler: ((e: Event) => void) | null = null;
   private unsubscribeEntitlementChange: (() => void) | null = null;
   private gatingPrincipal: string | null | undefined = undefined;
+  // Team dashboards for the signed-in user: null until loaded, and for anyone
+  // without an API Business or Enterprise team.
+  private readonly team = new TeamDashboardsStore({
+    load: loadTeamDashboards,
+    onChange: () => {
+      if (!this.ctx.isDestroyed) this.panelTabBar?.refresh();
+    },
+  });
+  private teamBusy = false;
   private premiumPanelsUnlocked = new Set<string>();
   private unsubscribeSubscriptionChange: (() => void) | null = null;
   private unsubscribePaymentFailureBanner: (() => void) | null = null;
@@ -873,6 +901,8 @@ export class PanelLayoutManager implements AppModule {
 
   /** Retire panel resources and watches, then settle pending entitlement verification. */
   destroy(): void {
+    this.variantPlacementCleanup?.();
+    this.variantPlacementCleanup = null;
     this.pendingStorageFacilityId = null;
     this.checkoutReturnFocusController.abort();
     clearAllPendingCalls();
@@ -1077,6 +1107,8 @@ export class PanelLayoutManager implements AppModule {
       }
     }
     this.gatingPrincipal = state.user?.id ?? null;
+    // Also retries a failed team load for the same user.
+    this.team.setPrincipal(state.user?.id ?? null);
 
     // KTD8: the tab cap rides the SAME pass, so it re-evaluates on both
     // subscribeAuthState and onEntitlementChange (plus onSubscriptionChange).
@@ -1129,13 +1161,15 @@ export class PanelLayoutManager implements AppModule {
       return ` style="--map-col-width: ${clampMapColWidthPercent(stored, window.innerWidth).toFixed(1)}%"`;
     })();
     const bootShellFootprint = import.meta.env.DEV ? captureBootShellFootprint(this.ctx.container) : null;
-    const referenceOrigin = this.ctx.isDesktopApp || window.location.hostname.endsWith('.worldmonitor.app')
-      ? 'https://www.worldmonitor.app'
-      : '';
-    const referenceLinksHtml = DASHBOARD_REFERENCE_LINKS.map(({ label, path }) => {
-      const href = `${referenceOrigin}${path}`;
-      return `<a href="${href}" target="_blank" rel="noopener">${label}</a>`;
-    }).join('');
+    const referenceOrigin = resolveDashboardSiteOrigin({
+      isDesktopApp: this.ctx.isDesktopApp,
+      hostname: window.location.hostname,
+    });
+    const referenceLinksHtml = dashboardReferenceAnchorsHtml(referenceOrigin);
+    const pricingHref = `${referenceOrigin}/pro#pricing`;
+    const externalSiteLinksHtml = DASHBOARD_EXTERNAL_SITE_LINKS.map(({ label, href }) => (
+      `<a href="${href}" target="_blank" rel="noopener">${label}</a>`
+    )).join('');
 
     markLcpDebug('wm:layout:render-start');
     document.documentElement.classList.add('wm-layout-hydrated');
@@ -1307,10 +1341,8 @@ export class PanelLayoutManager implements AppModule {
         <div class="mobile-menu-divider"></div>
         <div class="mobile-menu-footer-links">
           ${referenceLinksHtml}
-          <a href="${referenceOrigin}/pro#pricing" target="_blank" rel="noopener">Pricing</a>
-          <a href="https://www.worldmonitor.app/blog/" target="_blank" rel="noopener">Blog</a>
-          <a href="https://www.worldmonitor.app/docs/documentation" target="_blank" rel="noopener">Docs</a>
-          <a href="https://status.worldmonitor.app/" target="_blank" rel="noopener">Status</a>
+          <a href="${pricingHref}" target="_blank" rel="noopener">Pricing</a>
+          ${externalSiteLinksHtml}
         </div>
         <div class="mobile-menu-version">v${__APP_VERSION__}</div>
       </nav>
@@ -1334,7 +1366,10 @@ export class PanelLayoutManager implements AppModule {
         </button>`
       ).join('')}
       </div>
-      <div class="dashboard-tabs-mount" id="panelTabsMount"></div>
+      <div class="dashboard-navigation-row">
+        <div class="dashboard-tabs-mount" id="panelTabsMount"></div>
+        <div class="tablet-variant-mount"></div>
+      </div>
       <main id="main" tabindex="-1" class="main-content${mapRightClassActive ? ' map-right' : ''}"${mapColWidthStyle}>
         <div class="map-section${mapStartsCollapsed ? ' collapsed' : ''}" id="mapSection">
           <div class="panel-header">
@@ -1385,27 +1420,28 @@ export class PanelLayoutManager implements AppModule {
           <span class="mobile-tab-icon" aria-hidden="true">•••</span><span>More</span>
         </button>
       </nav>
-      <footer class="site-footer">
-        <div class="site-footer-brand">
-          <img src="/favico/android-chrome-96x96.png" alt="" width="28" height="28" loading="lazy" decoding="async" class="site-footer-icon" />
-          <div class="site-footer-brand-text">
-            <span class="site-footer-name">WORLD MONITOR</span>
-            <span class="site-footer-sub">v${__APP_VERSION__} &middot; <a href="https://x.com/eliehabib" target="_blank" rel="noopener" class="site-footer-credit">@eliehabib</a></span>
-          </div>
-        </div>
-        <nav aria-label="World Monitor references">
-          ${referenceLinksHtml}
-          <a href="${referenceOrigin}/pro#pricing" target="_blank" rel="noopener">Pricing</a>
-          <a href="https://www.worldmonitor.app/blog/" target="_blank" rel="noopener">Blog</a>
-          <a href="https://www.worldmonitor.app/docs/documentation" target="_blank" rel="noopener">Docs</a>
-          <a href="https://status.worldmonitor.app/" target="_blank" rel="noopener">Status</a>
-          <a href="https://github.com/koala73/worldmonitor" target="_blank" rel="noopener">GitHub</a>
-          <a href="https://x.com/worldmonitorai" target="_blank" rel="noopener">X</a>
+      <footer class="site-footer" aria-label="World Monitor status">
+        <span class="site-footer-meta">
+          <span class="site-footer-version">v${__APP_VERSION__}</span>
+          <span class="site-footer-copy">&copy; ${new Date().getFullYear()} World Monitor</span>
           ${this.ctx.isDesktopApp ? '' : `<span id="footerDownloadMount"></span>`}
-        </nav>
-        <span class="site-footer-copy">&copy; ${new Date().getFullYear()} World Monitor</span>
+        </span>
       </footer>
     `, "legacy direct innerHTML migration"));
+    // Move the same links so navigation, analytics and focus targets stay shared.
+    this.variantPlacementCleanup?.();
+    const switcher = this.ctx.container.querySelector('.variant-switcher');
+    const headerLeft = this.ctx.container.querySelector('.header-left');
+    const tabletMount = this.ctx.container.querySelector('.tablet-variant-mount');
+    const tabletWidth = window.matchMedia('(min-width: 768px) and (max-width: 980px)');
+    const placeSwitcher = () => {
+      if (!switcher || !headerLeft || !tabletMount) return;
+      if (tabletWidth.matches) tabletMount.append(switcher);
+      else headerLeft.prepend(switcher);
+    };
+    placeSwitcher();
+    tabletWidth.addEventListener('change', placeSwitcher);
+    this.variantPlacementCleanup = () => tabletWidth.removeEventListener('change', placeSwitcher);
     // Mark AFTER the innerHTML swap so the timestamp reflects when the new shell
     // DOM is actually live — placing it before setTrustedHtml recorded a time
     // earlier than any LCP candidate in the new shell, making it useless for
@@ -1496,6 +1532,14 @@ export class PanelLayoutManager implements AppModule {
       hasNewTabPanels,
       onSaveNewTabPanels: () => this.saveActiveTabAsNewTabPanels(),
       onClearNewTabPanels: () => this.useDefaultNewTabPanels(),
+      team: {
+        view: () => this.teamDashboardsView(),
+        onOpenMenu: () => { void this.team.reload(); },
+        onOpen: (id) => this.openTeamDashboard(id),
+        onShareTab: () => { void this.shareActiveTabWithTeam(); },
+        onUpdateTab: () => this.updateActiveTabFromTeam(),
+        onStopSharing: (id) => { void this.stopSharingTeamDashboard(id); },
+      },
     });
     mount.appendChild(this.panelTabBar.getElement());
     this.updateTabCapLock();
@@ -1512,6 +1556,216 @@ export class PanelLayoutManager implements AppModule {
     clearNewTabPanels();
     this.panelTabBar?.refresh();
     showToast(t('dashboardTabs.newTabStartsDefault'));
+  }
+
+  // ============================================
+  // Team dashboards — tabs shared within an API Business or Enterprise team
+  // ============================================
+
+  private activeTab(): PanelTab | null {
+    const state = this.tabsState;
+    return state?.tabs.find((tab) => tab.id === state.activeTabId) ?? null;
+  }
+
+  private teamDashboardsView() {
+    const team = this.team.dashboards;
+    if (!team) return null;
+    const link = this.activeTab()?.team;
+    const linked = link ? team.dashboards.find((d) => d.id === link.id) : undefined;
+    return {
+      dashboards: team.dashboards.map((d) => ({ id: d.id, name: d.name })),
+      active: linked && link ? { id: linked.id, behind: linked.version > link.version } : null,
+      busy: this.teamBusy,
+    };
+  }
+
+  private openTeamDashboard(id: string): void {
+    const dashboard = this.team.dashboards?.dashboards.find((d) => d.id === id);
+    if (!dashboard || !this.tabsState) return;
+
+    // Already open here: go to that tab rather than stacking copies.
+    const existing = this.tabsState.tabs.find((tab) => tab.team?.id === id);
+    if (existing) {
+      this.switchToTab(existing.id);
+      return;
+    }
+
+    const verdict = this.updateTabCapLock();
+    if (!verdict.allowed) {
+      trackGateHit('dashboard-tab');
+      this.panelTabBar?.showAddLockNotice();
+      return;
+    }
+
+    const built = toTeamDashboardTab(dashboard.layout, this.ctx.panelSettings);
+    this.createAndActivateTab(dashboard.name, {
+      panelSettings: built.panelSettings,
+      panelOrder: built.panelOrder,
+      bottomSet: built.bottomSet,
+      team: { id: dashboard.id, version: dashboard.version },
+    });
+    this.applyTeamPanelSizes(built.sizes);
+    this.applyTeamMap(built.map);
+    showToast(t('teamDashboards.opened', { name: dashboard.name }));
+  }
+
+  private updateActiveTabFromTeam(): void {
+    const tab = this.activeTab();
+    const dashboard = tab?.team && this.team.dashboards?.dashboards.find((d) => d.id === tab.team!.id);
+    if (!tab || !dashboard || !this.tabsState) return;
+
+    const built = toTeamDashboardTab(dashboard.layout, this.ctx.panelSettings);
+    this.applyTabPanelState(built.panelSettings, built.panelOrder, built.bottomSet);
+    this.applyTeamPanelSizes(built.sizes);
+    this.applyTeamMap(built.map);
+    this.snapshotActiveTab();
+    tab.team = { id: dashboard.id, version: dashboard.version };
+    saveTabsState(this.tabsState);
+    this.panelTabBar?.refresh();
+    showToast(t('teamDashboards.updated'));
+  }
+
+  private async shareActiveTabWithTeam(): Promise<void> {
+    const userId = this.team.userId;
+    const tab = this.activeTab();
+    const team = this.team.dashboards;
+    if (!userId || !tab || !team || this.teamBusy) return;
+
+    const mapState = this.ctx.map?.getState();
+    const layout = captureTeamDashboardLayout({
+      ...this.captureCurrentTabState().snapshot,
+      rowSpans: loadPanelSpans(),
+      colSpans: loadPanelColSpans(),
+      map: this.ctx.map && mapState
+        ? {
+          view: mapState.view,
+          zoom: mapState.zoom,
+          center: this.ctx.map.getCenter(),
+          timeRange: mapState.timeRange,
+          layers: mapState.layers as unknown as Record<string, boolean | undefined>,
+        }
+        : null,
+    });
+    // Update the linked dashboard from the version this browser last saw. The
+    // list can lag a publish this tab just made, so fall back to the tab's own
+    // version. A link to a removed dashboard shares as a new one
+    // (publishOrShareAsNew); a newer teammate version is refused until seen.
+    const linkedId = tab.team?.id;
+    const baseVersion = linkedId
+      ? team.dashboards.find((d) => d.id === linkedId)?.version ?? tab.team!.version
+      : undefined;
+
+    this.teamBusy = true;
+    this.panelTabBar?.refresh();
+    try {
+      const link = await publishOrShareAsNew(
+        (args) => publishTeamDashboard(userId, args),
+        { name: tab.name, layout, dashboardId: linkedId, baseVersion },
+      );
+      if (this.team.userId !== userId || this.ctx.isDestroyed) return;
+      tab.team = link;
+      if (this.tabsState) saveTabsState(this.tabsState);
+      showToast(t('teamDashboards.shared', { name: tab.name }));
+      await this.team.reload({ fresh: true });
+    } catch (err) {
+      const kind = teamDashboardErrorKind(err);
+      if (kind === 'VERSION_CONFLICT') {
+        // Show the newer version; sharing again from the menu replaces it.
+        showToast(t('teamDashboards.behind'));
+        if (this.team.userId === userId) void this.team.reload({ fresh: true });
+        return;
+      }
+      showToast(kind === 'TEAM_DASHBOARD_LIMIT'
+        ? t('teamDashboards.limit', { limit: String((err as { data?: { limit?: number } }).data?.limit ?? 25) })
+        : t('teamDashboards.failed'));
+    } finally {
+      this.teamBusy = false;
+      this.panelTabBar?.refresh();
+    }
+  }
+
+  private async stopSharingTeamDashboard(id: string): Promise<void> {
+    const userId = this.team.userId;
+    const dashboard = this.team.dashboards?.dashboards.find((d) => d.id === id);
+    if (!userId || !dashboard || this.teamBusy) return;
+    if (!window.confirm(t('teamDashboards.confirmStop', { name: dashboard.name }))) return;
+
+    this.teamBusy = true;
+    this.panelTabBar?.refresh();
+    try {
+      await removeTeamDashboard(userId, id);
+      if (this.team.userId !== userId || this.ctx.isDestroyed) return;
+      // Tabs opened from it keep their panels; they are just no longer linked.
+      let unlinked = false;
+      for (const tab of this.tabsState?.tabs ?? []) {
+        if (tab.team?.id !== id) continue;
+        delete tab.team;
+        unlinked = true;
+      }
+      if (unlinked && this.tabsState) saveTabsState(this.tabsState);
+      showToast(t('teamDashboards.stopped', { name: dashboard.name }));
+      await this.team.reload({ fresh: true });
+    } catch {
+      showToast(t('teamDashboards.failed'));
+    } finally {
+      this.teamBusy = false;
+      this.panelTabBar?.refresh();
+    }
+  }
+
+  /**
+   * Panel sizes are kept per panel, not per tab, so a shared layout's sizes
+   * become this browser's sizes for those panels. Mounted panels resize now;
+   * the rest read the saved size when they mount.
+   */
+  private applyTeamPanelSizes(sizes: readonly PanelSize[]): void {
+    for (const { key, rows, cols } of sizes) {
+      const panel = this.ctx.panels[key] as Panel | undefined;
+      if (panel && typeof panel.applySharedSize === 'function') {
+        panel.applySharedSize(rows, cols);
+        continue;
+      }
+      if (rows === undefined) clearPanelSpanEntry(key);
+      else savePanelSpan(key, rows);
+      if (cols === undefined) clearPanelColSpanEntry(key);
+      else savePanelColSpan(key, cols);
+    }
+  }
+
+  /** Same order and safeguards as a shared link's map state (applyInitialUrlState). */
+  private applyTeamMap(map: TeamDashboardMap | null): void {
+    if (!map || !this.ctx.map) return;
+    this.ctx.map.setView(map.view as import('@/components/MapContainer').MapView, map.zoom);
+    this.ctx.map.setTimeRange(map.timeRange);
+
+    const requested = new Set(map.layers);
+    const next = { ...this.ctx.mapLayers };
+    for (const layer of Object.keys(LAYER_REGISTRY) as Array<keyof MapLayers>) {
+      next[layer] = requested.has(layer);
+    }
+    let normalized = normalizeExclusiveChoropleths(next, this.ctx.mapLayers);
+    if (normalized.resilienceScore && !this.ctx.map.isDeckGLActive?.()) {
+      normalized = { ...normalized, resilienceScore: false };
+    }
+    if (shouldSanitizeLockedLayers(
+      hasPremiumAccess(getAuthState()),
+      isProTierResolved(),
+      this.callbacks.isFreeTierFallbackActive?.() === true,
+    )) {
+      normalized = sanitizeLockedLayers(normalized, false);
+    }
+    const previous = { ...this.ctx.mapLayers };
+    this.ctx.mapLayers = normalized;
+    this.ctx.map.setLayers(normalized);
+    // Opening a team dashboard is the user's choice, so its layers persist
+    // and load their data like a toggle would.
+    saveToStorage(STORAGE_KEYS.mapLayers, normalized);
+    for (const layer of Object.keys(normalized) as Array<keyof MapLayers>) {
+      if (!!previous[layer] !== !!normalized[layer]) {
+        this.callbacks.applyMapLayerChange?.(layer, !!normalized[layer], 'programmatic');
+      }
+    }
+    this.ctx.map.setCenter(map.lat, map.lon, map.zoom);
   }
 
   /**
@@ -1956,12 +2210,15 @@ export class PanelLayoutManager implements AppModule {
     }));
   }
 
-  private createAndActivateTab(name: string): { tab: PanelTab; persisted: boolean } {
+  private createAndActivateTab(
+    name: string,
+    preset?: Pick<PanelTab, 'panelSettings' | 'panelOrder' | 'bottomSet' | 'team'>,
+  ): { tab: PanelTab; persisted: boolean } {
     if (!this.tabsState) {
       throw new Error('Dashboard tabs are not available.');
     }
     this.snapshotActiveTab();
-    const defaults = buildNewTabPanels(this.ctx.panelSettings);
+    const defaults = preset ?? buildNewTabPanels(this.ctx.panelSettings);
     const tab: PanelTab = {
       id: generateTabId(),
       name,
@@ -1973,7 +2230,8 @@ export class PanelLayoutManager implements AppModule {
         ? enforceFreePanelLimit(defaults.panelSettings, isProUser())
         : defaults.panelSettings,
       panelOrder: defaults.panelOrder,
-      bottomSet: [],
+      bottomSet: preset?.bottomSet ?? [],
+      ...(preset?.team ? { team: preset.team } : {}),
     };
     this.tabsState.tabs.push(tab);
     this.tabsState.activeTabId = tab.id;
@@ -4026,7 +4284,7 @@ export class PanelLayoutManager implements AppModule {
   private getEffectiveUltraWide(): boolean {
     const mapSection = document.getElementById('mapSection');
     const mapEnabled = !mapSection?.classList.contains('hidden');
-    return window.innerWidth >= this.getUltraWideMinWidth() && mapEnabled;
+    return isSplitLayoutViewport(window) && mapEnabled;
   }
 
   private insertByOrder(grid: HTMLElement, el: HTMLElement, key: string): void {

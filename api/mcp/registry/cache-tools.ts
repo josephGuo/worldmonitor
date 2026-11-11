@@ -1044,7 +1044,7 @@ export const CACHE_TOOLS: ToolDef[] = [
     name: 'get_market_data',
     title: 'Market quotes and commodity prices',
     _outputBudgetBytes: 131072,
-    description: 'Return the seeded market snapshot: equity, commodity, crypto and Gulf-market quotes, sector performance with explicit valuation coverage, ETF flows and the Fear & Greed index; subscriptions also get SGE physical-vs-COMEX premiums and physical-divergence regimes, which a free account receives as `locked` with an upgradeUrl. Quotes stale after 30m. Brent/WTI: spot 4d; futures normal NYMEX breaks plus 30m restart grace. Covers the curated symbol universe only: symbols filters that snapshot and cannot look up arbitrary tickers. Seeded-cache read with no live fetch: weight 1 on API plans, included in the signed-in free allowance. asset_class selects classes, limit caps each per-class list (default 30, 0 for no cap). Dedicated paid plans open or reuse one market panel allocation across filters; refresh with request_id starts a new one. API plans retain per-tool billing.',
+    description: 'Return the seeded market snapshot: equity, commodity, crypto and Gulf-market quotes, sector performance with explicit valuation coverage, ETF flows and the Fear & Greed index; subscriptions also get SGE physical-vs-COMEX premiums and physical-divergence regimes, which a free account receives as `locked` with an upgradeUrl. Quotes stale after 30m. Brent/WTI: spot 4d; futures NYMEX breaks and CME energy holidays (2026–2027) plus 30m restart grace. Curated symbols only: symbols filters this snapshot, not arbitrary tickers. Seeded-cache read with no live fetch: weight 1 on API plans, included in the signed-in free allowance. asset_class selects classes, limit caps each per-class list (default 30, 0 for no cap). Dedicated paid plans open or reuse one market panel allocation across filters; refresh with request_id starts a new one. API plans retain per-tool billing.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -2569,8 +2569,10 @@ export const CACHE_TOOLS: ToolDef[] = [
         properties: {
           entries: { type: 'array', items: { type: 'object', properties: {
             countryCodes: { type: ['array', 'string'] }, entityType: { type: 'string' },
+            parentCountryCodes: { type: 'array', items: { type: 'string' }, description: 'Linked-parent countries for addressless entities, separate from direct country evidence and excluded from country risk counts.' },
+            parentCountryNames: { type: 'array', items: { type: 'string' } },
           } } },
-          countries: { type: 'array', items: { type: 'object', properties: {
+          countries: { type: 'array', description: 'Direct country associations. Asset counts here exclude flags and aircraft registries; zero does not imply no sanctioned assets in a registry. Use flagRegistries for registry counts.', items: { type: 'object', properties: {
             countryCode: { type: 'string' }, pressureScore: { type: 'number' },
           } } },
           unattributed: { type: 'object', description: 'Counts across the full pressure snapshot before country or entity filters.', properties: {
@@ -2656,6 +2658,7 @@ export const CACHE_TOOLS: ToolDef[] = [
         narrowArray(data, 'entities', (e) => matchesCode(e.cc, countries));
         narrowNested(data, 'pressure', 'entries', (e) => matchesCode(e.countryCodes, countries));
         narrowNested(data, 'pressure', 'countries', (c) => matchesCode(c.countryCode, countries));
+        narrowNested(data, 'pressure', 'flagRegistries', (c) => matchesCode(c.countryCode, countries));
       }
       if (etype) {
         narrowArray(data, 'entities', (e) => ciIncludes(e.et, etype));

@@ -1682,7 +1682,7 @@
       "estimateWithin": "Unas {{count}} personas en un radio de {{km}} km",
       "method": "Las estimaciones se basan en la densidad media de población del país.",
       "empty": "No hay ubicaciones de eventos que cumplan los criterios",
-      "infoTooltip": "Se muestran eventos con datos de densidad de población del país. Las ubicaciones de datos antiguos sin información de precisión se marcan como pendientes de actualización. Las áreas estimadas pueden superponerse.",
+      "infoTooltip": "Se muestran eventos con datos de densidad de población del país. Las ubicaciones de datos antiguos sin información de precisión se marcan como pendientes de actualización. Las áreas estimadas pueden superponerse. Los disturbios requieren una ubicación precisa; se excluyen los eventos UCDP marcados como imprecisos. Un lugar registrado por dos fuentes (disturbios y UCDP) aparece en dos filas.",
       "eventCount_one": "{{count}} evento",
       "eventCount_many": "{{count}} eventos",
       "eventCount_other": "{{count}} eventos",
@@ -2064,7 +2064,8 @@
       "channelUrlHint": "Pega una URL de canal (youtube.com/channel/UC…) o una URL de video en vivo",
       "youtubeChannel": "Canal de YouTube",
       "insecureStream": "{{name}} usa una transmisión insegura (http), que los navegadores bloquean. Agrégalo de nuevo con una URL de transmisión segura (https)",
-      "httpsStreamHint": "Los navegadores bloquean las transmisiones inseguras (http). Pega una URL de transmisión segura (https)"
+      "httpsStreamHint": "Los navegadores bloquean las transmisiones inseguras (http). Pega una URL de transmisión segura (https)",
+      "tapToPlay": "Toca para reproducir"
     },
     "securityAdvisories": {
       "loading": "Cargando alertas de viaje...",
@@ -2730,7 +2731,7 @@
     },
     "sanctionsPressure": {
       "title": "Sanciones y Designaciones",
-      "infoTooltip": "Oficina de Control de Activos Extranjeros Listas de Nacionales Especialmente Designados y Listas Consolidadas más designaciones SEMA/JVCFOA de Asuntos Globales de Canadá. Muestra qué países enfrentan la mayor presión de designación, qué programas la impulsan y qué se ha añadido recientemente desde la última actualización.",
+      "infoTooltip": "Listas OFAC SDN y consolidadas, junto con las designaciones SEMA/JVCFOA de Canadá. Las filas de países usan asociaciones directas. Las banderas de buques y los registros de aeronaves se cuentan por separado en registros; un recuento de activos de cero para un país no implica que no haya activos sancionados. Los países de las entidades matrices se separan de las pruebas de domicilio y se excluyen de las puntuaciones de riesgo.",
       "loading": "Cargando datos de sanciones...",
       "unavailable": "Datos de sanciones no disponibles.",
       "summary": {
@@ -4533,7 +4534,9 @@
     "newTabOptionsHint": "Las pestañas que ya tienes no cambian.",
     "useThisTabPanels": "Usa los paneles de esta pestaña",
     "useDefaultPanels": "Usa los paneles predeterminados",
-    "newTabPanelsNotSaved": "No se pudo guardar. Este navegador está bloqueando el almacenamiento del sitio."
+    "newTabPanelsNotSaved": "No se pudo guardar. Este navegador está bloqueando el almacenamiento del sitio.",
+    "team": "Equipo",
+    "teamDashboards": "Dashboards del equipo"
   },
   "theaterPresets": {
     "label": "Paquetes de cobertura",
@@ -4905,5 +4908,22 @@
     "close": "Cerrar",
     "alertsHint": "Instala World Monitor en tu pantalla de inicio para recibir alertas en este iPhone o iPad.",
     "how": "Cómo instalar"
+  },
+  "teamDashboards": {
+    "desc": "Dashboards que comparte tu equipo. Abre uno para agregarlo como una nueva pestaña.",
+    "empty": "Tu equipo aún no ha compartido ningún dashboard. Comparte esta pestaña para darle a todos en tu equipo sus paneles, tamaños y mapa.",
+    "open": "Abrir {{name}} como una nueva pestaña",
+    "stopSharing": "Dejar de compartir {{name}}",
+    "confirmStop": "¿Dejar de compartir {{name}} con tu equipo? Las pestañas que las personas ya abrieron desde él permanecerán como están.",
+    "shareTab": "Compartir esta pestaña con tu equipo",
+    "shareChanges": "Compartir los cambios de esta pestaña con tu equipo",
+    "behind": "Tu equipo cambió este dashboard después de que lo abriste.",
+    "getLatest": "Obtener la versión más reciente",
+    "opened": "Se abrió {{name}} desde tu equipo.",
+    "shared": "Se compartió {{name}} con tu equipo.",
+    "updated": "Esta pestaña ahora tiene la versión más reciente de tu equipo.",
+    "stopped": "Se dejó de compartir {{name}}.",
+    "failed": "No se pudo acceder a los dashboards de tu equipo. Intenta de nuevo.",
+    "limit": "Tu equipo ya comparte {{limit}} dashboards aquí. Deja de compartir uno primero."
   }
 }
