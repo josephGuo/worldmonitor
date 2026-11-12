@@ -1,5 +1,6 @@
 import type { AppContext, AppModule } from '@/app/app-context';
 import { enqueueSentryCall } from '@/bootstrap/sentry-defer';
+import { isAnalyticsHost, track } from '@/services/analytics';
 import { isPageUnloading } from '@/bootstrap/page-unload-signal';
 import { fetchUkmtoIncidents } from '@/services/ukmto-incidents';
 import { getRpcBaseUrl } from '@/services/rpc-client';
@@ -136,7 +137,7 @@ import { fetchOrefAlerts, startOrefPolling, stopOrefPolling, onOrefAlertsUpdate,
 import { getResilienceRanking } from '@/services/resilience';
 import { buildResilienceChoroplethMap } from '@/components/resilience-choropleth-utils';
 import { getNo2ActivityData } from '@/services/no2-activity';
-import { addExposureCoverage, enrichEventsWithExposure } from '@/services/population-exposure';
+import { addExposureCoverage, enrichEventsWithExposure, ucdpExposureEvents } from '@/services/population-exposure';
 import { debounce, getCircuitBreakerCooldownInfo } from '@/utils';
 import { addLocalDays, localYmd } from '@/utils/local-date';
 import { isFeatureAvailable, isFeatureEnabled } from '@/services/runtime-config';
@@ -502,6 +503,8 @@ export class DataLoaderManager implements AppModule {
   private readonly digestBreakerCooldownMs = 5 * 60 * 1000;
   /** Failure kinds already sent to Sentry this page load (one event per kind). */
   private readonly reportedDigestFailures = new Set<DigestFetchFailureKind>();
+  /** Same bound for the analytics count, kept apart so a degraded outcome cannot use up the Sentry slot of a later empty one. */
+  private readonly countedDigestDegradations = new Set<DigestFetchFailureKind>();
   private readonly persistedDigestMaxAgeMs = 6 * 60 * 60 * 1000;
   private readonly outageFallbackCategoryFeedLimit = 3;
   private readonly outageFallbackIntelFeedLimit = 6;
@@ -878,7 +881,9 @@ export class DataLoaderManager implements AppModule {
         return fallback ? { digest: fallback, servedStale: true } : null;
       }
       this.lastGoodDigest = retainRicherScopedDigest(this.lastGoodDigest, requestKey, data);
-      if (firstFailure) this.reportDigestFetchFailure(firstFailure.error, 'none', firstFailure.deadlineExpired, 'recovered');
+      // A retry that answered with no stories left the panels as empty as the
+      // failure did, so it is not a recovery.
+      if (firstFailure) this.reportDigestFetchFailure(firstFailure.error, 'none', firstFailure.deadlineExpired, digestHasItems(data) ? 'recovered' : 'failed');
       this.reportDigestCoverage(data);
       return { digest: data, servedStale: data.coverage?.servedStale === true };
     } catch (e) {
@@ -912,9 +917,11 @@ export class DataLoaderManager implements AppModule {
         return this.tryFetchDigest({ error: e, deadlineExpired });
       }
       const reported = firstFailure ?? { error: e, deadlineExpired };
+      // A copy with no items puts nothing on screen, so it is not a fallback.
+      const shownFallback = digestHasItems(fallback) ? (retained ? 'retained' : 'saved') : 'none';
       this.reportDigestFetchFailure(
         reported.error,
-        retained ? 'retained' : fallback ? 'saved' : 'none',
+        shownFallback,
         reported.deadlineExpired,
         firstFailure ? 'failed' : 'none',
         firstFailure ? classifyDigestFetchFailure(e, deadlineExpired) : undefined,
@@ -940,6 +947,18 @@ export class DataLoaderManager implements AppModule {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     if (isPageUnloading()) return;
     const kind = classifyDigestFetchFailure(error, deadlineExpired);
+    // Sentry WORLDMONITOR-1D4: only a failure that left the panels empty is an
+    // incident. Every other outcome had news on screen, so it is a rate to
+    // watch, not an issue to triage: counted in analytics instead. Hosts the
+    // analytics tracker is disabled on (tech, commodity, energy, self-host)
+    // keep reporting to Sentry, because the count would be dropped there.
+    const outcome = digestFailureOutcome(fallback, retry);
+    if (outcome !== 'empty' && isAnalyticsHost()) {
+      if (this.countedDigestDegradations.has(kind)) return;
+      this.countedDigestDegradations.add(kind);
+      track('news-digest-degraded', { outcome, failure: kind, variant: SITE_VARIANT });
+      return;
+    }
     if (this.reportedDigestFailures.has(kind)) return;
     this.reportedDigestFailures.add(kind);
     enqueueSentryCall((s) => s.captureMessage('News digest fetch failed', {
@@ -3984,16 +4003,14 @@ export class DataLoaderManager implements AppModule {
       const perSourceLimit = 10;
       // Older UCDP snapshots have no precision field. Keep their usable points
       // visible as pending; unrest still requires confirmed provider precision.
-      const ucdp = enrichEventsWithExposure((ucdpInput?.events ?? []).map(e => ({
-        id: e.id, lat: e.latitude, lon: e.longitude, type: e.type_of_violence,
-        name: e.locationName ?? '', locationName: e.locationName ?? '',
-        country: e.country, hasPreciseLocation: e.hasPreciseLocation, eventCount: e.eventCount,
-      })), perSourceLimit, true);
-      const unrest = enrichEventsWithExposure((protests?.events ?? []).map(e => ({
+      const ucdpEvents = ucdpExposureEvents(ucdpInput?.events ?? []);
+      const unrestEvents = (protests?.events ?? []).map(e => ({
         id: e.id, lat: e.lat, lon: e.lon, type: 'conflict',
         name: e.city ? `${e.city}, ${e.country}` : e.title,
         country: e.country, hasPreciseLocation: e.hasPreciseLocation,
-      })), perSourceLimit);
+      }));
+      const ucdp = enrichEventsWithExposure(ucdpEvents, perSourceLimit, true);
+      const unrest = enrichEventsWithExposure(unrestEvents, perSourceLimit);
       const exposures = [...unrest.exposures, ...ucdp.exposures]
         .sort((a, b) => b.exposedPopulation - a.exposedPopulation);
       const ucdpCoverage = ucdpInput?.source === 'full-feed' ? ucdp.coverage : ucdpInput?.coverage;
@@ -4004,7 +4021,9 @@ export class DataLoaderManager implements AppModule {
         this.callPanel('population-exposure', 'showError', t('common.unavailable'));
       } else {
         const hasCachedUcdp = ucdp.exposures.length > 0 && (!ucdpReceived || ucdpFromCache);
-        this.callPanel('population-exposure', 'setExposures', exposures, hasCachedUcdp, coverage);
+        this.callPanel('population-exposure', 'setExposures', exposures, hasCachedUcdp, coverage, {
+          unrest: unrestEvents, ucdp: ucdpEvents, ucdpIsProjection: ucdpInput?.source !== 'full-feed',
+        });
       }
       if (!protestsUpdated || !ucdpReceived) {
         dataFreshness.recordError('worldpop', 'Exposure source data unavailable');
@@ -5526,6 +5545,25 @@ export function classifyDigestFetchFailure(error: unknown, deadlineExpired = fal
   if (message === 'digest returned 0 categories') return 'empty-body';
   if (error instanceof TypeError) return 'network';
   return 'other';
+}
+
+/** Whether a digest carries at least one story. A copy without one shows nothing. */
+export function digestHasItems(digest: ListFeedDigestResponse | null): boolean {
+  if (!digest || typeof digest.categories !== 'object' || digest.categories === null) return false;
+  return Object.values(digest.categories).some(bucket => Array.isArray(bucket?.items) && bucket.items.length > 0);
+}
+
+/**
+ * What the user was left with after a failed digest request. `empty` is the
+ * only outcome with no news on screen: no retained or saved copy, and no retry
+ * that recovered.
+ */
+export function digestFailureOutcome(
+  fallback: 'retained' | 'saved' | 'none',
+  retry: 'none' | 'recovered' | 'failed',
+): 'retained' | 'saved' | 'recovered' | 'empty' {
+  if (fallback !== 'none') return fallback;
+  return retry === 'recovered' ? 'recovered' : 'empty';
 }
 
 /**

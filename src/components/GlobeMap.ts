@@ -28,6 +28,7 @@ import { getLocale, initI18n, t } from '@/services/i18n';
 import type { ReservoirLevel } from '@/services/climate';
 import { reservoirHeadline, reservoirTone, statusLabel as reservoirStatusLabel } from './reservoir-levels-view';
 import { SITE_VARIANT } from '@/config/variant';
+import { staticAssetUrl } from '@/config/static-asset-url';
 import { getGlobeRenderScale, resolveGlobePixelRatio, resolvePerformanceProfile, subscribeGlobeRenderScaleChange, getGlobeTexture, GLOBE_TEXTURE_URLS, subscribeGlobeTextureChange, getGlobeVisualPreset, subscribeGlobeVisualPresetChange, type GlobeRenderScale, type GlobePerformanceProfile, type GlobeVisualPreset } from '@/services/globe-render-settings';
 import {
   getLayerExplanation,
@@ -45,6 +46,7 @@ import { GAMMA_IRRADIATORS } from '@/config/irradiators';
 import { AI_DATA_CENTERS } from '@/config/ai-datacenters';
 import { getCountryBbox, getCountriesGeoJson, getCountryAtCoordinates, getCountryNameByCode } from '@/services/country-geometry';
 import { escapeHtml } from '@/utils/sanitize';
+import type { FocusFitBounds } from '@/utils/focus-map';
 import { corroborationLabelHtml } from '@/utils/corroboration-flag';
 import { showLayerWarning } from '@/utils/layer-warning';
 import { isMobileDevice } from '@/utils';
@@ -474,7 +476,7 @@ interface GlobePath {
 interface GlobePolygon {
   coords: number[][][];
   name: string;
-  _kind: 'cii' | 'conflict' | 'imageryFootprint' | 'forecastCone' | 'scenario';
+  _kind: 'cii' | 'conflict' | 'imageryFootprint' | 'forecastCone' | 'scenario' | 'focusChosen' | 'focusNeighbour';
   level?: string;
   score?: number;
 
@@ -532,6 +534,7 @@ export class GlobeMap {
   private pendingPremiumLayerChanges = new Set<keyof MapLayers>();
   private savedDefaultMaterial: any = null;
   private controls: GlobeControlsLike | null = null;
+  private pendingMarkerGestureCleanup: (() => void) | null = null;
   private renderPaused = false;
   private outerGlow: any = null;
   private innerGlow: any = null;
@@ -636,6 +639,8 @@ export class GlobeMap {
   private ciiScoresMap: Map<string, { score: number; level: string }> = new Map();
   private countriesGeoData: FeatureCollection<Geometry> | null = null;
   private scenarioPolygons: GlobePolygon[] = [];
+  /** Dashboard focus outline (#10453); polygons are built in flushPolygons once countries load. */
+  private focusOutline: { chosen: Set<string>; neighbours: Set<string> } | null = null;
 
   // Current layers state
   private layers: MapLayers;
@@ -747,7 +752,7 @@ export class GlobeMap {
 
     const initialTexture = getGlobeTexture();
     globe
-      .globeImageUrl(GLOBE_TEXTURE_URLS[initialTexture])
+      .globeImageUrl(staticAssetUrl(GLOBE_TEXTURE_URLS[initialTexture]))
       .backgroundImageUrl('')
       .atmosphereColor('#4466cc')
       .atmosphereAltitude(0.18)
@@ -830,7 +835,7 @@ export class GlobeMap {
 
     // Subscribe to texture changes (kept as-is)
     this.unsubscribeGlobeTexture = subscribeGlobeTextureChange((texture) => {
-      if (this.globe) this.globe.globeImageUrl(GLOBE_TEXTURE_URLS[texture]);
+      if (this.globe) this.globe.globeImageUrl(staticAssetUrl(GLOBE_TEXTURE_URLS[texture]));
     });
 
     // Pause auto-rotate on user interaction; resume after 60 s idle (like Sentinel)
@@ -861,16 +866,14 @@ export class GlobeMap {
     if (canvas) {
       // Wake globe on any user interaction (idle rendering optimization)
       const wakeOnInteraction = () => this.wakeGlobe();
-      canvas.addEventListener('mousedown', () => { pauseAutoRotate(); wakeOnInteraction(); });
-      canvas.addEventListener('touchstart', () => { pauseAutoRotate(); wakeOnInteraction(); }, { passive: true });
+      canvas.addEventListener('pointerdown', () => { pauseAutoRotate(); wakeOnInteraction(); });
       canvas.addEventListener('wheel', wakeOnInteraction, { passive: true });
       let lastMoveWake = 0;
       canvas.addEventListener('mousemove', () => {
         const now = performance.now();
         if (now - lastMoveWake > 500) { lastMoveWake = now; wakeOnInteraction(); }
       }, { passive: true });
-      canvas.addEventListener('mouseup', scheduleResumeAutoRotate);
-      canvas.addEventListener('touchend', scheduleResumeAutoRotate);
+      canvas.addEventListener('pointerup', scheduleResumeAutoRotate);
       canvas.addEventListener('webglcontextlost', (e) => {
         e.preventDefault();
         this.webglLost = true;
@@ -995,6 +998,7 @@ export class GlobeMap {
         if (d._kind === 'imageryFootprint') return 'rgba(0,0,0,0)';
         if (d._kind === 'forecastCone') return 'rgba(255,140,60,0.2)';
         if (d._kind === 'scenario') return 'rgba(220,60,40,0.3)';
+        if (d._kind === 'focusChosen' || d._kind === 'focusNeighbour') return '';
         return 'rgba(255,60,60,0.15)';
       })
       .polygonSideColor((d: GlobePolygon) => {
@@ -1003,6 +1007,7 @@ export class GlobeMap {
         if (d._kind === 'imageryFootprint') return 'rgba(0,0,0,0)';
         if (d._kind === 'forecastCone') return 'rgba(255,140,60,0.1)';
         if (d._kind === 'scenario') return 'rgba(0,0,0,0)';
+        if (d._kind === 'focusChosen' || d._kind === 'focusNeighbour') return '';
         return 'rgba(255,60,60,0.08)';
       })
       .polygonStrokeColor((d: GlobePolygon) => {
@@ -1011,11 +1016,16 @@ export class GlobeMap {
         if (d._kind === 'imageryFootprint') return '#00b4ff';
         if (d._kind === 'forecastCone') return 'rgba(255,140,60,0.5)';
         if (d._kind === 'scenario') return 'transparent';
+        if (d._kind === 'focusChosen') return GlobeMap.FOCUS_CHOSEN_STROKE;
+        if (d._kind === 'focusNeighbour') return GlobeMap.FOCUS_NEIGHBOUR_STROKE;
         return '#ff4444';
       })
       .polygonAltitude((d: GlobePolygon) => {
         if (d._kind === 'cii') return 0.002;
         if (d._kind === 'conflict') return GlobeMap.CONFLICT_ALT[d.intensity!] ?? GlobeMap.CONFLICT_ALT.low;
+        // Above the highest conflict cap (0.006), chosen above neighbours.
+        if (d._kind === 'focusChosen') return 0.008;
+        if (d._kind === 'focusNeighbour') return 0.007;
         return 0.005;
       })
       .polygonLabel((d: GlobePolygon) => {
@@ -1106,7 +1116,7 @@ export class GlobeMap {
 
   private buildMarkerElement(d: GlobeMarker): HTMLElement {
     const el = document.createElement('div');
-    el.style.cssText = 'pointer-events:auto;cursor:pointer;user-select:none;';
+    el.style.cssText = 'pointer-events:auto;cursor:pointer;user-select:none;touch-action:none;';
 
     if (d._kind === 'conflict') {
       const size = Math.min(12, 6 + (d.fatalities ?? 0) * 0.4);
@@ -1359,7 +1369,7 @@ export class GlobeMap {
       dot.className = `wl-globe-dot wl-tone-${reservoirTone(d.reservoir.status)}`;
       hit.appendChild(dot);
       el.appendChild(hit);
-      el.title = `${d.reservoir.name} · ${reservoirStatusLabel(d.reservoir.status, t)}`;
+      el.title = `${d.reservoir.name} · ${reservoirStatusLabel(d.reservoir, t)}`;
       el.setAttribute('aria-label', el.title);
     } else if (d._kind === 'ukmtoIncident') {
       el.textContent = '⚓';
@@ -1400,8 +1410,52 @@ export class GlobeMap {
         </div>`, "legacy direct innerHTML migration"));
     }
 
+    // HTML markers sit above the canvas that owns OrbitControls. Preserve a
+    // press as a click; only capture its pointer on the canvas once it is a drag.
+    let dragged = false;
+    el.addEventListener('wheel', (event) => {
+      const canvas = this.container.querySelector('canvas');
+      if (!canvas || this.destroyed) return;
+      event.preventDefault();
+      event.stopPropagation();
+      canvas.dispatchEvent(new WheelEvent('wheel', event));
+    }, { passive: false });
+    el.addEventListener('pointerdown', (down) => {
+      if (!down.isPrimary || down.button !== 0 || this.destroyed) return;
+      this.pendingMarkerGestureCleanup?.();
+      dragged = false;
+      const canvas = this.container.querySelector('canvas');
+      if (!canvas) return;
+      const doc = el.ownerDocument;
+      const cleanup = () => {
+        doc.removeEventListener('pointermove', move);
+        doc.removeEventListener('pointerup', end);
+        doc.removeEventListener('pointercancel', end);
+        this.pendingMarkerGestureCleanup = null;
+      };
+      const end = (event: PointerEvent) => {
+        if (event.pointerId === down.pointerId) cleanup();
+      };
+      const move = (event: PointerEvent) => {
+        if (event.pointerId !== down.pointerId) return;
+        // A mouse release outside the document may not deliver pointerup here.
+        if (event.buttons === 0) { cleanup(); return; }
+        if (Math.hypot(event.clientX - down.clientX, event.clientY - down.clientY) < 4) return;
+        dragged = true;
+        cleanup();
+        // OrbitControls captures the real pointer, then receives subsequent
+        // native moves/up, including when the pointer leaves the marker.
+        canvas.dispatchEvent(new PointerEvent('pointerdown', down));
+        canvas.dispatchEvent(new PointerEvent('pointermove', event));
+      };
+      doc.addEventListener('pointermove', move);
+      doc.addEventListener('pointerup', end);
+      doc.addEventListener('pointercancel', end);
+      this.pendingMarkerGestureCleanup = cleanup;
+    });
     el.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (dragged) return;
       this.handleMarkerClick(d, el);
     });
 
@@ -1766,7 +1820,7 @@ export class GlobeMap {
              `<br><span style="opacity:.5;">${esc(d.severity)} · ${esc(d.description.slice(0, 60))}</span>`;
     } else if (d._kind === 'reservoirLevel') {
       const headline = reservoirHeadline(d.reservoir, { t, locale: getLocale(), nowMs: Date.now() });
-      html = `<strong>${esc(d.reservoir.name)}</strong><br>${esc(reservoirStatusLabel(d.reservoir.status, t))} · ${esc(headline)}`;
+      html = `<strong>${esc(d.reservoir.name)}</strong><br>${esc(reservoirStatusLabel(d.reservoir, t))} · ${esc(headline)}`;
     } else if (d._kind === 'ukmtoIncident') {
       html = `<strong>${esc(ukmtoIncidentLabel(d.incident))}</strong><br>${esc(d.incident.description)}`;
     } else if (d._kind === 'newsLocation') {
@@ -2424,6 +2478,11 @@ export class GlobeMap {
   private static readonly CONFLICT_SIDE: Record<string, string> = { high: 'rgba(255,40,40,0.12)', medium: 'rgba(255,120,0,0.08)', low: 'rgba(255,200,0,0.06)' };
   private static readonly CONFLICT_STROKE: Record<string, string> = { high: '#ff3030', medium: '#ff8800', low: '#ffcc00' };
   private static readonly CONFLICT_ALT: Record<string, number> = { high: 0.006, medium: 0.004, low: 0.003 };
+  // Focus outline (#10453): the focus bar's accent. globe.gl draws polygon
+  // strokes one pixel wide, so the two styles differ by opacity. Falsy cap
+  // and side colours omit their meshes so focus cannot intercept CII hover.
+  private static readonly FOCUS_CHOSEN_STROKE = 'rgba(68,255,136,0.95)';
+  private static readonly FOCUS_NEIGHBOUR_STROKE = 'rgba(68,255,136,0.4)';
 
   private getReversedRing(zoneId: string, countryIso: string, ringIdx: number, ring: number[][][]): number[][][] {
     const key = `${zoneId}:${countryIso}:${ringIdx}`;
@@ -2477,8 +2536,8 @@ export class GlobeMap {
         if (!geom) continue;
         const rings = geom.type === 'Polygon' ? [geom.coordinates] : geom.type === 'MultiPolygon' ? geom.coordinates : [];
         const name = (feat.properties?.name as string) ?? code;
-        for (const ring of rings) {
-          polys.push({ coords: ring, name, _kind: 'cii', level: entry.level, score: entry.score });
+        for (let ri = 0; ri < rings.length; ri++) {
+          polys.push({ coords: this.getReversedRing('cii', code, ri, rings[ri] as number[][][]), name, _kind: 'cii', level: entry.level, score: entry.score });
         }
       }
     }
@@ -2495,10 +2554,55 @@ export class GlobeMap {
       polys.push(...this.scenarioPolygons);
     }
 
+    polys.push(...this.buildFocusPolygons());
+
     (this.globe as any).polygonsData(polys);
   }
 
   // ─── Public data setters ──────────────────────────────────────────────────
+
+  /**
+   * Outline the dashboard focus (#10453): chosen countries solid, neighbours
+   * lighter. Null removes it. Markers are untouched.
+   */
+  public setFocusOutline(outline: { chosen: readonly string[]; neighbours: readonly string[] } | null): void {
+    this.focusOutline = outline
+      ? { chosen: new Set(outline.chosen), neighbours: new Set(outline.neighbours) }
+      : null;
+    this.flushPolygons();
+  }
+
+  private buildFocusPolygons(): GlobePolygon[] {
+    const focus = this.focusOutline;
+    if (!focus || !this.countriesGeoData) return [];
+    const chosen: GlobePolygon[] = [];
+    const neighbours: GlobePolygon[] = [];
+    for (const feat of this.countriesGeoData.features) {
+      const code = feat.properties?.['ISO3166-1-Alpha-2'] as string | undefined;
+      if (!code) continue;
+      const kind = focus.chosen.has(code) ? 'focusChosen' : focus.neighbours.has(code) ? 'focusNeighbour' : null;
+      if (!kind) continue;
+      const geom = feat.geometry;
+      if (!geom) continue;
+      const rings = geom.type === 'Polygon' ? [geom.coordinates] : geom.type === 'MultiPolygon' ? geom.coordinates : [];
+      const name = (feat.properties?.name as string) ?? code;
+      // Reversed like the conflict-zone rings, the winding globe.gl expects.
+      for (let ri = 0; ri < rings.length; ri++) {
+        (kind === 'focusChosen' ? chosen : neighbours).push({
+          coords: this.getReversedRing('focus', code, ri, rings[ri] as number[][][]),
+          name,
+          _kind: kind,
+        });
+      }
+    }
+    return [...neighbours, ...chosen];
+  }
+
+  /** Frame the focus's chosen countries, from the globe's point of view. */
+  public fitFocusBounds(fit: FocusFitBounds, altitude: number): void {
+    if (!this.globe) return;
+    this.moveViewport({ lat: fit.center.lat, lng: fit.center.lon, altitude }, 1200);
+  }
 
   public setScenarioState(state: ScenarioVisualState | null): void {
     this.scenarioPolygons = [];
@@ -4206,6 +4310,7 @@ export class GlobeMap {
   // ─── Destroy ──────────────────────────────────────────────────────────────
 
   public destroy(): void {
+    this.pendingMarkerGestureCleanup?.();
     this.controlDisclosureCleanups.forEach(cleanup => cleanup());
     this.controlDisclosureCleanups = [];
     this.popup?.hide();

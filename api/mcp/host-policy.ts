@@ -62,6 +62,100 @@ export function connectInstruction(req: Request): string | null {
   return null;
 }
 
+/**
+ * `_meta.ui.domain` is host-defined (ext-apps `McpUiResourceMeta.domain`).
+ * ChatGPT's app submission requires the site origin in it. Claude reads it as
+ * its own sandbox host, `<sha256(connector URL)[0:32]>.claudemcpcontent.com`,
+ * and refuses to render a view whose value does not match
+ * (https://claude.com/docs/connectors/building/mcp-apps/troubleshooting.md).
+ * The field is optional, so every host except ChatGPT gets the views without it.
+ *
+ * Two more callers get it: Manufact Cloud's compatibility check and the
+ * manufact.com leaderboard review. Both read the field to judge ChatGPT
+ * submission readiness. The review connects twice: a session client named
+ * `mcp-use-probe`, then a 2026-07-28 client under the mcp-use library's
+ * default name, `mcp-use`, which does the view reads. They reach the server with a browser or
+ * Bun user agent, so the only stable marker is the `clientInfo.name` that
+ * 2026-07-28 clients put in every request's `params._meta`. The name is
+ * client-asserted, which is safe here: the value is the public site origin, and
+ * a client that claims it only gets a field that Claude's renderer would reject
+ * for itself.
+ *
+ * A 2025 session-protocol client names itself only in `initialize`; its later
+ * requests carry just the Mcp-Session-Id the server minted. The leaderboard
+ * review connects that way. Such a session id gets a fixed prefix, so the
+ * marker travels with the client's own header and needs no server state.
+ */
+const VIEW_DOMAIN_CLIENT_NAMES: ReadonlySet<string> = new Set(['Manufact Cloud', 'mcp-use-probe', 'mcp-use']);
+const CLIENT_INFO_META_KEY = 'io.modelcontextprotocol/clientInfo';
+const VIEW_DOMAIN_SESSION_PREFIX = 'wmvd-';
+
+const isViewDomainClientName = (name: unknown): boolean =>
+  typeof name === 'string' && VIEW_DOMAIN_CLIENT_NAMES.has(name);
+
+/** Session id for an `initialize` request: prefixed when the client is one that keeps the view domain. */
+export function mintSessionId(clientName: unknown): string {
+  const id = crypto.randomUUID();
+  return isViewDomainClientName(clientName) ? `${VIEW_DOMAIN_SESSION_PREFIX}${id}` : id;
+}
+
+function wantsViewDomain(req: Request, body: unknown): boolean {
+  if (isChatGptHost(req)) return true;
+  if (req.headers.get('Mcp-Session-Id')?.startsWith(VIEW_DOMAIN_SESSION_PREFIX)) return true;
+  const params = body && typeof body === 'object' ? (body as { params?: unknown }).params : undefined;
+  const meta = params && typeof params === 'object' ? (params as { _meta?: unknown })._meta : undefined;
+  const info = meta && typeof meta === 'object' ? (meta as Record<string, unknown>)[CLIENT_INFO_META_KEY] : undefined;
+  const name = info && typeof info === 'object' ? (info as { name?: unknown }).name : undefined;
+  return isViewDomainClientName(name);
+}
+
+const VIEW_DOMAIN_METHODS: ReadonlySet<string> = new Set(['resources/list', 'resources/templates/list', 'resources/read']);
+
+function dropViewDomain(meta: unknown): boolean {
+  if (!meta || typeof meta !== 'object') return false;
+  const ui = (meta as { ui?: unknown }).ui;
+  if (!ui || typeof ui !== 'object' || !('domain' in ui)) return false;
+  delete (ui as { domain?: unknown }).domain;
+  return true;
+}
+
+function dropViewDomains(message: unknown): boolean {
+  if (!message || typeof message !== 'object') return false;
+  const result = (message as { result?: unknown }).result;
+  if (!result || typeof result !== 'object') return false;
+  let changed = false;
+  for (const key of ['resources', 'resourceTemplates', 'contents'] as const) {
+    const entries = (result as Record<string, unknown>)[key];
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries) {
+      if (entry && typeof entry === 'object' && dropViewDomain((entry as { _meta?: unknown })._meta)) changed = true;
+    }
+  }
+  return changed;
+}
+
+/** Remove `_meta.ui.domain` from a view listing or read for every host except ChatGPT and Manufact Cloud. */
+export async function applyViewDomainPolicy(req: Request, method: string, res: Response, rpcRequest?: unknown): Promise<Response> {
+  if (!VIEW_DOMAIN_METHODS.has(method) || wantsViewDomain(req, rpcRequest)) return res;
+  if (res.status !== 200 || res.body === null) return res;
+  if (!/application\/json/i.test(res.headers.get('Content-Type') ?? '')) return res;
+  const text = await res.clone().text();
+  if (!text.includes('"domain"')) return res;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return res;
+  }
+  const changed = Array.isArray(parsed) ? parsed.map(dropViewDomains).some(Boolean) : dropViewDomains(parsed);
+  if (!changed) return res;
+
+  const body = JSON.stringify(parsed);
+  const headers = new Headers(res.headers);
+  if (headers.has('Content-Length')) headers.set('Content-Length', String(new TextEncoder().encode(body).byteLength));
+  return new Response(body, { status: res.status, statusText: res.statusText, headers });
+}
+
 /** Tools a ChatGPT request never sees or reaches. */
 export const CHATGPT_HIDDEN_TOOLS: ReadonlySet<string> = new Set([START_UPGRADE_TOOL]);
 
