@@ -14,6 +14,7 @@ import {
   parseRankableRecordCount,
 } from './_rankable-coverage.js';
 import { assessCiiInputs, CII_INPUT_POLICY } from './_cii-input-health.js';
+import { CII_COVERAGE_BASELINE } from './_cii-coverage-baseline.generated.js';
 // Seed-envelope helper. PR 1 imports it here so PR 2 can wire envelope-aware
 // reads at specific call sites without further plumbing. It's a no-op on
 // legacy-shape seed-meta values (they have no `_seed` wrapper and pass through
@@ -525,6 +526,7 @@ const STANDALONE_KEYS = {
   riskScoresLive:        CII_RISK_SCORE_CACHE_KEYS.live,
   riskScoresHistory:     CII_RISK_SCORE_CACHE_KEYS.dailyHistoryIndex,
   ciiStructuralPrior:    'intelligence:cii-structural-prior:v1',
+  ciiEconomicStress:     'intelligence:cii-economic-stress:v1',
   countryHistory:        'history:country:index',
   usniFleet:             'usni-fleet:sebuf:v1',
   usniFleetStale:        'usni-fleet:sebuf:stale:v1',
@@ -1214,6 +1216,12 @@ const SEED_META = {
   gpsjam:           { key: 'seed-meta:intelligence:gpsjam',       maxStaleMin: 1440 }, // Wingbits API (scripts/fetch-gpsjam.mjs); 1440min = 24h tolerance gives operator headroom to handle upstream outages and monthly quota exhaustion (HTTP 402 observed 2026-04-29) without dashboard noise. Seeder catch-block extends TTL on fail without refreshing fetchedAt, so STALE_SEED via age is the only alarm path.
   positiveGeoEvents:{ key: 'seed-meta:positive-events:geo',       maxStaleMin: 60 },
   riskScores:       { key: 'seed-meta:intelligence:risk-scores',  maxStaleMin: 30, minRecordCount: 2 }, // CII warm-ping every 8min; recordCount is realtime signal-density coverage for score-relevant conflict (ACLED or UCDP) and news families, not raw feed availability; quiet-but-fresh feeds may warn COVERAGE_PARTIAL. Per-input availability (seed-meta `inputs`) is graded by composeRiskScoresInputHealth.
+  ciiEconomicStress: {
+    key: 'seed-meta:intelligence:cii-economic-stress', maxStaleMin: 180,
+    activationKey: 'seed-activated:intelligence:cii-economic-stress',
+    cutover: { mode: 'activation-marker', fromKey: null, issue: 10577, activationKey: 'seed-activated:intelligence:cii-economic-stress' },
+    expectedCountries: CII_COVERAGE_BASELINE.families.economicStress,
+  },
   ciiStructuralPrior: {
     key: 'seed-meta:intelligence:cii-structural-prior', maxStaleMin: 50400,
     activationKey: 'seed-activated:intelligence:cii-structural-prior',
@@ -2965,6 +2973,7 @@ const ON_DEMAND_KEYS = new Set([
   // never covers a key that has data behind it (see classifyKey).
   'pizzintHistory',
   'riskScoresHistory', // first fresh leader build atomically activates daily history
+  'ciiEconomicStress', // pending until the first economic publication
   'ciiStructuralPrior', // pending until the first complete prior publication
   'countryHistory',
   // #6070 retired six expired deployment-order bridges after live producer
@@ -3046,6 +3055,7 @@ const ACTIVATION_MARKERS = {
   pizzintHistory: SEED_META.pizzintHistory.activationKey,
   riskScoresHistory: SEED_META.riskScoresHistory.activationKey,
   ciiStructuralPrior: SEED_META.ciiStructuralPrior.activationKey,
+  ciiEconomicStress: SEED_META.ciiEconomicStress.activationKey,
   countryHistory: SEED_META.countryHistory.activationKey,
   companyMonitoringWorker: 'seed-activated:company-monitoring:worker',
   shippingWebhookWorker: SEED_META.shippingWebhookWorker.activationKey,
@@ -5138,6 +5148,34 @@ function composeChokepointTransitsCoverage(entry, rawMeta) {
   return { ...entry, status: 'COVERAGE_PARTIAL', missingMeasurable };
 }
 
+function composeCiiEconomicStressHealth(entry, raw, readError = false, now = Date.now(), containmentEvidenceByName) {
+  if (!entry) return entry;
+  if (readError) {
+    containmentEvidenceByName?.delete('ciiEconomicStress');
+    return { ...entry, status: 'REDIS_PARTIAL' };
+  }
+  const payload = unwrapEnvelope(parseRedisValue(raw)).data;
+  const required = CII_COVERAGE_BASELINE.scoredCountries;
+  const countries = payload?.countries;
+  let valid = payload?.schemaVersion === 1 && countries && typeof countries === 'object'
+    && !Array.isArray(countries) && required.every(code => Object.hasOwn(countries, code));
+  const measuredCountries = [], unmeasuredCountries = [];
+  for (const code of required) {
+    const row = countries?.[code];
+    if (typeof row?.measured !== 'boolean' || !row?.members || typeof row.members !== 'object' || Array.isArray(row.members)) valid = false;
+    const fresh = Object.entries(row?.members ?? {}).some(([id, member]) => ['currency', 'inflation', 'yield'].includes(id)
+      && member?.status === 'fresh' && Number.isFinite(member.value)
+      && Number.isFinite(member.expiresAt) && member.expiresAt >= now
+      && Number.isFinite(Date.parse(member.observedAt)) && Date.parse(member.observedAt) <= now);
+    (fresh ? measuredCountries : unmeasuredCountries).push(code);
+  }
+  const missingExpectedCountries = SEED_META.ciiEconomicStress.expectedCountries.filter(code => !measuredCountries.includes(code));
+  const shortfall = !valid || missingExpectedCountries.length > 0;
+  if (shortfall) containmentEvidenceByName?.delete('ciiEconomicStress');
+  return { ...entry, ...(entry.status === 'OK' && shortfall ? { status: 'COVERAGE_PARTIAL' } : {}),
+    measuredCount: measuredCountries.length, unmeasuredCountries, missingExpectedCountries, validCoverage: Boolean(valid) };
+}
+
 function composeCiiStructuralPriorHealth(entry, raw, readError = false, containmentEvidenceByName) {
   if (!entry) return entry;
   if (readError) {
@@ -6123,10 +6161,14 @@ function healthResponseBody(snapshot, compact) {
       if (check?.contentFreshness === undefined
         && check?.decisionGroups === undefined
         && check?.chinaRow === undefined
-        && check?.ciiInputs === undefined) continue;
+        && check?.ciiInputs === undefined
+        && check?.unmeasuredCountries === undefined
+        && check?.missingExpectedCountries === undefined) continue;
       // `ciiInputs` names which CII sources are unconfigured or dead.
       const {
         contentFreshness: _detail,
+        unmeasuredCountries: _unmeasuredCountries,
+        missingExpectedCountries: _missingExpectedCountries,
         decisionGroups: _groups,
         chinaRow: _chinaRow,
         ciiInputs: _ciiInputs,
@@ -6446,6 +6488,7 @@ export async function handleHealth(req, ctx, options = {}) {
       ...fredRolloutCommands,
       ...regionalRolloutCommands,
       ['GET', sweepKey(STANDALONE_KEYS.ciiStructuralPrior)],
+      ['GET', sweepKey(STANDALONE_KEYS.ciiEconomicStress)],
     ];
     if (!getRedisCredentials()) throw new Error('Redis not configured');
     if (budget.exhausted()) return deadlineFallback();
@@ -6674,10 +6717,15 @@ export async function handleHealth(req, ctx, options = {}) {
     evaluationNow,
     containmentEvidenceByName,
   );
-  const priorResult = results.at(-1);
+  const priorResult = results.at(-2);
   checks.ciiStructuralPrior = composeCiiStructuralPriorHealth(
     checks.ciiStructuralPrior, priorResult?.result, Boolean(priorResult?.error),
     containmentEvidenceByName,
+  );
+
+  const economicResult = results.at(-1);
+  checks.ciiEconomicStress = composeCiiEconomicStressHealth(
+    checks.ciiEconomicStress, economicResult?.result, Boolean(economicResult?.error), evaluationNow, containmentEvidenceByName,
   );
 
   // Now that every key has a status, claim (or read back) the one durable
@@ -6930,6 +6978,7 @@ export const __testing__ = {
   composeChokepointTransitsCoverage,
   composeRiskScoresInputHealth,
   composeCiiStructuralPriorHealth,
+  composeCiiEconomicStressHealth,
   readSeedMeta,
   classifyKey,
   healthResponseBody,

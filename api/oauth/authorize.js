@@ -5,7 +5,7 @@ import { getOperatorKeys, timingSafeIncludes, sha256Hex } from '../_crypto.js';
 import { loadUpstashRatelimit } from '../_upstash-ratelimit.js';
 import { upstashRedisOptions } from '../_upstash-redis-options.js';
 import { checkBootstrapUserApiKeyRateLimit, validateBootstrapUserApiKey } from '../_user-api-key.js';
-import { redirectDisplayHost } from './_redirect-uri.js';
+import { isAllowedRedirectUri, redirectDisplayHost } from './_redirect-uri.js';
 import { clientAllowsRedirectUri, clientDisplayInfo, describeClientFailure, isClientMetadataDocumentId, resolveOAuthClient } from './_client-metadata.js';
 import { isHostedAppOrigin } from '../_cors.js';
 import {
@@ -132,6 +132,14 @@ const GLOBE_SVG = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" s
 
 const PAGE_HEADERS = { 'Content-Type': 'text/html; charset=utf-8', 'X-Frame-Options': 'DENY', 'Cache-Control': 'no-store', 'Pragma': 'no-cache' };
 
+// A DCR registration keeps the URIs it was created with, so re-check the
+// current allowlist (as mcp-grant-mint.ts does) to honour a removal. A CIMD
+// document is fetched fresh and validated on every resolve.
+function clientRedirectStillAllowed(client, redirectUri) {
+  return clientAllowsRedirectUri(client, redirectUri)
+    && (client.cimd || isAllowedRedirectUri(redirectUri));
+}
+
 function htmlError(title, detail) {
   return new Response(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Error &#x2014; WorldMonitor MCP</title>
 <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:ui-monospace,'SF Mono','Cascadia Code',monospace;background:#0a0a0a;color:#e8e8e8;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.5rem}.wm-logo{display:flex;align-items:center;gap:.5rem;margin-bottom:2rem;text-decoration:none}.wm-logo svg{color:#2d8a6e}.wm-logo-text{font-size:.75rem;color:#555;letter-spacing:.1em;text-transform:uppercase}.card{width:100%;max-width:420px;background:#111;border:1px solid #1e1e1e;padding:2rem}h1{font-size:.95rem;font-weight:600;color:#ef4444;margin-bottom:.75rem;letter-spacing:.02em}p{font-size:.85rem;color:#666;line-height:1.6}.back{display:inline-block;margin-top:1.5rem;font-size:.75rem;color:#444;text-decoration:none;letter-spacing:.03em}.back:hover{color:#888}.footer{margin-top:1.5rem;font-size:.7rem;color:#2a2a2a;text-align:center}.footer a{color:#333;text-decoration:none}.footer a:hover{color:#555}</style></head>
@@ -215,7 +223,7 @@ ${clientHostLine}${localhostWarn}
 <hr>
 <p class="scope-label">Read-only access to</p>
 <ul class="scope-list">
-<li>Intelligence data from 854 attributed providers</li>
+<li>Intelligence data from 855 attributed providers</li>
 <li>Real-time news &amp; events</li>
 <li>Live flight tracking &amp; AIS vessel positions</li>
 <li>Weather alerts, earthquakes &amp; natural disasters</li>
@@ -322,7 +330,7 @@ export default async function handler(req) {
     }
     const { client } = resolved;
 
-    if (!clientAllowsRedirectUri(client, redirect_uri)) {
+    if (!clientRedirectStillAllowed(client, redirect_uri)) {
       return htmlError('Redirect URI Mismatch', 'The redirect_uri does not match any registered redirect URI for this client.');
     }
 
@@ -402,7 +410,7 @@ export default async function handler(req) {
     }
     const { client } = resolved;
 
-    if (!clientAllowsRedirectUri(client, redirect_uri)) {
+    if (!clientRedirectStillAllowed(client, redirect_uri)) {
       return htmlError('Redirect URI Mismatch', 'redirect_uri does not match registered set.');
     }
 

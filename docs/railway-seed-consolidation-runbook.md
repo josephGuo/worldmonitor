@@ -1177,9 +1177,19 @@ any red check anywhere strands this service's builds.
 | **Watch paths** | See `scripts/railway-services.json` (exact runtime closure; run `node scripts/audit-railway-watch-paths.mjs`) |
 | **Replaces** | 2 services |
 | **Net savings** | 1 slot |
-| **Members** | Correlation (5min), Market-Alert-Ledger (5min), Cross-Source Signals (15min), Cross-Strait Activity (3h), China Decision Signals (15min), Regional Snapshots (6h) |
+| **Members** | CII Economic Stress (1h), Correlation (5min), Market-Alert-Ledger (5min), Cross-Source Signals (15min), Cross-Strait Activity (3h), China Decision Signals (15min), Regional Snapshots (6h) |
 | **Required env** | `JAPAN_MOD_PROXY_URL` or `PROXY_URL` (Cross-Strait Activity's Japan MOD exit; the section declares an any-of group, so either satisfies it and only an environment with neither fails as `CONFIG_ERROR`) |
 | **Note** | Cross-Strait Activity is the only direct external-source member; it uses bounded MND/Japan MOD requests and a 3h freshness gate. China Decision Signals validates and republishes the bounded public composition after reading its domain lanes. Other members are Redis-derived. The bundle enforces a 570s wall-time admission budget so a non-fitting due section defers before Railway's 10-minute container limit. |
+
+CII Economic Stress reads six existing Redis inputs within a 30s section budget.
+The currency member needs the cleaned `daily90` block from `seed-fx-yoy`, which
+runs once a day. After a change to that block, run the FX seeder once before
+judging coverage: until it runs, every currency reads `insufficient-history`
+and the producer measures 22. The expected count is 25 of 31; it is 24 when
+the second exchange-rate source is unavailable, because Qatar then has no
+usable member.
+Apply the registry's producer and Upstash-helper watch paths to this service.
+No extra upstream credentials or direct provider fetches are introduced.
 
 #### Staged correlation runtime modes
 
