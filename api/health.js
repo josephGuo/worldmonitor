@@ -290,6 +290,13 @@ function fenceHealthMutations(commands, token) {
 // (server/worldmonitor/resilience/v1/_shared.ts).
 const IRAN_EVENTS_ENABLED = (process.env.IRAN_EVENTS_ENABLED ?? 'false').toLowerCase() === 'true';
 
+// Orbital Watch ships dark (#10710). Same switch and parse as the seeder
+// (scripts/seed-orbital-sites.mjs) and the orbital RPCs
+// (server/worldmonitor/orbital/v1/dark-launch.ts). While it is off the seeder
+// writes nothing, so these keys read NOT_CONFIGURED and claim no rollout deadline.
+const ORBITAL_WATCH_ENABLED = (process.env.ORBITAL_WATCH_ENABLED ?? '').trim().toLowerCase() === 'true';
+const DARK_LAUNCHED_KEYS = new Set(ORBITAL_WATCH_ENABLED ? [] : ['orbitalSites']);
+
 const BOOTSTRAP_KEYS = {
   earthquakes:       'seismology:earthquakes:v1',
   outages:           'infra:outages:v1',
@@ -411,6 +418,12 @@ const STANDALONE_KEYS = {
   // ICESat-2 strategic reservoir levels (scripts/seed-reservoir-levels.mjs). Served by
   // /api/climate/v1/list-reservoir-levels with no dashboard consumer yet.
   reservoirLevels: 'climate:reservoir-levels:v1',
+  // Imaging-satellite orbit elements and their daily ring (scripts/seed-orbital-catalog.mjs).
+  // No dashboard consumer yet; the orbital lookup reads it through its own RPC.
+  orbitalCatalog: 'orbital:catalog:v1',
+  // Watched-site satellite evidence index (scripts/seed-orbital-sites.mjs); per-site and
+  // per-country records sit beside it. Read by the orbital RPCs, not the dashboard.
+  orbitalSites: 'orbital:sites:v1',
   // Public chokepoint status open dataset index (/data/v1/chokepoints/), published
   // daily by .github/workflows/open-data-chokepoints.yml. Read only by
   // api/open-data-chokepoints.js, never by the dashboard.
@@ -462,6 +475,7 @@ const STANDALONE_KEYS = {
   // Seeded by seed-cross-border-arrivals (#9023); read by the displacement
   // panel and map layer through the on-demand bootstrap URL.
   crossBorderArrivals: BOOTSTRAP_CACHE_KEYS.crossBorderArrivals,
+  gridDisruptionClock: BOOTSTRAP_CACHE_KEYS.gridDisruptionClock,
   canadaAlertsAbSource: 'alerts:canada:alberta-aea:v1',
   canadaAlertsBcSource: 'alerts:canada:bc-evacuation:v1',
   canadaAlertsSkSource: 'alerts:canada:saskalert:v1',
@@ -701,6 +715,10 @@ const STANDALONE_KEYS = {
   // UTC date and split by provider, so watching one of those would read EMPTY at
   // every midnight and STALE whenever the BestTime fallback took over.
   pizzintHistory:           'seed-meta:intelligence:pizzint:history:v1',
+  // National civil air traffic series (scripts/shared/air-traffic-history.cjs).
+  // No dashboard consumer yet. Points live in one hash per UTC day, which health
+  // cannot STRLEN, so the stable heartbeat each ok point advances is watched.
+  airTrafficHistory:        'seed-meta:aviation:traffic-history',
   resilienceStaticIndex:    'resilience:static:index:v1',
   resilienceStaticFao:      'resilience:static:fao',
   // USDA PSD food stocks + FAOSTAT production fill (#6440). RPC/MCP only —
@@ -854,6 +872,16 @@ const STANDALONE_KEYS = {
 const FIVE_FACTOR_SCORECARD_READ_MODEL_KEY = 'scorecard:five-factor:v1:read-model';
 
 const SEED_META = {
+  gridDisruptionClock: {
+    key: 'seed-meta:infra:grid-disruption-clock',
+    maxStaleMin: 30,
+    activationKey: 'seed-activated:infra:grid-disruption-clock',
+    cutover: {
+      mode: 'activation-marker', fromKey: null,
+      issue: 10698,
+      activationKey: 'seed-activated:infra:grid-disruption-clock',
+    },
+  },
   ukmtoIncidents: {
     key: 'seed-meta:maritime:ukmto-incidents', maxStaleMin: 75,
     activationKey: 'seed-activated:maritime:ukmto-incidents',
@@ -954,6 +982,19 @@ const SEED_META = {
   // level or whose CMR discovery failed DISCOVERY_ALERT_RUNS runs in a row.
   reservoirLevels:  { key: 'seed-meta:climate:reservoir-levels', maxStaleMin: 4320, minRecordCount: 50, firstPublicationMaxWaitMin: 1440, activationKey: 'seed-activated:climate:reservoir-levels',
     cutover: { mode: 'activation-marker', fromKey: null, issue: 10490, activationKey: 'seed-activated:climate:reservoir-levels' } },
+  // Climate bundle member every 3h; 540 = 3x the cadence. New probe: ROLLOUT_PENDING for up to a
+  // day after deploy, until the seeder writes its activation marker after its first publication.
+  // minRecordCount sits below the 297 profiled satellites the seeder kept from a 2026-11-14 CelesTrak active list.
+  orbitalCatalog:   { key: 'seed-meta:orbital:catalog', maxStaleMin: 540, minRecordCount: 250, firstPublicationMaxWaitMin: 1440, activationKey: 'seed-activated:orbital:catalog',
+    cutover: { mode: 'activation-marker', fromKey: null, issue: 10615, activationKey: 'seed-activated:orbital:catalog' } },
+  // Daily climate bundle member; 4320 = 3 missed days. One run evaluates the sites its budget
+  // allows and the index keeps every site evaluated so far, so the count reaches the 655-site
+  // registry within two runs; minRecordCount allows for the first run's partial pass.
+  // NOT_CONFIGURED while Orbital Watch is dark (DARK_LAUNCHED_KEYS). The deadline key is
+  // separate from the one claimed on 2026-11-14 while dark, so launch starts a fresh window.
+  orbitalSites:     { key: 'seed-meta:orbital:sites', maxStaleMin: 4320, minRecordCount: 300, firstPublicationMaxWaitMin: 1440, activationKey: 'seed-activated:orbital:sites',
+    rolloutDeadlineKey: 'health:rollout-deadline:orbital:sites:v1:launch',
+    cutover: { mode: 'activation-marker', fromKey: null, issue: 10615, activationKey: 'seed-activated:orbital:sites' } },
   unrestEvents:     { key: 'seed-meta:unrest:events',           maxStaleMin: 120 }, // 45min cron; 120 = 2h grace (was 75 = 30min buffer, too tight)
   cyberThreats:     { key: 'seed-meta:cyber:threats',           maxStaleMin: 240 }, // 2h interval; 240min = 2x interval
   cveReference: {
@@ -1434,100 +1475,101 @@ const SEED_META = {
     },
   },
   spending:         { key: 'seed-meta:economic:spending',          maxStaleMin: 120 },
-  globalTenders:    { key: 'seed-meta:economic:global-tenders',   maxStaleMin: 180 },
+  // Daily relay-backup bundle member; 4320 = 3 missed runs (tests/global-tenders-daily-cadence.test.mts).
+  globalTenders:    { key: 'seed-meta:economic:global-tenders',   maxStaleMin: 4320 },
   // Per-source tender health: the producer keeps a failed source's last-good
-  // open tenders for 24h (TENDER_SOURCE_RETENTION_MS in scripts/_global-tenders.mjs),
+  // open tenders for 3 days (TENDER_SOURCE_RETENTION_MS in scripts/_global-tenders.mjs),
   // and seed-meta fetchedAt is the last SUCCESS, so a rate-limited, unpublished
-  // or weekend-quiet portal is OK until that success is a day old, then
+  // or weekend-quiet portal is OK until that success is three days old, then
   // STALE_SEED. sourceFailureWithinBudgetOk keeps a failed attempt from
   // reporting SEED_ERROR inside that budget only while the source still serves
   // something true: retained rows ('stale') or a verified empty result. An
   // 'error' with nothing retained still warns.
-  globalTendersSam:             { key: 'seed-meta:economic:global-tenders:sam',              maxStaleMin: 1440, sourceFailureWithinBudgetOk: true },
-  globalTendersTed:             { key: 'seed-meta:economic:global-tenders:ted',              maxStaleMin: 1440, sourceFailureWithinBudgetOk: true },
+  globalTendersSam:             { key: 'seed-meta:economic:global-tenders:sam',              maxStaleMin: 4320, sourceFailureWithinBudgetOk: true },
+  globalTendersTed:             { key: 'seed-meta:economic:global-tenders:ted',              maxStaleMin: 4320, sourceFailureWithinBudgetOk: true },
   // Contracts Finder keeps its bespoke first-failure containment instead
   // (composeContractsFinderHealth), which recounts usable canonical rows.
-  globalTendersContractsFinder: { key: 'seed-meta:economic:global-tenders:contracts-finder', maxStaleMin: 180 },
-  globalTendersCanadaBuys:      { key: 'seed-meta:economic:global-tenders:canada-buys',      maxStaleMin: 1440, sourceFailureWithinBudgetOk: true },
-  globalTendersGets:            { key: 'seed-meta:economic:global-tenders:gets',             maxStaleMin: 1440, sourceFailureWithinBudgetOk: true },
-  globalTendersWorldBank:       { key: 'seed-meta:economic:global-tenders:world-bank',       maxStaleMin: 1440, sourceFailureWithinBudgetOk: true },
+  globalTendersContractsFinder: { key: 'seed-meta:economic:global-tenders:contracts-finder', maxStaleMin: 4320 },
+  globalTendersCanadaBuys:      { key: 'seed-meta:economic:global-tenders:canada-buys',      maxStaleMin: 4320, sourceFailureWithinBudgetOk: true },
+  globalTendersGets:            { key: 'seed-meta:economic:global-tenders:gets',             maxStaleMin: 4320, sourceFailureWithinBudgetOk: true },
+  globalTendersWorldBank:       { key: 'seed-meta:economic:global-tenders:world-bank',       maxStaleMin: 4320, sourceFailureWithinBudgetOk: true },
   globalTendersColombiaSecop: {
-    key: 'seed-meta:economic:global-tenders:colombia-secop', maxStaleMin: 1440, sourceFailureWithinBudgetOk: true,
+    key: 'seed-meta:economic:global-tenders:colombia-secop', maxStaleMin: 4320, sourceFailureWithinBudgetOk: true,
     activationKey: 'seed-activated:economic:global-tenders:colombia-secop',
     cutover: { mode: 'activation-marker', fromKey: null, issue: 9840, activationKey: 'seed-activated:economic:global-tenders:colombia-secop' },
   },
   globalTendersKenyaPpip: {
-    key: 'seed-meta:economic:global-tenders:kenya-ppip', maxStaleMin: 1440, sourceFailureWithinBudgetOk: true,
+    key: 'seed-meta:economic:global-tenders:kenya-ppip', maxStaleMin: 4320, sourceFailureWithinBudgetOk: true,
     activationKey: 'seed-activated:economic:global-tenders:kenya-ppip',
     cutover: { mode: 'activation-marker', fromKey: null, issue: 9840, activationKey: 'seed-activated:economic:global-tenders:kenya-ppip' },
   },
   globalTendersSouthAfricaEtenders: {
-    key: 'seed-meta:economic:global-tenders:south-africa-etenders', maxStaleMin: 1440, sourceFailureWithinBudgetOk: true,
+    key: 'seed-meta:economic:global-tenders:south-africa-etenders', maxStaleMin: 4320, sourceFailureWithinBudgetOk: true,
     activationKey: 'seed-activated:economic:global-tenders:south-africa-etenders',
     cutover: { mode: 'activation-marker', fromKey: null, issue: 9840, activationKey: 'seed-activated:economic:global-tenders:south-africa-etenders' },
   },
   globalTendersChileMercadoPublico: {
-    key: 'seed-meta:economic:global-tenders:chile-mercado-publico', maxStaleMin: 1440, sourceFailureWithinBudgetOk: true,
+    key: 'seed-meta:economic:global-tenders:chile-mercado-publico', maxStaleMin: 4320, sourceFailureWithinBudgetOk: true,
     activationKey: 'seed-activated:economic:global-tenders:chile-mercado-publico',
     cutover: { mode: 'activation-marker', fromKey: null, issue: 9840, activationKey: 'seed-activated:economic:global-tenders:chile-mercado-publico' },
   },
   globalTendersBrazilPncp: {
-    key: 'seed-meta:economic:global-tenders:brazil-pncp', maxStaleMin: 1440, sourceFailureWithinBudgetOk: true,
+    key: 'seed-meta:economic:global-tenders:brazil-pncp', maxStaleMin: 4320, sourceFailureWithinBudgetOk: true,
     activationKey: 'seed-activated:economic:global-tenders:brazil-pncp',
     cutover: { mode: 'activation-marker', fromKey: null, issue: 9840, activationKey: 'seed-activated:economic:global-tenders:brazil-pncp' },
   },
   globalTendersUkraineProzorro: {
-    key: 'seed-meta:economic:global-tenders:ukraine-prozorro', maxStaleMin: 1440, sourceFailureWithinBudgetOk: true,
+    key: 'seed-meta:economic:global-tenders:ukraine-prozorro', maxStaleMin: 4320, sourceFailureWithinBudgetOk: true,
     activationKey: 'seed-activated:economic:global-tenders:ukraine-prozorro',
     cutover: { mode: 'activation-marker', fromKey: null, issue: 9840, activationKey: 'seed-activated:economic:global-tenders:ukraine-prozorro' },
   },
   globalTendersBulgariaEop: {
-    key: 'seed-meta:economic:global-tenders:bulgaria-eop', maxStaleMin: 1440, sourceFailureWithinBudgetOk: true,
+    key: 'seed-meta:economic:global-tenders:bulgaria-eop', maxStaleMin: 4320, sourceFailureWithinBudgetOk: true,
     activationKey: 'seed-activated:economic:global-tenders:bulgaria-eop',
     cutover: { mode: 'activation-marker', fromKey: null, issue: 9840, activationKey: 'seed-activated:economic:global-tenders:bulgaria-eop' },
   },
   globalTendersLatviaIub: {
-    key: 'seed-meta:economic:global-tenders:latvia-iub', maxStaleMin: 1440, sourceFailureWithinBudgetOk: true,
+    key: 'seed-meta:economic:global-tenders:latvia-iub', maxStaleMin: 4320, sourceFailureWithinBudgetOk: true,
     activationKey: 'seed-activated:economic:global-tenders:latvia-iub',
     cutover: { mode: 'activation-marker', fromKey: null, issue: 9840, activationKey: 'seed-activated:economic:global-tenders:latvia-iub' },
   },
   globalTendersPolandBzp: {
-    key: 'seed-meta:economic:global-tenders:poland-bzp', maxStaleMin: 1440, sourceFailureWithinBudgetOk: true,
+    key: 'seed-meta:economic:global-tenders:poland-bzp', maxStaleMin: 4320, sourceFailureWithinBudgetOk: true,
     activationKey: 'seed-activated:economic:global-tenders:poland-bzp',
     cutover: { mode: 'activation-marker', fromKey: null, issue: 9840, activationKey: 'seed-activated:economic:global-tenders:poland-bzp' },
   },
   globalTendersPakistanPpra: {
-    key: 'seed-meta:economic:global-tenders:pakistan-ppra', maxStaleMin: 1440, sourceFailureWithinBudgetOk: true,
+    key: 'seed-meta:economic:global-tenders:pakistan-ppra', maxStaleMin: 4320, sourceFailureWithinBudgetOk: true,
     activationKey: 'seed-activated:economic:global-tenders:pakistan-ppra',
     cutover: { mode: 'activation-marker', fromKey: null, issue: 9840, activationKey: 'seed-activated:economic:global-tenders:pakistan-ppra' },
   },
   globalTendersPakistanEpads: {
-    key: 'seed-meta:economic:global-tenders:pakistan-epads', maxStaleMin: 1440, sourceFailureWithinBudgetOk: true,
+    key: 'seed-meta:economic:global-tenders:pakistan-epads', maxStaleMin: 4320, sourceFailureWithinBudgetOk: true,
     activationKey: 'seed-activated:economic:global-tenders:pakistan-epads',
     cutover: { mode: 'activation-marker', fromKey: null, issue: 9894, activationKey: 'seed-activated:economic:global-tenders:pakistan-epads' },
   },
   globalTendersGeorgiaSpa: {
-    key: 'seed-meta:economic:global-tenders:georgia-spa', maxStaleMin: 1440, sourceFailureWithinBudgetOk: true,
+    key: 'seed-meta:economic:global-tenders:georgia-spa', maxStaleMin: 4320, sourceFailureWithinBudgetOk: true,
     activationKey: 'seed-activated:economic:global-tenders:georgia-spa',
     cutover: { mode: 'activation-marker', fromKey: null, issue: 9894, activationKey: 'seed-activated:economic:global-tenders:georgia-spa' },
   },
   globalTendersArmeniaArmeps: {
-    key: 'seed-meta:economic:global-tenders:armenia-armeps', maxStaleMin: 1440, sourceFailureWithinBudgetOk: true,
+    key: 'seed-meta:economic:global-tenders:armenia-armeps', maxStaleMin: 4320, sourceFailureWithinBudgetOk: true,
     activationKey: 'seed-activated:economic:global-tenders:armenia-armeps',
     cutover: { mode: 'activation-marker', fromKey: null, issue: 9894, activationKey: 'seed-activated:economic:global-tenders:armenia-armeps' },
   },
   globalTendersAlbaniaApp: {
-    key: 'seed-meta:economic:global-tenders:albania-app', maxStaleMin: 1440, sourceFailureWithinBudgetOk: true,
+    key: 'seed-meta:economic:global-tenders:albania-app', maxStaleMin: 4320, sourceFailureWithinBudgetOk: true,
     activationKey: 'seed-activated:economic:global-tenders:albania-app',
     cutover: { mode: 'activation-marker', fromKey: null, issue: 10052, activationKey: 'seed-activated:economic:global-tenders:albania-app' },
   },
   globalTendersDominicanRepublicDgcp: {
-    key: 'seed-meta:economic:global-tenders:dominican-republic-dgcp', maxStaleMin: 1440, sourceFailureWithinBudgetOk: true,
+    key: 'seed-meta:economic:global-tenders:dominican-republic-dgcp', maxStaleMin: 4320, sourceFailureWithinBudgetOk: true,
     activationKey: 'seed-activated:economic:global-tenders:dominican-republic-dgcp',
     cutover: { mode: 'activation-marker', fromKey: null, issue: 10052, activationKey: 'seed-activated:economic:global-tenders:dominican-republic-dgcp' },
   },
   globalTendersMalaysiaMyprocurement: {
-    key: 'seed-meta:economic:global-tenders:malaysia-myprocurement', maxStaleMin: 1440, sourceFailureWithinBudgetOk: true,
+    key: 'seed-meta:economic:global-tenders:malaysia-myprocurement', maxStaleMin: 4320, sourceFailureWithinBudgetOk: true,
     activationKey: 'seed-activated:economic:global-tenders:malaysia-myprocurement',
     cutover: { mode: 'activation-marker', fromKey: null, issue: 10052, activationKey: 'seed-activated:economic:global-tenders:malaysia-myprocurement' },
   },
@@ -2396,6 +2438,21 @@ const SEED_META = {
       activationKey: 'seed-activated:intelligence:pizzint-history',
     },
   },
+  // Relay loop every 5min; the heartbeat is the last ok fetch time. 20 = three
+  // missed ticks plus margin. Gap points (an OpenSky
+  // failure or cooldown) never advance the heartbeat, so a run of gaps goes
+  // stale here while the loop itself is alive.
+  airTrafficHistory: {
+    key: 'seed-meta:aviation:traffic-history',
+    maxStaleMin: 20,
+    activationKey: 'seed-activated:aviation:traffic-history',
+    cutover: {
+      mode: 'activation-marker',
+      fromKey: null,
+      issue: 10719,
+      activationKey: 'seed-activated:aviation:traffic-history',
+    },
+  },
   productCatalog:    { key: 'seed-meta:product-catalog',               maxStaleMin: 1080 }, // relay loop every 6h; 1080 = 18h = 3x interval
   vpdTrackerRealtime:   { key: 'seed-meta:health:vpd-tracker',         maxStaleMin: 2880 }, // daily seed (0 2 * * *); 2880min = 48h = 2x interval
   vpdTrackerHistorical: { key: 'seed-meta:health:vpd-tracker',         maxStaleMin: 2880 }, // shares seed-meta key with vpdTrackerRealtime (same run)
@@ -2583,7 +2640,7 @@ const SEED_META = {
     cutover: { mode: 'activation-marker', fromKey: null, issue: 9893, activationKey: 'seed-activated:energy:regional-fccc' } },
   regionalEnergyMem: { key: 'seed-meta:energy:regional-mem', maxStaleMin: 2160, firstPublicationMaxWaitMin: 1440, maxContentAgeMin: 30240, activationKey: 'seed-activated:energy:regional-mem',
     cutover: { mode: 'activation-marker', fromKey: null, issue: 9893, activationKey: 'seed-activated:energy:regional-mem' } },
-  regionalEnergyQatarenergy: { key: 'seed-meta:energy:regional-qatarenergy', maxStaleMin: 2160, firstPublicationMaxWaitMin: 1440, maxContentAgeMin: 64800, activationKey: 'seed-activated:energy:regional-qatarenergy',
+  regionalEnergyQatarenergy: { key: 'seed-meta:energy:regional-qatarenergy', maxStaleMin: 2160, firstPublicationMaxWaitMin: 1440, maxContentAgeMin: 100800, activationKey: 'seed-activated:energy:regional-qatarenergy',
     cutover: { mode: 'activation-marker', fromKey: null, issue: 10051, activationKey: 'seed-activated:energy:regional-qatarenergy' } },
   regionalEnergyErb: { key: 'seed-meta:energy:regional-erb', maxStaleMin: 2160, firstPublicationMaxWaitMin: 1440, maxContentAgeMin: 64800, activationKey: 'seed-activated:energy:regional-erb',
     cutover: { mode: 'activation-marker', fromKey: null, issue: 10051, activationKey: 'seed-activated:energy:regional-erb' } },
@@ -2759,6 +2816,7 @@ const GOVERNMENT_RELEASE_INCIDENT_GRACE_MIN = 30 * 24 * 60;
 // chronic outage went undetected until a user noticed the panel was stuck on
 // "Loading...". Removed marketImplications below.
 const ON_DEMAND_KEYS = new Set([
+  'gridDisruptionClock',
   'foodPricesPihps', 'foodPricesPbs', 'foodPricesDa', 'foodPricesCbsl',
   'foodPricesSniim', 'foodPricesGiews', 'foodPricesOnagri',
   'foodPricesNabc',
@@ -2804,6 +2862,9 @@ const ON_DEMAND_KEYS = new Set([
   // New ICESat-2 probe: absent before the first daily climate bundle run. firstPublicationMaxWaitMin
   // bounds the grace to one day; seed-activated:climate:reservoir-levels revokes it.
   'reservoirLevels',
+  // New imaging catalog: absent before the climate bundle's first run after deploy.
+  'orbitalCatalog',
+  'orbitalSites',
 
   'globalTendersColombiaSecop',
   'globalTendersKenyaPpip',
@@ -2972,6 +3033,7 @@ const ON_DEMAND_KEYS = new Set([
   // archive is, and that still reports STALE_SEED because on-demand softening
   // never covers a key that has data behind it (see classifyKey).
   'pizzintHistory',
+  'airTrafficHistory', // empty until the relay's first ok point after deploy
   'riskScoresHistory', // first fresh leader build atomically activates daily history
   'ciiEconomicStress', // pending until the first economic publication
   'ciiStructuralPrior', // pending until the first complete prior publication
@@ -3007,6 +3069,7 @@ const ON_DEMAND_KEYS = new Set([
 // publish; when the marker exists the key leaves ON_DEMAND softening and
 // normal EMPTY/STALE_SEED rules apply.
 const ACTIVATION_MARKERS = {
+  gridDisruptionClock: SEED_META.gridDisruptionClock.activationKey,
   regionalEnergyPgcb: SEED_META.regionalEnergyPgcb.activationKey,
   regionalEnergyPetrobangla: SEED_META.regionalEnergyPetrobangla.activationKey,
   regionalEnergyNiso: SEED_META.regionalEnergyNiso.activationKey,
@@ -3031,6 +3094,8 @@ const ACTIVATION_MARKERS = {
   regionalEnergyCreg: SEED_META.regionalEnergyCreg.activationKey,
   regionalEnergyUrsea: SEED_META.regionalEnergyUrsea.activationKey,
   reservoirLevels: SEED_META.reservoirLevels.activationKey,
+  orbitalCatalog: SEED_META.orbitalCatalog.activationKey,
+  orbitalSites: SEED_META.orbitalSites.activationKey,
 
   globalTendersColombiaSecop: SEED_META.globalTendersColombiaSecop.activationKey,
   globalTendersKenyaPpip: SEED_META.globalTendersKenyaPpip.activationKey,
@@ -3053,6 +3118,8 @@ const ACTIVATION_MARKERS = {
   chinaCoverage: 'seed-activated:health:china-coverage',
   // Written by the PizzINT archive's Lua (scripts/shared/pizzint-history.cjs).
   pizzintHistory: SEED_META.pizzintHistory.activationKey,
+  // Written with the first ok point (scripts/shared/air-traffic-history.cjs).
+  airTrafficHistory: SEED_META.airTrafficHistory.activationKey,
   riskScoresHistory: SEED_META.riskScoresHistory.activationKey,
   ciiStructuralPrior: SEED_META.ciiStructuralPrior.activationKey,
   ciiEconomicStress: SEED_META.ciiEconomicStress.activationKey,
@@ -3226,12 +3293,12 @@ function fredRatesRolloutCommands(now, vercelEnv = process.env.VERCEL_ENV) {
 }
 
 const REGIONAL_ENERGY_ROLLOUT_NAMES = Object.keys(SEED_META)
-  .filter(name => SEED_META[name].firstPublicationMaxWaitMin != null);
+  .filter(name => SEED_META[name].firstPublicationMaxWaitMin != null && !DARK_LAUNCHED_KEYS.has(name));
 
 function regionalEnergyRolloutCommands(now, vercelEnv = process.env.VERCEL_ENV) {
   if (vercelEnv !== 'production') return [];
   return REGIONAL_ENERGY_ROLLOUT_NAMES.flatMap(name => {
-    const deadlineKey = `health:rollout-deadline:${STANDALONE_KEYS[name]}`;
+    const deadlineKey = SEED_META[name].rolloutDeadlineKey ?? `health:rollout-deadline:${STANDALONE_KEYS[name]}`;
     return [
       ['SET', deadlineKey, String(now + SEED_META[name].firstPublicationMaxWaitMin * 60_000), 'NX'],
       ['GET', deadlineKey],
@@ -4367,8 +4434,10 @@ function classifyKey(name, redisKey, opts, ctx) {
   //
   // Skipped entirely for an unconfigured adapter, which by the NOT_CONFIGURED
   // rule below has nothing to be degraded ABOUT — so it also publishes no cause.
+  // A dark-launched feature (DARK_LAUNCHED_KEYS) is unconfigured in the same sense.
+  const notConfigured = sourceUnavailable || DARK_LAUNCHED_KEYS.has(name);
   let fault = null;
-  if (!sourceUnavailable) {
+  if (!notConfigured) {
     if (sourceBlocked && name !== 'crossStraitActivityJapanMod') {
       // Keep the fleet-wide escape hatch narrow: only the Japan MOD adapter has
       // a reviewed-data contract and explicit two-path proof for this state.
@@ -4387,7 +4456,7 @@ function classifyKey(name, redisKey, opts, ctx) {
   // key each run (recordCount 0) so operators can see the adapter is dormant, and
   // the moment the credential lands the next run reports sourceState 'ok' and this
   // flips to OK on its own — no health-config change needed.
-  if (sourceUnavailable) status = 'NOT_CONFIGURED';
+  if (notConfigured) status = 'NOT_CONFIGURED';
   else if (!hasData) {
     // The absence verdict, decided on its own merits and independently of any
     // fault above. Note the two live SIDE BY SIDE here: seed-meta outlives its
@@ -4867,6 +4936,11 @@ function isUsableTender(tender) {
       && stringArray(tender.automationFit.evidence)));
 }
 
+// A first Contracts Finder failure stays contained until the next scheduled
+// attempt can retry it: one daily Global-Tenders run plus the relay-backup
+// bundle's 30-minute tick.
+const CONTRACTS_FINDER_RETRY_CONTAINMENT_MIN = 1440 + 30;
+
 function composeContractsFinderHealth(entry, meta, snapshot, readFailed, now) {
   // Source-status bytes prove a diagnostic exists, not that its tender rows
   // still exist. Replace the generic containment proof with the served data.
@@ -4913,7 +4987,7 @@ function composeContractsFinderHealth(entry, meta, snapshot, readFailed, now) {
   const validEpisode = success > 0 && success <= first && first <= attempt && attempt <= now
     && meta.fetchedAt === success && meta.consecutiveFailures === 1;
   const aggregateFresh = Number.isFinite(snapshot.fetchedAt) && snapshot.fetchedAt > 0
-    && snapshot.fetchedAt <= now && now < snapshot.fetchedAt + 180 * 60_000;
+    && snapshot.fetchedAt <= now && now < snapshot.fetchedAt + SEED_META.globalTenders.maxStaleMin * 60_000;
   const confirmedEmpty = source?.confirmedEmpty === true && meta?.confirmedEmpty === true
     && sourceRows.length === 0 && source.recordCount === 0 && meta.recordCount === 0
     && snapshot.sourceStatuses.filter((status) => status?.source === 'contracts-finder').length === 1
@@ -4927,8 +5001,8 @@ function composeContractsFinderHealth(entry, meta, snapshot, readFailed, now) {
     && source.recordCount === records.length && meta.recordCount === records.length
     && sourceRows.length === records.length && new Set(records.map((tender) => tender.id)).size === records.length;
   const deadline = validEpisode && (records.length > 0 || confirmedEmpty)
-    ? Math.min(first + 90 * 60_000, success + SEED_META.globalTendersContractsFinder.maxStaleMin * 60_000,
-      ...(confirmedEmpty ? [snapshot.fetchedAt + 180 * 60_000] : []),
+    ? Math.min(first + CONTRACTS_FINDER_RETRY_CONTAINMENT_MIN * 60_000, success + SEED_META.globalTendersContractsFinder.maxStaleMin * 60_000,
+      ...(confirmedEmpty ? [snapshot.fetchedAt + SEED_META.globalTenders.maxStaleMin * 60_000] : []),
       ...records.map((tender) => Date.parse(tender.deadline))) : NaN;
   if (entry.status === 'SEED_ERROR' && aligned && now < deadline) {
     entry.containmentUntil = new Date(deadline).toISOString();

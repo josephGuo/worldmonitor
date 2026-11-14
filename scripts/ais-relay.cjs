@@ -119,6 +119,8 @@ const {
 } = require('./_ingestion-coverage.cjs');
 const { maintainClosedMarketEquityKeys: maintainClosedMarketEquityKeysWithDeps } = require('./shared/closed-market-equity-maintenance.cjs');
 const { recordPizzintHistory } = require('./shared/pizzint-history.cjs');
+const { aggregateStates: aggregateAirTrafficStates, gapPoint: airTrafficGapPoint, binStart: airTrafficBinStart, BIN_MS: AIR_TRAFFIC_BIN_MS } = require('./shared/air-traffic-aggregate.cjs');
+const { recordTrafficPoint, isOkPointValue: isOkAirTrafficPoint, dayKeyFor: airTrafficDayKey } = require('./shared/air-traffic-history.cjs');
 const { pizzintVenuePoint } = require('./shared/pizzint-location.cjs');
 const { getUsEquitySession, isMultiMarketEquityTradingDay } = require('./shared/market-hours.cjs');
 const { mergeLastGoodQuotes, planYahooRefresh, resolveMergedQuotesAsOf } = require('./shared/market-quote-refresh.cjs');
@@ -587,6 +589,41 @@ function upstashMGet(keys) {
     req.on('error', () => resolve(keys.map(() => null)));
     req.on('timeout', () => { req.destroy(); resolve(keys.map(() => null)); });
     req.end(body);
+  });
+}
+
+// Runs an Upstash /pipeline body. Resolves to the per-command result array, or
+// null when the request fails.
+function upstashPipeline(commands) {
+  return new Promise((resolve) => {
+    if (!UPSTASH_ENABLED || commands.length === 0) return resolve(null);
+    const url = new URL('/pipeline', UPSTASH_REDIS_REST_URL);
+    const req = UPSTASH_HTTP_MODULE.request(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${UPSTASH_REDIS_REST_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 10000,
+    }, (resp) => {
+      if (resp.statusCode < 200 || resp.statusCode >= 300) {
+        resp.resume();
+        return resolve(null);
+      }
+      let data = '';
+      resp.on('data', (chunk) => { data += chunk; });
+      resp.on('error', () => resolve(null));
+      resp.on('aborted', () => resolve(null));
+      resp.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          resolve(Array.isArray(parsed) ? parsed : null);
+        } catch { resolve(null); }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.end(JSON.stringify(commands));
   });
 }
 
@@ -6329,7 +6366,7 @@ async function fetchTheaterFlightsFromOpenSky() {
   const seenIds = new Set();
   const allFlights = [];
   const resp = await fetch(`http://${RELAY_SELF_HOST}:${relayBoundPort}/opensky`, {
-    headers: { 'User-Agent': CHROME_UA, ...(RELAY_SHARED_SECRET ? { 'x-relay-key': RELAY_SHARED_SECRET } : {}) },
+    headers: { 'User-Agent': CHROME_UA, ...(RELAY_SHARED_SECRET ? { [RELAY_AUTH_HEADER]: RELAY_SHARED_SECRET } : {}) },
     signal: AbortSignal.timeout(20_000),
   });
   if (!resp.ok) throw new Error(`OpenSky proxy ${resp.status} for GLOBAL`);
@@ -6641,6 +6678,143 @@ async function seedTheaterPosture() {
   } finally {
     await upstashReleaseLockIfOwner(THEATER_POSTURE_LOCK_KEY, publicationId);
   }
+}
+
+// National civil air traffic series (docs/plans/2026-11-14-001-feat-national-air-traffic-signal-plan.md).
+// One global /states/all per 5-minute bin, through this relay's own /opensky
+// proxy so the account cooldown, cache and request queue stay in one place. A
+// bbox-less query costs 4 credits, so the loop adds 1,152 credits a day, plus
+// the retries of failed attempts.
+// The test preload runs Date.now this many times faster than timers. Only test
+// mode reads it, so production waits are always the real time left.
+const AIR_TRAFFIC_CLOCK_RATE = RELAY_TEST_MODE
+  ? Math.max(1, Number(process.env.RELAY_TEST_CLOCK_RATE) || 1)
+  : 1;
+const AIR_TRAFFIC_START_DELAY_MS = process.env.AIR_TRAFFIC_START_DELAY_MS !== undefined
+  ? Math.max(0, Number(process.env.AIR_TRAFFIC_START_DELAY_MS) || 0)
+  : 30_000;
+// Each tick starts this far into its bin, so every bin gets the same room for
+// retries and setInterval drift can never carry a tick past a bin boundary.
+const AIR_TRAFFIC_BIN_OFFSET_MS = Number.isFinite(Number(process.env.AIR_TRAFFIC_BIN_OFFSET_MS))
+  ? Math.min(AIR_TRAFFIC_BIN_MS - 1, Math.max(0, Number(process.env.AIR_TRAFFIC_BIN_OFFSET_MS)))
+  : 20_000;
+// Proxy failures (tunnel timeout, a body cut mid-stream) are transient; one
+// more attempt in the same bin usually succeeds. The wait outlasts the /opensky
+// negative cache (OPENSKY_NEGATIVE_CACHE_TTL_MS, declared further down) so a
+// retry reaches upstream instead of the cached failure.
+const AIR_TRAFFIC_MAX_ATTEMPTS = Math.max(1, Number(process.env.AIR_TRAFFIC_MAX_ATTEMPTS) || 3);
+const AIR_TRAFFIC_RETRY_DELAY_MS = Number.isFinite(Number(process.env.AIR_TRAFFIC_RETRY_DELAY_MS))
+  ? Math.max(0, Number(process.env.AIR_TRAFFIC_RETRY_DELAY_MS))
+  : (Number(process.env.OPENSKY_NEGATIVE_CACHE_TTL_MS) || 30_000) + 5_000;
+// Longer than the proxy's own worst case (15s tunnel plus 15s request), so the
+// loop never abandons a fetch the proxy would still have answered.
+const AIR_TRAFFIC_ATTEMPT_TIMEOUT_MS = Number(process.env.AIR_TRAFFIC_ATTEMPT_TIMEOUT_MS) || 40_000;
+// The proxy answers 200 with an empty states array when it is rate-limited or
+// serving a negative or stale cache entry. Only these X-Cache values carry a
+// fresh upstream snapshot; everything else is a gap, never a zero count.
+const AIR_TRAFFIC_FRESH_CACHE_STATES = new Set(['MISS', 'HIT', 'DEDUP']);
+// A HIT can be a snapshot another caller fetched up to a cache TTL ago. Past
+// this age it describes an earlier bin, so it is a gap, not this bin's count.
+const AIR_TRAFFIC_MAX_SNAPSHOT_AGE_MS = 180_000;
+
+async function fetchAirTrafficStates(fetchedAt) {
+  const resp = await fetch(`http://${RELAY_SELF_HOST}:${relayBoundPort}/opensky`, {
+    headers: { 'User-Agent': CHROME_UA, ...(RELAY_SHARED_SECRET ? { [RELAY_AUTH_HEADER]: RELAY_SHARED_SECRET } : {}) },
+    signal: AbortSignal.timeout(AIR_TRAFFIC_ATTEMPT_TIMEOUT_MS),
+  });
+  const cacheState = resp.headers.get('x-cache') || 'NONE';
+  if (!resp.ok) return { gap: `http ${resp.status}` };
+  if (!AIR_TRAFFIC_FRESH_CACHE_STATES.has(cacheState)) return { gap: `cache ${cacheState}` };
+  let data;
+  try { data = await resp.json(); } catch { data = null; }
+  if (!Array.isArray(data?.states)) {
+    console.warn(`[AirTraffic] Malformed OpenSky body (states is ${data?.states === null ? 'null' : typeof data?.states}); recording a gap`);
+    return { gap: 'malformed' };
+  }
+  const snapshotMs = Number(data.time) * 1000;
+  if (!Number.isFinite(snapshotMs) || fetchedAt - snapshotMs > AIR_TRAFFIC_MAX_SNAPSHOT_AGE_MS) return { gap: 'stale' };
+  return { states: data.states };
+}
+
+async function attemptAirTrafficPoint(fetchedAt) {
+  try {
+    const snapshot = await fetchAirTrafficStates(fetchedAt);
+    if (snapshot.gap) return { gapReason: snapshot.gap };
+    const point = aggregateAirTrafficStates(snapshot.states, fetchedAt);
+    // A global snapshot with no positioned aircraft is a degraded feed, not a
+    // grounded world.
+    if (point.statesTotal === 0) return { gapReason: 'empty' };
+    return { point };
+  } catch (e) {
+    return { gapReason: e?.name === 'TimeoutError' ? 'timeout' : (e?.message || String(e)) };
+  }
+}
+
+async function seedAirTrafficPoint() {
+  const t = airTrafficBinStart(Date.now());
+  const bin = new Date(t).toISOString();
+  const existing = await upstashPipeline([['HGET', airTrafficDayKey(t), String(t)]]);
+  if (isOkAirTrafficPoint(existing?.[0]?.result)) {
+    console.log(`[AirTraffic] t=${bin} already recorded; skipping fetch`);
+    return;
+  }
+  let result = null;
+  let fetchedAt = Date.now();
+  let attempts = 0;
+  // Every attempt starts inside bin t, so a retry can only fill this bin.
+  while (attempts < AIR_TRAFFIC_MAX_ATTEMPTS && airTrafficBinStart(fetchedAt) === t) {
+    attempts += 1;
+    result = await attemptAirTrafficPoint(fetchedAt);
+    if (result.point) break;
+    if (attempts >= AIR_TRAFFIC_MAX_ATTEMPTS) break;
+    console.warn(`[AirTraffic] Attempt ${attempts} for t=${bin} failed (${result.gapReason}); retrying in ${Math.round(AIR_TRAFFIC_RETRY_DELAY_MS / 1000)}s`);
+    await new Promise((resolve) => setTimeout(resolve, AIR_TRAFFIC_RETRY_DELAY_MS));
+    fetchedAt = Date.now();
+  }
+  // The skip check can run past the end of the bin, leaving no attempt that
+  // could describe it. The bin is still written, as a gap, never left missing.
+  if (!result) result = { gapReason: 'bin ended' };
+  const point = result.point || airTrafficGapPoint(t);
+  await recordTrafficPoint(point, upstashPipeline, result.point ? fetchedAt : t);
+  if (point.status === 'ok') {
+    console.log(`[AirTraffic] t=${bin} status=ok us=${point.usSeen} usAirborne=${point.usAirborne} usLowClimbing=${point.usLowClimbing} eu=${point.euAirborne} hubs=${Object.keys(point.hubs).length} attempts=${attempts}`);
+  } else {
+    console.log(`[AirTraffic] t=${bin} status=gap reason=${result.gapReason} attempts=${attempts}`);
+  }
+}
+
+// Sleeps until Date.now reaches targetMs, rechecking after each timer so a
+// timer that fires early cannot start a tick in the wrong bin.
+function sleepUntilAirTrafficTime(targetMs) {
+  return new Promise((resolve) => {
+    const step = () => {
+      const remaining = targetMs - Date.now();
+      if (remaining <= 0) return resolve();
+      setTimeout(step, Math.max(1, Math.ceil(remaining / AIR_TRAFFIC_CLOCK_RATE))).unref?.();
+    };
+    step();
+  });
+}
+
+async function runAirTrafficLoop() {
+  // The first tick fills the current bin at once (it skips a bin already
+  // recorded); every later tick starts at the same offset into its own bin.
+  for (;;) {
+    seedAirTrafficPoint().catch((e) => console.warn('[AirTraffic] Tick error:', e?.message || e));
+    await sleepUntilAirTrafficTime(airTrafficBinStart(Date.now()) + AIR_TRAFFIC_BIN_MS + AIR_TRAFFIC_BIN_OFFSET_MS);
+  }
+}
+
+function startAirTrafficLoop() {
+  if (!UPSTASH_ENABLED) {
+    console.log('[AirTraffic] Disabled (no Upstash Redis)');
+    return;
+  }
+  console.log(`[AirTraffic] loop starting (one tick ${AIR_TRAFFIC_BIN_OFFSET_MS / 1000}s into each 5-minute bin, up to ${AIR_TRAFFIC_MAX_ATTEMPTS} attempts, first tick in ${AIR_TRAFFIC_START_DELAY_MS / 1000}s)`);
+  // Same startup delay as the theater loop, so the /opensky proxy is serving.
+  setTimeout(() => {
+    runAirTrafficLoop().catch((e) => console.warn('[AirTraffic] Loop stopped:', e?.message || e));
+  }, AIR_TRAFFIC_START_DELAY_MS).unref?.();
 }
 
 function startTheaterPostureSeedLoop() {
@@ -15755,6 +15929,8 @@ server.listen(PORT, RELAY_BIND_HOST, () => {
       console.log('[Relay] Test mode: starting the Telegram poll loop on request');
       startTelegramPollLoop();
     }
+    // Same opt-in seam for scripts/ais-relay-air-traffic.test.cjs.
+    if (process.env.RELAY_TEST_AIR_TRAFFIC_LOOP === 'true') startAirTrafficLoop();
     console.log('[Relay] Test mode enabled — background seed loops are disabled');
     return;
   }
@@ -15781,6 +15957,7 @@ server.listen(PORT, RELAY_BIND_HOST, () => {
   startMiddleEastStrikesLoop();
   startServiceStatusesSeedLoop();
   startTheaterPostureSeedLoop();
+  startAirTrafficLoop();
 
   startWeatherSeedLoop();
   startSpendingSeedLoop();
