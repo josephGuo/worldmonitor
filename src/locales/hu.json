@@ -4337,6 +4337,21 @@
       "yellowWarning": "Sárga figyelmeztetés",
       "orangeWarning": "Narancs figyelmeztetés",
       "redWarning": "Piros figyelmeztetés"
+    },
+    "displacement": {
+      "event": "Esemény",
+      "cause": "Ok",
+      "date": "Dátum",
+      "operation": "Művelet",
+      "reportDate": "Jelentés dátuma",
+      "measure": "Mérőszám",
+      "kinds": {
+        "outflow": "Kiáramlás",
+        "return": "Visszatérők",
+        "arrival": "Érkezők",
+        "death": "Halálesetek",
+        "encounter": "Határon rögzített esetek"
+      }
     }
   },
   "signals": {
@@ -5225,6 +5240,7 @@
     "counts": {},
     "tier": {
       "checking": "archívum ellenőrzése",
+      "notInArchive": "nincs az archívumban",
       "confirmed": "megerősített",
       "likely": "valószínű",
       "unmatchedImage": "kép számított áthaladás nélkül",
@@ -5291,7 +5307,8 @@
       "metaSpot": "Felhőzet a pontban",
       "metaScene": "Jelenet felhőzete",
       "metaSun": "Nap magassági szöge",
-      "showCloudy": "Felhős dátumok megjelenítése ({{count}})"
+      "showCloudy": "Felhős dátumok megjelenítése ({{count}})",
+      "eventMark": "Esemény {{date}}"
     },
     "timelapse": {},
     "passDetail": {
@@ -5519,6 +5536,7 @@
     "tile": {
       "failed": "Jelenet nem töltődött be · {{archive}}",
       "noPreview": "Ehhez a jelenethez még nincs előnézet közzétéve",
+      "processing": "A felvétel feldolgozása még folyamatban van. Próbálja újra később.",
       "radar": "radar"
     },
     "target": {
@@ -5532,6 +5550,13 @@
       "noImage": "Nincs friss felvétel",
       "noPass": "72 órán belül nincs áthaladás",
       "openEvidence": "Bizonyítékok megnyitása",
+      "compareEvent": "Előtte / utána",
+      "compareEventLocked": "Előtte / utána · Pro",
+      "compareSearching": "Felvételek keresése {{date}} előtt és után…",
+      "compareNoAfter": "{{date}} óta még nincs tiszta felvétel.",
+      "compareNoAfterWindow": "{{date}} után {{days}} napon belül nincs tiszta felvétel.",
+      "compareNoBefore": "{{date}} előtt nincs tiszta felvétel az archív időszakban.",
+      "compareFailed": "Az archívumkeresés sikertelen. Próbálja újra.",
       "imageAlt": "Műholdas nézet innen: {{source}}",
       "unavailable": "A műholdképek nem töltődtek be.",
       "fire": {

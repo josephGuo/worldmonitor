@@ -4246,6 +4246,21 @@
       "yellowWarning": "황색 경보",
       "orangeWarning": "주황색 경보",
       "redWarning": "적색 경보"
+    },
+    "displacement": {
+      "event": "사건",
+      "cause": "원인",
+      "date": "날짜",
+      "operation": "작전",
+      "reportDate": "보고일",
+      "measure": "측정 기준",
+      "kinds": {
+        "outflow": "유출",
+        "return": "귀환",
+        "arrival": "도착",
+        "death": "사망",
+        "encounter": "국경 기록 건수"
+      }
     }
   },
   "signals": {
@@ -5197,6 +5212,7 @@
     "counts": {},
     "tier": {
       "checking": "아카이브 확인 중",
+      "notInArchive": "아카이브에 없음",
       "confirmed": "확인됨",
       "likely": "가능성 높음",
       "unmatchedImage": "계산된 통과 없는 영상",
@@ -5263,7 +5279,8 @@
       "metaSpot": "지점의 구름",
       "metaScene": "장면 구름",
       "metaSun": "태양 고도",
-      "showCloudy": "흐린 날짜 포함 ({{count}})"
+      "showCloudy": "흐린 날짜 포함 ({{count}})",
+      "eventMark": "이벤트 {{date}}"
     },
     "timelapse": {},
     "passDetail": {
@@ -5483,6 +5500,7 @@
     "tile": {
       "failed": "장면 로드 실패 · {{archive}}",
       "noPreview": "이 장면에 대한 미리보기가 아직 공개되지 않음",
+      "processing": "장면을 아직 처리하는 중입니다. 나중에 다시 시도하세요.",
       "radar": "레이더"
     },
     "target": {
@@ -5496,6 +5514,13 @@
       "noImage": "최근 영상을 찾을 수 없음",
       "noPass": "72시간 내 통과 예정 없음",
       "openEvidence": "증거 열기",
+      "compareEvent": "전 / 후",
+      "compareEventLocked": "전 / 후 · Pro",
+      "compareSearching": "{{date}} 전후 장면을 찾는 중…",
+      "compareNoAfter": "{{date}} 이후 맑은 장면이 아직 없습니다.",
+      "compareNoAfterWindow": "{{date}} 이후 {{days}}일 동안 맑은 장면이 없습니다.",
+      "compareNoBefore": "아카이브 기간에 {{date}} 이전 맑은 장면이 없습니다.",
+      "compareFailed": "아카이브 검색에 실패했습니다. 다시 시도하세요.",
       "imageAlt": "{{source}} 위성 화면",
       "unavailable": "위성 영상을 불러오지 못했습니다.",
       "fire": {

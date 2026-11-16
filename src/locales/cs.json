@@ -4312,6 +4312,21 @@
       "yellowWarning": "Žlutá výstraha",
       "orangeWarning": "Oranžová výstraha",
       "redWarning": "Červená výstraha"
+    },
+    "displacement": {
+      "event": "Událost",
+      "cause": "Příčina",
+      "date": "Datum",
+      "operation": "Operace",
+      "reportDate": "Datum zprávy",
+      "measure": "Ukazatel",
+      "kinds": {
+        "outflow": "Odchody",
+        "return": "Návraty",
+        "arrival": "Příchody",
+        "death": "Úmrtí",
+        "encounter": "Zaznamenané případy"
+      }
     }
   },
   "signals": {
@@ -5281,6 +5296,7 @@
     "counts": {},
     "tier": {
       "checking": "kontrola archivu",
+      "notInArchive": "není v archivu",
       "confirmed": "potvrzeno",
       "likely": "pravděpodobné",
       "unmatchedImage": "snímek bez vypočítaného průletu",
@@ -5347,7 +5363,8 @@
       "metaSpot": "Oblačnost v bodě",
       "metaScene": "Oblačnost scény",
       "metaSun": "Výška Slunce",
-      "showCloudy": "Zahrnout zatažené dny ({{count}})"
+      "showCloudy": "Zahrnout zatažené dny ({{count}})",
+      "eventMark": "Událost {{date}}"
     },
     "timelapse": {},
     "passDetail": {
@@ -5591,6 +5608,7 @@
     "tile": {
       "failed": "Scéna se nenačetla · {{archive}}",
       "noPreview": "Pro tuto scénu ještě není publikován náhled",
+      "processing": "Scéna se stále zpracovává. Zkuste to znovu později.",
       "radar": "radar"
     },
     "target": {
@@ -5604,6 +5622,13 @@
       "noImage": "Žádný nedávný snímek nenalezen",
       "noPass": "Během 72 hodin není plánován žádný přelet",
       "openEvidence": "Otevřít důkazy",
+      "compareEvent": "Před / po",
+      "compareEventLocked": "Před / po · Pro",
+      "compareSearching": "Hledají se snímky před a po {{date}}…",
+      "compareNoAfter": "Od {{date}} zatím není jasný snímek.",
+      "compareNoAfterWindow": "Během {{days}} dní po {{date}} není jasný snímek.",
+      "compareNoBefore": "Před {{date}} není v okně archivu jasný snímek.",
+      "compareFailed": "Hledání v archivu selhalo. Zkuste to znovu.",
       "imageAlt": "Satelitní pohled z {{source}}",
       "unavailable": "Satelitní snímky se nepodařilo načíst.",
       "fire": {

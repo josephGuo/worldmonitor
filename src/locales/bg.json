@@ -4268,6 +4268,21 @@
       "yellowWarning": "Жълт код",
       "orangeWarning": "Оранжев код",
       "redWarning": "Червен код"
+    },
+    "displacement": {
+      "event": "Събитие",
+      "cause": "Причина",
+      "date": "Дата",
+      "operation": "Операция",
+      "reportDate": "Дата на доклада",
+      "measure": "Показател",
+      "kinds": {
+        "outflow": "Изходящи",
+        "return": "Завърнали се",
+        "arrival": "Пристигащи",
+        "death": "Загинали",
+        "encounter": "Засечени случаи"
+      }
     }
   },
   "signals": {
@@ -5225,6 +5240,7 @@
     "counts": {},
     "tier": {
       "checking": "проверка на архива",
+      "notInArchive": "няма го в архива",
       "confirmed": "потвърдено",
       "likely": "вероятно",
       "unmatchedImage": "изображение без изчислено преминаване",
@@ -5291,7 +5307,8 @@
       "metaSpot": "Облачност в точката",
       "metaScene": "Облачност на сцената",
       "metaSun": "Височина на слънцето",
-      "showCloudy": "Включване на облачни дати ({{count}})"
+      "showCloudy": "Включване на облачни дати ({{count}})",
+      "eventMark": "Събитие {{date}}"
     },
     "timelapse": {},
     "passDetail": {
@@ -5519,6 +5536,7 @@
     "tile": {
       "failed": "Сцената не се зареди · {{archive}}",
       "noPreview": "Още няма публикуван преглед за тази сцена",
+      "processing": "Сцената все още се обработва. Опитайте отново по-късно.",
       "radar": "радар"
     },
     "target": {
@@ -5532,6 +5550,13 @@
       "noImage": "Няма скорошно изображение",
       "noPass": "Няма преминаване през следващите 72 часа",
       "openEvidence": "Отвори доказателствата",
+      "compareEvent": "Преди / след",
+      "compareEventLocked": "Преди / след · Pro",
+      "compareSearching": "Търсят се снимки преди и след {{date}}…",
+      "compareNoAfter": "Все още няма ясна снимка след {{date}}.",
+      "compareNoAfterWindow": "Няма ясна снимка в рамките на {{days}} дни след {{date}}.",
+      "compareNoBefore": "Няма ясна снимка преди {{date}} в периода на архива.",
+      "compareFailed": "Търсенето в архива не успя. Опитайте отново.",
       "imageAlt": "Сателитен изглед от {{source}}",
       "unavailable": "Сателитните изображения не се заредиха.",
       "fire": {

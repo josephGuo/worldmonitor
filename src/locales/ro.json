@@ -4290,6 +4290,21 @@
       "yellowWarning": "Cod galben",
       "orangeWarning": "Cod portocaliu",
       "redWarning": "Cod roșu"
+    },
+    "displacement": {
+      "event": "Eveniment",
+      "cause": "Cauză",
+      "date": "Dată",
+      "operation": "Operațiune",
+      "reportDate": "Data raportului",
+      "measure": "Măsură",
+      "kinds": {
+        "outflow": "Plecări",
+        "return": "Întoarceri",
+        "arrival": "Sosiri",
+        "death": "Decese",
+        "encounter": "Cazuri înregistrate la frontieră"
+      }
     }
   },
   "signals": {
@@ -5253,6 +5268,7 @@
     "counts": {},
     "tier": {
       "checking": "se verifică arhiva",
+      "notInArchive": "nu e în arhivă",
       "confirmed": "confirmat",
       "likely": "probabil",
       "unmatchedImage": "imagine fără trecere calculată",
@@ -5319,7 +5335,8 @@
       "metaSpot": "Nori la punct",
       "metaScene": "Nori în scenă",
       "metaSun": "Înălțime soare",
-      "showCloudy": "Include datele înnorite ({{count}})"
+      "showCloudy": "Include datele înnorite ({{count}})",
+      "eventMark": "Eveniment {{date}}"
     },
     "timelapse": {},
     "passDetail": {
@@ -5555,6 +5572,7 @@
     "tile": {
       "failed": "Scenă neîncărcată · {{archive}}",
       "noPreview": "Nicio previzualizare publicată încă pentru această scenă",
+      "processing": "Scena este încă în procesare. Încercați din nou mai târziu.",
       "radar": "radar"
     },
     "target": {
@@ -5568,6 +5586,13 @@
       "noImage": "Nu s-a găsit nicio imagine recentă",
       "noPass": "Nicio trecere în următoarele 72 de ore",
       "openEvidence": "Deschide dovezile",
+      "compareEvent": "Înainte / după",
+      "compareEventLocked": "Înainte / după · Pro",
+      "compareSearching": "Se caută imagini înainte și după {{date}}…",
+      "compareNoAfter": "Încă nu există o imagine clară după {{date}}.",
+      "compareNoAfterWindow": "Nicio imagine clară în cele {{days}} de zile după {{date}}.",
+      "compareNoBefore": "Nicio imagine clară înainte de {{date}} în intervalul arhivei.",
+      "compareFailed": "Căutarea în arhivă a eșuat. Încercați din nou.",
       "imageAlt": "Vedere din satelit de la {{source}}",
       "unavailable": "Imaginile din satelit nu s-au încărcat.",
       "fire": {

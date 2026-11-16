@@ -4246,6 +4246,21 @@
       "yellowWarning": "คำเตือนระดับเหลือง",
       "orangeWarning": "คำเตือนระดับส้ม",
       "redWarning": "คำเตือนระดับแดง"
+    },
+    "displacement": {
+      "event": "เหตุการณ์",
+      "cause": "สาเหตุ",
+      "date": "วันที่",
+      "operation": "ปฏิบัติการ",
+      "reportDate": "วันที่รายงาน",
+      "measure": "ตัวชี้วัด",
+      "kinds": {
+        "outflow": "การไหลออก",
+        "return": "การเดินทางกลับ",
+        "arrival": "การเดินทางเข้า",
+        "death": "การเสียชีวิต",
+        "encounter": "กรณีที่บันทึกที่ชายแดน"
+      }
     }
   },
   "signals": {
@@ -5197,6 +5212,7 @@
     "counts": {},
     "tier": {
       "checking": "กำลังตรวจสอบคลัง",
+      "notInArchive": "ไม่มีในคลัง",
       "confirmed": "ยืนยันแล้ว",
       "likely": "น่าจะเป็น",
       "unmatchedImage": "ภาพที่ไม่มีการโคจรผ่านที่คำนวณไว้",
@@ -5263,7 +5279,8 @@
       "metaSpot": "เมฆที่จุด",
       "metaScene": "เมฆในฉาก",
       "metaSun": "มุมสูงดวงอาทิตย์",
-      "showCloudy": "รวมวันที่มีเมฆ ({{count}})"
+      "showCloudy": "รวมวันที่มีเมฆ ({{count}})",
+      "eventMark": "เหตุการณ์ {{date}}"
     },
     "timelapse": {},
     "passDetail": {
@@ -5483,6 +5500,7 @@
     "tile": {
       "failed": "โหลดฉากไม่สำเร็จ · {{archive}}",
       "noPreview": "ยังไม่มีการเผยแพร่ตัวอย่างสำหรับฉากนี้",
+      "processing": "ภาพยังอยู่ระหว่างการประมวลผล โปรดลองอีกครั้งภายหลัง",
       "radar": "เรดาร์"
     },
     "target": {
@@ -5496,6 +5514,13 @@
       "noImage": "ไม่พบภาพล่าสุด",
       "noPass": "ไม่มีการโคจรผ่านภายใน 72 ชั่วโมง",
       "openEvidence": "เปิดหลักฐาน",
+      "compareEvent": "ก่อน / หลัง",
+      "compareEventLocked": "ก่อน / หลัง · Pro",
+      "compareSearching": "กำลังค้นหาภาพก่อนและหลัง {{date}}…",
+      "compareNoAfter": "ยังไม่มีภาพที่ชัดหลัง {{date}}",
+      "compareNoAfterWindow": "ไม่มีภาพที่ชัดภายใน {{days}} วันหลัง {{date}}",
+      "compareNoBefore": "ไม่มีภาพที่ชัดก่อน {{date}} ในช่วงคลังข้อมูล",
+      "compareFailed": "ค้นหาคลังข้อมูลไม่สำเร็จ ลองอีกครั้ง",
       "imageAlt": "ภาพจากดาวเทียม {{source}}",
       "unavailable": "โหลดภาพถ่ายดาวเทียมไม่สำเร็จ",
       "fire": {

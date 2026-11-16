@@ -4246,6 +4246,21 @@
       "yellowWarning": "黃色預警",
       "orangeWarning": "橙色預警",
       "redWarning": "紅色預警"
+    },
+    "displacement": {
+      "event": "事件",
+      "cause": "原因",
+      "date": "日期",
+      "operation": "行動",
+      "reportDate": "報告日期",
+      "measure": "衡量指標",
+      "kinds": {
+        "outflow": "外流",
+        "return": "返回",
+        "arrival": "抵達",
+        "death": "死亡",
+        "encounter": "邊境遭遇"
+      }
     }
   },
   "signals": {
@@ -5197,6 +5212,7 @@
     "counts": {},
     "tier": {
       "checking": "正在檢查檔案庫",
+      "notInArchive": "檔案庫中無此影像",
       "confirmed": "已確認",
       "likely": "可能",
       "unmatchedImage": "無計算過境的影像",
@@ -5263,7 +5279,8 @@
       "metaSpot": "該點雲量",
       "metaScene": "場景雲量",
       "metaSun": "太陽高度",
-      "showCloudy": "包含多雲日期（{{count}}）"
+      "showCloudy": "包含多雲日期（{{count}}）",
+      "eventMark": "事件 {{date}}"
     },
     "timelapse": {},
     "passDetail": {
@@ -5483,6 +5500,7 @@
     "tile": {
       "failed": "場景載入失敗 · {{archive}}",
       "noPreview": "尚未釋出此場景的預覽",
+      "processing": "場景仍在處理中，請稍後再試。",
       "radar": "雷達"
     },
     "target": {
@@ -5496,6 +5514,13 @@
       "noImage": "未找到近期影像",
       "noPass": "72 小時內無過境",
       "openEvidence": "開啟證據",
+      "compareEvent": "前後對比",
+      "compareEventLocked": "前後對比 · Pro",
+      "compareSearching": "正在搜尋 {{date}} 前後的影像…",
+      "compareNoAfter": "{{date}} 之後尚無晴空影像。",
+      "compareNoAfterWindow": "{{date}} 之後 {{days}} 天內沒有晴空影像。",
+      "compareNoBefore": "存檔時段內沒有 {{date}} 之前的晴空影像。",
+      "compareFailed": "存檔搜尋失敗，請重試。",
       "imageAlt": "來自 {{source}} 的衛星檢視",
       "unavailable": "衛星影像載入失敗。",
       "fire": {

@@ -4337,6 +4337,21 @@
       "yellowWarning": "هشدار زرد",
       "orangeWarning": "هشدار نارنجی",
       "redWarning": "هشدار قرمز"
+    },
+    "displacement": {
+      "event": "رویداد",
+      "cause": "علت",
+      "date": "تاریخ",
+      "operation": "عملیات",
+      "reportDate": "تاریخ گزارش",
+      "measure": "سنجه",
+      "kinds": {
+        "outflow": "خروج‌ها",
+        "return": "بازگشت‌ها",
+        "arrival": "ورودها",
+        "death": "مرگ‌ها",
+        "encounter": "مواجهه‌ها"
+      }
     }
   },
   "signals": {
@@ -5225,6 +5240,7 @@
     "counts": {},
     "tier": {
       "checking": "در حال بررسی بایگانی",
+      "notInArchive": "در بایگانی نیست",
       "confirmed": "تأییدشده",
       "likely": "احتمالی",
       "unmatchedImage": "تصویر بدون گذر محاسبه‌شده",
@@ -5291,7 +5307,8 @@
       "metaSpot": "ابر در نقطه",
       "metaScene": "ابر صحنه",
       "metaSun": "ارتفاع خورشید",
-      "showCloudy": "شامل تاریخ‌های ابری ({{count}})"
+      "showCloudy": "شامل تاریخ‌های ابری ({{count}})",
+      "eventMark": "رویداد {{date}}"
     },
     "timelapse": {},
     "passDetail": {
@@ -5519,6 +5536,7 @@
     "tile": {
       "failed": "صحنه بارگذاری نشد · {{archive}}",
       "noPreview": "هنوز هیچ پیش‌نمایشی برای این صحنه منتشر نشده",
+      "processing": "این صحنه هنوز در حال پردازش است. بعداً دوباره امتحان کنید.",
       "radar": "رادار"
     },
     "target": {
@@ -5532,6 +5550,13 @@
       "noImage": "تصویر اخیری یافت نشد",
       "noPass": "هیچ گذری تا ۷۲ ساعت آینده نیست",
       "openEvidence": "باز کردن شواهد",
+      "compareEvent": "قبل / بعد",
+      "compareEventLocked": "قبل / بعد · Pro",
+      "compareSearching": "در حال جست‌وجوی تصاویر پیش و پس از {{date}}…",
+      "compareNoAfter": "هنوز تصویر صافی پس از {{date}} وجود ندارد.",
+      "compareNoAfterWindow": "در {{days}} روز پس از {{date}} تصویر صافی وجود ندارد.",
+      "compareNoBefore": "تصویر صافی پیش از {{date}} در بازه آرشیو نیست.",
+      "compareFailed": "جست‌وجوی آرشیو ناموفق بود. دوباره تلاش کنید.",
       "imageAlt": "نمای ماهواره‌ای از {{source}}",
       "unavailable": "تصاویر ماهواره‌ای بارگیری نشد.",
       "fire": {

@@ -4246,6 +4246,21 @@
       "yellowWarning": "Cảnh báo vàng",
       "orangeWarning": "Cảnh báo cam",
       "redWarning": "Cảnh báo đỏ"
+    },
+    "displacement": {
+      "event": "Sự kiện",
+      "cause": "Nguyên nhân",
+      "date": "Ngày",
+      "operation": "Hoạt động",
+      "reportDate": "Ngày báo cáo",
+      "measure": "Thước đo",
+      "kinds": {
+        "outflow": "Dòng đi",
+        "return": "Hồi hương",
+        "arrival": "Dòng đến",
+        "death": "Tử vong",
+        "encounter": "Trường hợp ghi nhận tại biên giới"
+      }
     }
   },
   "signals": {
@@ -5197,6 +5212,7 @@
     "counts": {},
     "tier": {
       "checking": "đang kiểm tra kho",
+      "notInArchive": "không có trong kho",
       "confirmed": "đã xác nhận",
       "likely": "có khả năng",
       "unmatchedImage": "ảnh không có lượt bay qua đã tính",
@@ -5263,7 +5279,8 @@
       "metaSpot": "Mây tại điểm",
       "metaScene": "Mây của cảnh",
       "metaSun": "Độ cao Mặt Trời",
-      "showCloudy": "Bao gồm ngày có mây ({{count}})"
+      "showCloudy": "Bao gồm ngày có mây ({{count}})",
+      "eventMark": "Sự kiện {{date}}"
     },
     "timelapse": {},
     "passDetail": {
@@ -5483,6 +5500,7 @@
     "tile": {
       "failed": "Cảnh không tải được · {{archive}}",
       "noPreview": "Chưa công bố bản xem trước cho cảnh này",
+      "processing": "Cảnh vẫn đang được xử lý. Hãy thử lại sau.",
       "radar": "radar"
     },
     "target": {
@@ -5496,6 +5514,13 @@
       "noImage": "Không tìm thấy ảnh gần đây",
       "noPass": "Không có lượt bay qua trong 72 giờ",
       "openEvidence": "Mở bằng chứng",
+      "compareEvent": "Trước / sau",
+      "compareEventLocked": "Trước / sau · Pro",
+      "compareSearching": "Đang tìm ảnh trước và sau {{date}}…",
+      "compareNoAfter": "Chưa có ảnh rõ nào kể từ {{date}}.",
+      "compareNoAfterWindow": "Không có ảnh rõ nào trong {{days}} ngày sau {{date}}.",
+      "compareNoBefore": "Không có ảnh rõ trước {{date}} trong khoảng lưu trữ.",
+      "compareFailed": "Tìm kiếm kho lưu trữ thất bại. Hãy thử lại.",
       "imageAlt": "Ảnh vệ tinh từ {{source}}",
       "unavailable": "Không tải được ảnh vệ tinh.",
       "fire": {

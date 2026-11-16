@@ -4312,6 +4312,21 @@
       "yellowWarning": "Жёлтый уровень опасности",
       "orangeWarning": "Оранжевый уровень опасности",
       "redWarning": "Красный уровень опасности"
+    },
+    "displacement": {
+      "event": "Событие",
+      "cause": "Причина",
+      "date": "Дата",
+      "operation": "Операция",
+      "reportDate": "Дата отчёта",
+      "measure": "Показатель",
+      "kinds": {
+        "outflow": "Выезд",
+        "return": "Возвращения",
+        "arrival": "Прибытия",
+        "death": "Гибель",
+        "encounter": "Зафиксированные случаи"
+      }
     }
   },
   "signals": {
@@ -5281,6 +5296,7 @@
     "counts": {},
     "tier": {
       "checking": "проверка архива",
+      "notInArchive": "нет в архиве",
       "confirmed": "подтверждено",
       "likely": "вероятно",
       "unmatchedImage": "снимок без вычисленного прохода",
@@ -5347,7 +5363,8 @@
       "metaSpot": "Облачность в точке",
       "metaScene": "Облачность сцены",
       "metaSun": "Высота солнца",
-      "showCloudy": "Включить облачные даты ({{count}})"
+      "showCloudy": "Включить облачные даты ({{count}})",
+      "eventMark": "Событие {{date}}"
     },
     "timelapse": {},
     "passDetail": {
@@ -5591,6 +5608,7 @@
     "tile": {
       "failed": "Сцена не загрузилась · {{archive}}",
       "noPreview": "Для этой сцены превью ещё не опубликовано",
+      "processing": "Снимок ещё обрабатывается. Повторите попытку позже.",
       "radar": "радар"
     },
     "target": {
@@ -5604,6 +5622,13 @@
       "noImage": "Недавних снимков не найдено",
       "noPass": "Пролётов в ближайшие 72 часа нет",
       "openEvidence": "Открыть доказательства",
+      "compareEvent": "До / после",
+      "compareEventLocked": "До / после · Pro",
+      "compareSearching": "Поиск снимков до и после {{date}}…",
+      "compareNoAfter": "После {{date}} ясного снимка пока нет.",
+      "compareNoAfterWindow": "Нет ясного снимка в течение {{days}} дней после {{date}}.",
+      "compareNoBefore": "В окне архива нет ясного снимка до {{date}}.",
+      "compareFailed": "Поиск в архиве не удался. Повторите попытку.",
       "imageAlt": "Спутниковый вид от {{source}}",
       "unavailable": "Не удалось загрузить спутниковые снимки.",
       "fire": {

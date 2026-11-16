@@ -7,10 +7,13 @@ import type { MatchedAcquisition, OrbitalEvidence } from '@/services/orbital/mat
 import type { SceneHistory } from '@/services/orbital/scene-history';
 import { OrbitalWatchPage } from '@/components/OrbitalWatchPage';
 import { IMAGE_CREDIT } from '@/services/orbital/credits';
+import { ArchiveImageError } from '@/services/orbital/archive-image';
+import type { ArchiveFailure } from '@/services/orbital/archive-result';
 import {
   openOrbitalImageViewer,
   sceneFromAcquisition,
   scenesFromFrame,
+  subjectForEvent,
   subjectForImage,
   type ViewerDependencies,
 } from '@/components/OrbitalImageViewer';
@@ -95,6 +98,38 @@ describe('orbital image viewer', () => {
     fail = false;
     viewer()!.querySelector<HTMLButtonElement>('[data-action="retry-image"]')!.click();
     await vi.waitFor(() => expect(srcOf('img.oiv-image')).toBe(landsat.imageUrl));
+  });
+
+  describe('a crop the archive has not served yet', () => {
+    const radar = (hoursAgo: number) => scene(hoursAgo / 24, null, { profileId: 'sentinel-1', platform: 'sentinel-1c', key: `sentinel-1c:${hoursAgo}` });
+    const stage = async (selected: MatchedAcquisition, failure: ArchiveFailure) => {
+      vi.spyOn(Date, 'now').mockReturnValue(NOW);
+      open(selected, { searchHistory: history([]), loadImage: async () => { throw new ArchiveImageError(failure); } });
+      await vi.waitFor(() => expect(viewer()!.querySelector('[data-action="retry-image"]')).not.toBeNull());
+      return viewer()!.querySelector<HTMLElement>('.oiv-stage')!;
+    };
+    const notFound: ArchiveFailure = { archive: 'planetary-computer', reason: 'http-status', httpStatus: 404 };
+
+    it('reads as still processing for a Sentinel-1 scene under a day old that answers 404', async () => {
+      const el = await stage(radar(3), notFound);
+      expect(el.dataset.state).toBe('processing');
+      expect(el.getAttribute('role')).toBe('status');
+      expect(el.textContent).toContain('Scene still processing. Try again later.');
+    });
+
+    it('stays a failure for an older Sentinel-1 404, a fresh Sentinel-1 non-404 and a fresh 404 from another mission', async () => {
+      for (const [selected, failure] of [
+        [radar(30), notFound],
+        [radar(3), { archive: 'planetary-computer', reason: 'http-status', httpStatus: 502 }],
+        [scene(3 / 24, 5), notFound],
+      ] as Array<[MatchedAcquisition, ArchiveFailure]>) {
+        const el = await stage(selected, failure);
+        expect(el.dataset.state, selected.key).toBeUndefined();
+        expect(el.getAttribute('role')).toBe('alert');
+        expect(el.textContent).toContain('Scene did not load');
+        document.querySelector<HTMLButtonElement>('.oiv-close')?.click();
+      }
+    });
   });
 
   it('credits EUMETSAT on a Meteosat frame and offers no time-lapse for a single frame', () => {
@@ -482,5 +517,37 @@ describe('opening the viewer from the lookup sheet', () => {
     document.querySelector<HTMLButtonElement>('.oiv-close')!.click();
     expect(released.size, 'closing the viewer leaves the sheet\'s copy alone').toBe(0);
     page.close();
+  });
+});
+
+describe('before and after anchored on a map event', () => {
+  it('opens on the pair either side of the event, searches the window ending after it, and marks the event among the dates', async () => {
+    const eventMs = NOW - 40 * DAY;
+    const before = scene(45, 3);
+    const after = scene(35, 2);
+    const scenes = [scene(20, 1), after, before, scene(55, 4)];
+    const searchHistory = history(scenes);
+    const windowEndMs = eventMs + 30 * DAY;
+    openOrbitalImageViewer(subjectForEvent(point, eventMs, { status: 'ok', profileId: 'sentinel-2', windowEndMs, scenes, before, after }, NOW), null,
+      { loadImage: loaded, searchHistory }, { compareKey: before.key });
+    await settle();
+    await settle();
+
+    expect(searchHistory).toHaveBeenCalledWith(point, 'sentinel-2', windowEndMs, expect.anything());
+    expect(srcOf('img.oiv-before')).toBe(before.imageUrl);
+    expect(srcOf('img.oiv-after')).toBe(after.imageUrl);
+    expect(viewer()!.querySelector('.oiv-event')!.textContent).toBe('Event 4 OCT 2026');
+    const list = [...viewer()!.querySelectorAll('.oiv-dates > li')].map((li) => li.classList.contains('oiv-date-event') ? 'event' : li.textContent!.slice(0, 11));
+    expect(list).toEqual(['24 OCT 2026', 'event', '29 SEP 2026', '19 SEP 2026']);
+  });
+
+  it('shows no event mark on a compare opened from the lookup sheet', async () => {
+    open(scene(2, 1), { searchHistory: history([scene(40, 2)]) });
+    await settle();
+    showChange();
+    await settle();
+    await settle();
+    expect(viewer()!.querySelector('.oiv-event')).toBeNull();
+    expect(viewer()!.querySelector('.oiv-date-event')).toBeNull();
   });
 });

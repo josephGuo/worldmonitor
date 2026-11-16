@@ -4337,6 +4337,21 @@
       "yellowWarning": "पीली चेतावनी",
       "orangeWarning": "नारंगी चेतावनी",
       "redWarning": "लाल चेतावनी"
+    },
+    "displacement": {
+      "event": "घटना",
+      "cause": "कारण",
+      "date": "तारीख",
+      "operation": "अभियान",
+      "reportDate": "रिपोर्ट की तारीख",
+      "measure": "माप",
+      "kinds": {
+        "outflow": "निकासी",
+        "return": "वापसी",
+        "arrival": "आगमन",
+        "death": "मौतें",
+        "encounter": "सीमा पर दर्ज मामले"
+      }
     }
   },
   "signals": {
@@ -5225,6 +5240,7 @@
     "counts": {},
     "tier": {
       "checking": "अभिलेखागार जाँच",
+      "notInArchive": "अभिलेखागार में नहीं",
       "confirmed": "पुष्ट",
       "likely": "संभावित",
       "unmatchedImage": "गणना किए गए पास के बिना छवि",
@@ -5291,7 +5307,8 @@
       "metaSpot": "बिंदु पर बादल",
       "metaScene": "दृश्य के बादल",
       "metaSun": "सूर्य की ऊँचाई",
-      "showCloudy": "बादल वाली तारीखें शामिल करें ({{count}})"
+      "showCloudy": "बादल वाली तारीखें शामिल करें ({{count}})",
+      "eventMark": "घटना {{date}}"
     },
     "timelapse": {},
     "passDetail": {
@@ -5519,6 +5536,7 @@
     "tile": {
       "failed": "दृश्य लोड नहीं हुआ · {{archive}}",
       "noPreview": "इस दृश्य के लिए अभी कोई पूर्वावलोकन प्रकाशित नहीं है",
+      "processing": "दृश्य अभी प्रोसेस हो रहा है। बाद में फिर से प्रयास करें।",
       "radar": "रडार"
     },
     "target": {
@@ -5532,6 +5550,13 @@
       "noImage": "कोई हालिया चित्र नहीं मिला",
       "noPass": "72 घंटों में कोई गुज़रना नहीं",
       "openEvidence": "साक्ष्य खोलें",
+      "compareEvent": "पहले / बाद",
+      "compareEventLocked": "पहले / बाद · Pro",
+      "compareSearching": "{{date}} से पहले और बाद के दृश्य खोजे जा रहे हैं…",
+      "compareNoAfter": "{{date}} के बाद अभी तक कोई साफ़ दृश्य नहीं।",
+      "compareNoAfterWindow": "{{date}} के बाद {{days}} दिनों में कोई साफ़ दृश्य नहीं।",
+      "compareNoBefore": "संग्रह अवधि में {{date}} से पहले कोई साफ़ दृश्य नहीं।",
+      "compareFailed": "संग्रह खोज विफल रही। फिर से कोशिश करें।",
       "imageAlt": "{{source}} से उपग्रह दृश्य",
       "unavailable": "उपग्रह चित्र लोड नहीं हुए।",
       "fire": {

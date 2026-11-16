@@ -4369,7 +4369,22 @@
     "common": {},
     "conflict": {},
     "apt": {},
-    "buttons": {}
+    "buttons": {},
+    "displacement": {
+      "event": "Događaj",
+      "cause": "Uzrok",
+      "date": "Datum",
+      "operation": "Operacija",
+      "reportDate": "Datum izvješća",
+      "measure": "Mjera",
+      "kinds": {
+        "outflow": "Odlasci",
+        "return": "Povratci",
+        "arrival": "Dolasci",
+        "death": "Smrti",
+        "encounter": "Zabilježeni slučajevi"
+      }
+    }
   },
   "signals": {
     "context": {
@@ -5263,6 +5278,7 @@
     "counts": {},
     "tier": {
       "checking": "provjera arhiva",
+      "notInArchive": "nije u arhivu",
       "confirmed": "potvrđeno",
       "likely": "vjerojatno",
       "unmatchedImage": "snimka bez izračunatog prolaska",
@@ -5329,7 +5345,8 @@
       "metaSpot": "Oblak na točki",
       "metaScene": "Oblaci scene",
       "metaSun": "Visina sunca",
-      "showCloudy": "Uključi oblačne datume ({{count}})"
+      "showCloudy": "Uključi oblačne datume ({{count}})",
+      "eventMark": "Događaj {{date}}"
     },
     "timelapse": {},
     "passDetail": {
@@ -5565,6 +5582,7 @@
     "tile": {
       "failed": "Scena se nije učitala · {{archive}}",
       "noPreview": "Pregled za ovu scenu još nije objavljen",
+      "processing": "Scena se još obrađuje. Pokušajte ponovno kasnije.",
       "radar": "radar"
     },
     "target": {
@@ -5578,6 +5596,13 @@
       "noImage": "Nije pronađena nedavna snimka",
       "noPass": "Nema preleta u sljedeća 72 sata",
       "openEvidence": "Otvori dokaze",
+      "compareEvent": "Prije / poslije",
+      "compareEventLocked": "Prije / poslije · Pro",
+      "compareSearching": "Traže se snimke prije i poslije {{date}}…",
+      "compareNoAfter": "Još nema jasne snimke nakon {{date}}.",
+      "compareNoAfterWindow": "Nema jasne snimke u {{days}} dana nakon {{date}}.",
+      "compareNoBefore": "Nema jasne snimke prije {{date}} u razdoblju arhive.",
+      "compareFailed": "Pretraga arhive nije uspjela. Pokušajte ponovno.",
       "imageAlt": "Satelitski prikaz iz {{source}}",
       "unavailable": "Satelitske snimke nisu se učitale.",
       "fire": {

@@ -4246,6 +4246,21 @@
       "yellowWarning": "黄色警報",
       "orangeWarning": "オレンジ警報",
       "redWarning": "赤色警報"
+    },
+    "displacement": {
+      "event": "事象",
+      "cause": "原因",
+      "date": "日付",
+      "operation": "オペレーション",
+      "reportDate": "報告日",
+      "measure": "指標",
+      "kinds": {
+        "outflow": "流出",
+        "return": "帰還",
+        "arrival": "到着",
+        "death": "死亡",
+        "encounter": "遭遇"
+      }
     }
   },
   "signals": {
@@ -5197,6 +5212,7 @@
     "counts": {},
     "tier": {
       "checking": "アーカイブ確認中",
+      "notInArchive": "アーカイブになし",
       "confirmed": "確認済み",
       "likely": "可能性が高い",
       "unmatchedImage": "計算済みパスのない画像",
@@ -5263,7 +5279,8 @@
       "metaSpot": "地点の雲",
       "metaScene": "シーンの雲",
       "metaSun": "太陽仰角",
-      "showCloudy": "曇りの日を含める ({{count}})"
+      "showCloudy": "曇りの日を含める ({{count}})",
+      "eventMark": "イベント {{date}}"
     },
     "timelapse": {},
     "passDetail": {
@@ -5483,6 +5500,7 @@
     "tile": {
       "failed": "シーン読み込み失敗 · {{archive}}",
       "noPreview": "このシーンのプレビューはまだ公開されていません",
+      "processing": "シーンはまだ処理中です。しばらくしてから再試行してください。",
       "radar": "レーダー"
     },
     "target": {
@@ -5496,6 +5514,13 @@
       "noImage": "最近の画像は見つかりません",
       "noPass": "72 時間以内に通過予定はありません",
       "openEvidence": "証拠を開く",
+      "compareEvent": "前後比較",
+      "compareEventLocked": "前後比較 · Pro",
+      "compareSearching": "{{date}} の前後のシーンを検索中…",
+      "compareNoAfter": "{{date}} 以降の晴天シーンはまだありません。",
+      "compareNoAfterWindow": "{{date}} から {{days}} 日以内の晴天シーンはありません。",
+      "compareNoBefore": "アーカイブ期間内に {{date}} より前の晴天シーンがありません。",
+      "compareFailed": "アーカイブ検索に失敗しました。再試行してください。",
       "imageAlt": "{{source}} による衛星画像",
       "unavailable": "衛星画像を読み込めませんでした。",
       "fire": {

@@ -3884,6 +3884,21 @@
       "yellowWarning": "Code geel",
       "orangeWarning": "Code oranje",
       "redWarning": "Code rood"
+    },
+    "displacement": {
+      "event": "Gebeurtenis",
+      "cause": "Oorzaak",
+      "date": "Datum",
+      "operation": "Operatie",
+      "reportDate": "Rapportdatum",
+      "measure": "Maatstaf",
+      "kinds": {
+        "outflow": "Uitstroom",
+        "return": "Terugkeer",
+        "arrival": "Aankomsten",
+        "death": "Doden",
+        "encounter": "Grensregistraties"
+      }
     }
   },
   "signals": {
@@ -5225,6 +5240,7 @@
     "counts": {},
     "tier": {
       "checking": "archief controleren",
+      "notInArchive": "niet in archief",
       "confirmed": "bevestigd",
       "likely": "waarschijnlijk",
       "unmatchedImage": "beeld zonder berekende passage",
@@ -5291,7 +5307,8 @@
       "metaSpot": "Bewolking op punt",
       "metaScene": "Bewolking van de scène",
       "metaSun": "Zonhoogte",
-      "showCloudy": "Bewolkte datums opnemen ({{count}})"
+      "showCloudy": "Bewolkte datums opnemen ({{count}})",
+      "eventMark": "Gebeurtenis {{date}}"
     },
     "timelapse": {},
     "passDetail": {
@@ -5519,6 +5536,7 @@
     "tile": {
       "failed": "Scène kon niet laden · {{archive}}",
       "noPreview": "Nog geen voorbeeld gepubliceerd voor deze scène",
+      "processing": "Scène wordt nog verwerkt. Probeer het later opnieuw.",
       "radar": "radar"
     },
     "target": {
@@ -5532,6 +5550,13 @@
       "noImage": "Geen recent beeld gevonden",
       "noPass": "Geen overkomst binnen 72 uur",
       "openEvidence": "Bewijs openen",
+      "compareEvent": "Voor / na",
+      "compareEventLocked": "Voor / na · Pro",
+      "compareSearching": "Opnamen voor en na {{date}} zoeken…",
+      "compareNoAfter": "Nog geen heldere opname sinds {{date}}.",
+      "compareNoAfterWindow": "Geen heldere opname in de {{days}} dagen na {{date}}.",
+      "compareNoBefore": "Geen heldere opname vóór {{date}} in de archiefperiode.",
+      "compareFailed": "Zoeken in het archief mislukt. Probeer opnieuw.",
       "imageAlt": "Satellietbeeld van {{source}}",
       "unavailable": "Satellietbeelden konden niet worden geladen.",
       "fire": {

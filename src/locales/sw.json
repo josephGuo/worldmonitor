@@ -4337,6 +4337,21 @@
       "yellowWarning": "Onyo la njano",
       "orangeWarning": "Onyo la machungwa",
       "redWarning": "Onyo jekundu"
+    },
+    "displacement": {
+      "event": "Tukio",
+      "cause": "Chanzo",
+      "date": "Tarehe",
+      "operation": "Operesheni",
+      "reportDate": "Tarehe ya ripoti",
+      "measure": "Kipimo",
+      "kinds": {
+        "outflow": "Wanaoondoka",
+        "return": "Wanaorejea",
+        "arrival": "Wanaowasili",
+        "death": "Vifo",
+        "encounter": "Matukio ya mpakani"
+      }
     }
   },
   "signals": {
@@ -5225,6 +5240,7 @@
     "counts": {},
     "tier": {
       "checking": "inakagua kumbukumbu",
+      "notInArchive": "haipo kwenye kumbukumbu",
       "confirmed": "imethibitishwa",
       "likely": "inawezekana",
       "unmatchedImage": "picha bila kupita kulikokokotolewa",
@@ -5291,7 +5307,8 @@
       "metaSpot": "Mawingu kwenye nukta",
       "metaScene": "Mawingu ya picha",
       "metaSun": "Mwinuko wa jua",
-      "showCloudy": "Jumuisha tarehe zenye mawingu ({{count}})"
+      "showCloudy": "Jumuisha tarehe zenye mawingu ({{count}})",
+      "eventMark": "Tukio {{date}}"
     },
     "timelapse": {},
     "passDetail": {
@@ -5519,6 +5536,7 @@
     "tile": {
       "failed": "Taswira haikupakia · {{archive}}",
       "noPreview": "Bado hakuna onyesho la kuchungulia lililochapishwa kwa taswira hii",
+      "processing": "Picha bado inachakatwa. Jaribu tena baadaye.",
       "radar": "rada"
     },
     "target": {
@@ -5532,6 +5550,13 @@
       "noImage": "Hakuna picha ya hivi karibuni",
       "noPass": "Hakuna mpito ndani ya saa 72",
       "openEvidence": "Fungua ushahidi",
+      "compareEvent": "Kabla / baada",
+      "compareEventLocked": "Kabla / baada · Pro",
+      "compareSearching": "Inatafuta picha kabla na baada ya {{date}}…",
+      "compareNoAfter": "Bado hakuna picha safi tangu {{date}}.",
+      "compareNoAfterWindow": "Hakuna picha safi katika siku {{days}} baada ya {{date}}.",
+      "compareNoBefore": "Hakuna picha safi kabla ya {{date}} katika kipindi cha kumbukumbu.",
+      "compareFailed": "Utafutaji wa kumbukumbu umeshindwa. Jaribu tena.",
       "imageAlt": "Mwonekano wa setilaiti kutoka {{source}}",
       "unavailable": "Picha za setilaiti hazikupakia.",
       "fire": {

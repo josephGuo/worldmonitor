@@ -4290,6 +4290,21 @@
       "yellowWarning": "Vigilance jaune",
       "orangeWarning": "Vigilance orange",
       "redWarning": "Vigilance rouge"
+    },
+    "displacement": {
+      "event": "Événement",
+      "cause": "Cause",
+      "date": "Date",
+      "operation": "Opération",
+      "reportDate": "Date du rapport",
+      "measure": "Mesure",
+      "kinds": {
+        "outflow": "Départs",
+        "return": "Retours",
+        "arrival": "Arrivées",
+        "death": "Décès",
+        "encounter": "Rencontres à la frontière"
+      }
     }
   },
   "signals": {
@@ -5253,6 +5268,7 @@
     "counts": {},
     "tier": {
       "checking": "vérification de l’archive",
+      "notInArchive": "absent de l’archive",
       "confirmed": "confirmé",
       "likely": "probable",
       "unmatchedImage": "image sans calcul de passage",
@@ -5319,7 +5335,8 @@
       "metaSpot": "Nuages au point",
       "metaScene": "Nuages de la scène",
       "metaSun": "Élév. solaire",
-      "showCloudy": "Inclure les dates nuageuses ({{count}})"
+      "showCloudy": "Inclure les dates nuageuses ({{count}})",
+      "eventMark": "Événement {{date}}"
     },
     "timelapse": {},
     "passDetail": {
@@ -5555,6 +5572,7 @@
     "tile": {
       "failed": "La scène n'a pas pu se charger · {{archive}}",
       "noPreview": "Aucun aperçu publié pour cette scène pour l'instant",
+      "processing": "Scène encore en cours de traitement. Réessayez plus tard.",
       "radar": "radar"
     },
     "target": {
@@ -5568,6 +5586,13 @@
       "noImage": "Aucune image récente",
       "noPass": "Aucun passage prévu sous 72 heures",
       "openEvidence": "Ouvrir les preuves",
+      "compareEvent": "Avant / après",
+      "compareEventLocked": "Avant / après · Pro",
+      "compareSearching": "Recherche de scènes avant et après le {{date}}…",
+      "compareNoAfter": "Pas encore de scène dégagée depuis le {{date}}.",
+      "compareNoAfterWindow": "Aucune scène dégagée dans les {{days}} jours suivant le {{date}}.",
+      "compareNoBefore": "Aucune scène dégagée avant le {{date}} dans la fenêtre d’archive.",
+      "compareFailed": "La recherche d’archive a échoué. Réessayez.",
       "imageAlt": "Vue satellite de {{source}}",
       "unavailable": "L’imagerie satellite n’a pas pu être chargée.",
       "fire": {
