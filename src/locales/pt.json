@@ -2863,6 +2863,19 @@
         "latestPass": "última passagem do ICESat-2 {{date}}",
         "sparkline": "Nível de 36 meses com a base sazonal tracejada",
         "source": "NASA ICESat-2 ATL13 / ATL06 (NSIDC). Níveis da superfície da água por lidar de passagens datadas, não leituras ao vivo nem volumes."
+      },
+      "water": {
+        "heading": "Água em {{name}}",
+        "level": "Nível por lidar",
+        "extent": "Extensão de água por radar",
+        "extentValue": "{{percent}}% de água aberta ({{area}} km²) em {{date}}",
+        "extentChange": "{{delta}} pontos desde {{date}} na mesma órbita",
+        "extentNoComparison": "Nenhuma leitura anterior na mesma órbita para comparar",
+        "extentNone": "Ainda sem leitura de radar",
+        "unavailable": "Não foi possível carregar; reabra para tentar novamente",
+        "optical": "Imagem óptica mais recente",
+        "opticalNone": "Nenhuma imagem óptica em 30 dias",
+        "note": "Cada linha é uma medição datada de uma passagem distinta, não uma leitura ao vivo. O radar mede a água aberta na área central do reservatório; água encrespada pelo vento pode ser lida como terra."
       }
     },
     "gridDisruptionClock": {
@@ -5418,6 +5431,12 @@
       "passes_many": "{{count}} passagens",
       "passes_other": "{{count}} passagens"
     },
+    "siteSatellites": {
+      "heading": "Satélites seguidos sobre este local · próximas {{hours}} h",
+      "none": "Nenhum satélite de imagem seguido cobre este local nas próximas {{hours}} h.",
+      "notLoaded": "Reabra o local para tentar novamente; os elementos orbitais não foram carregados.",
+      "failed": "Reabra o local para tentar novamente; o cálculo das passagens falhou."
+    },
     "sheet": {
       "heading": "Evidência de imagens de satélite",
       "window": "Últimos {{days}} dias, próximas {{hours}} h",
@@ -5514,7 +5533,7 @@
     "privacy": {
       "line": "Seu ponto vai apenas para os arquivos de imagens.",
       "more": "Detalhes",
-      "body": "As passagens são calculadas neste dispositivo. Para encontrar imagens, seu navegador envia o ponto direto para Earth Search, Planetary Computer, NASA GIBS e EUMETSAT; o WorldMonitor não o recebe. Um nome de lugar digitado vai para WorldMonitor e OpenStreetMap Nominatim para ser localizado. Links compartilhados mantêm duas casas decimais (0,01°)."
+      "body": "As passagens são calculadas neste dispositivo. Para encontrar imagens, seu navegador envia o ponto direto para Earth Search, Planetary Computer, NASA GIBS e EUMETSAT; o WorldMonitor não o recebe. Em um local monitorado, o WorldMonitor recebe o pedido do registro diário desse local pelo ID do local, não pelo seu ponto. Um nome de lugar digitado vai para WorldMonitor e OpenStreetMap Nominatim para ser localizado. Links compartilhados mantêm duas casas decimais (0,01°)."
     },
     "sources": {
       "heading": "Fontes ({{count}})",
@@ -5571,6 +5590,23 @@
         "mosaicNoLayer": "Nenhum mosaico diário disponível para este satélite.",
         "mosaicUnavailable": "O mosaico diário não carregou.",
         "mosaicAlt": "Mosaico diário NASA GIBS {{source}} para {{date}}"
+      }
+    },
+    "site": {
+      "heading": "Local monitorado",
+      "loading": "Carregando o registro diário do local…",
+      "failed": "O registro diário do local não carregou; reabra o ponto para tentar novamente.",
+      "stale": "Nenhuma verificação diária atual registrada para este local.",
+      "checked": "Verificado",
+      "noPass": "Nenhuma passagem futura registrada",
+      "list": {
+        "hotspot": "ponto crítico",
+        "conflictZone": "zona de conflito",
+        "militaryBase": "base militar",
+        "nuclearFacility": "instalação nuclear",
+        "port": "porto",
+        "chokepoint": "estreito",
+        "reservoir": "reservatório"
       }
     }
   },

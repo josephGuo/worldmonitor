@@ -3249,6 +3249,19 @@
         "latestPass": "dernier passage ICESat-2 {{date}}",
         "sparkline": "Niveau sur 36 mois, référence saisonnière en pointillé",
         "source": "NASA ICESat-2 ATL13 / ATL06 (NSIDC). Niveaux de surface de l’eau par lidar issus de passages datés, ni relevés en direct ni volumes stockés."
+      },
+      "water": {
+        "heading": "L’eau à {{name}}",
+        "level": "Niveau lidar",
+        "extent": "Étendue d’eau radar",
+        "extentValue": "{{percent}} % d’eau libre ({{area}} km²) le {{date}}",
+        "extentChange": "{{delta}} points depuis le {{date}} sur la même orbite",
+        "extentNoComparison": "Aucune mesure antérieure sur la même orbite pour comparer",
+        "extentNone": "Pas encore de mesure radar",
+        "unavailable": "Chargement impossible ; rouvrez pour réessayer",
+        "optical": "Dernière image optique",
+        "opticalNone": "Aucune image optique sous 30 jours",
+        "note": "Chaque ligne est une mesure datée issue d’un passage distinct, pas une lecture en direct. Le radar mesure l’eau libre dans la zone centrale du réservoir ; une eau ridée par le vent peut être lue comme de la terre."
       }
     },
     "gridDisruptionClock": {
@@ -5418,6 +5431,12 @@
       "passes_many": "{{count}} passages",
       "passes_other": "{{count}} passages"
     },
+    "siteSatellites": {
+      "heading": "Satellites suivis au-dessus de ce site · prochaines {{hours}} h",
+      "none": "Aucun satellite d’imagerie suivi ne couvre ce site dans les {{hours}} h.",
+      "notLoaded": "Rouvrez le site pour réessayer ; les éléments orbitaux ne se sont pas chargés.",
+      "failed": "Rouvrez le site pour réessayer ; le calcul des passages a échoué."
+    },
     "sheet": {
       "heading": "Preuves d'imagerie",
       "window": "Derniers {{days}} jours, prochaines {{hours}} h",
@@ -5514,7 +5533,7 @@
     "privacy": {
       "line": "Votre point ne va que dans les archives d'images.",
       "more": "Détails",
-      "body": "Les passes sont calculées sur cet appareil. Pour trouver des images, votre navigateur envoie le point directement à Earth Search, Planetary Computer, NASA GIBS et EUMETSAT ; WorldMonitor ne le reçoit pas. Un nom de lieu saisi va à WorldMonitor et à OpenStreetMap Nominatim pour être localisé. Les liens partagés conservent deux décimales (0,01°)."
+      "body": "Les passes sont calculées sur cet appareil. Pour trouver des images, votre navigateur envoie le point directement à Earth Search, Planetary Computer, NASA GIBS et EUMETSAT ; WorldMonitor ne le reçoit pas. Sur un site surveillé, WorldMonitor reçoit la demande du relevé quotidien de ce site par son identifiant, pas par votre point. Un nom de lieu saisi va à WorldMonitor et à OpenStreetMap Nominatim pour être localisé. Les liens partagés conservent deux décimales (0,01°)."
     },
     "sources": {
       "heading": "Sources ({{count}})",
@@ -5571,6 +5590,23 @@
         "mosaicNoLayer": "Aucune mosaïque quotidienne n'est disponible pour ce satellite.",
         "mosaicUnavailable": "La mosaïque quotidienne n'a pas pu être chargée.",
         "mosaicAlt": "Mosaïque quotidienne NASA GIBS {{source}} pour {{date}}"
+      }
+    },
+    "site": {
+      "heading": "Site surveillé",
+      "loading": "Chargement du relevé quotidien du site…",
+      "failed": "Le relevé quotidien du site n’a pas pu être chargé ; rouvrez le point pour réessayer.",
+      "stale": "Aucune vérification quotidienne actuelle enregistrée pour ce site.",
+      "checked": "Vérifié",
+      "noPass": "Aucun passage à venir enregistré",
+      "list": {
+        "hotspot": "point chaud",
+        "conflictZone": "zone de conflit",
+        "militaryBase": "base militaire",
+        "nuclearFacility": "installation nucléaire",
+        "port": "port",
+        "chokepoint": "détroit",
+        "reservoir": "réservoir"
       }
     }
   },

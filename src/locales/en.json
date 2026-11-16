@@ -3394,6 +3394,19 @@
         "latestPass": "latest ICESat-2 pass {{date}}",
         "sparkline": "36-month water level; dashed line marks the seasonal baseline",
         "source": "NASA ICESat-2 ATL13 / ATL06 (NSIDC). Lidar water-surface levels from dated passes, not live readings or storage volumes."
+      },
+      "water": {
+        "heading": "Water at {{name}}",
+        "level": "Lidar level",
+        "extent": "Radar water extent",
+        "extentValue": "{{percent}}% open water ({{area}} km²) on {{date}}",
+        "extentChange": "{{delta}} points since {{date}} on the same orbit",
+        "extentNoComparison": "No earlier reading on the same orbit to compare",
+        "extentNone": "No radar reading yet",
+        "unavailable": "Couldn't load; reopen to retry",
+        "optical": "Latest optical image",
+        "opticalNone": "No optical image within 30 days",
+        "note": "Each row is a dated measurement from a separate pass, not a live reading. Radar reads open water in the reservoir's core box; wind-roughened water can read as land."
       }
     }
   },
@@ -4785,7 +4798,7 @@
     "privacy": {
       "line": "Your point goes only to the image archives.",
       "more": "Details",
-      "body": "Passes are computed on this device. To find images, your browser sends the point straight to Earth Search, Planetary Computer, NASA GIBS and EUMETSAT; WorldMonitor does not receive it. A typed place name goes to WorldMonitor and OpenStreetMap Nominatim to be found. Shared links keep two decimals (0.01°)."
+      "body": "Passes are computed on this device. To find images, your browser sends the point straight to Earth Search, Planetary Computer, NASA GIBS and EUMETSAT; WorldMonitor does not receive it. On a monitored site, WorldMonitor is asked for that site's daily record by the site's ID, not your point. A typed place name goes to WorldMonitor and OpenStreetMap Nominatim to be found. Shared links keep two decimals (0.01°)."
     },
     "sources": {
       "heading": "Sources ({{count}})",
@@ -4849,6 +4862,12 @@
           "signals": "Signals"
         }
       }
+    },
+    "siteSatellites": {
+      "heading": "Tracked satellites over this site · next {{hours}} h",
+      "none": "No tracked imaging satellite covers this site within {{hours}} h.",
+      "notLoaded": "Reopen the site to retry; satellite orbit elements did not load.",
+      "failed": "Reopen the site to retry; the pass projection failed."
     },
     "viewer": {
       "open": "Open scene: {{image}}",
@@ -4972,6 +4991,23 @@
         "mosaicNoLayer": "No daily mosaic is available for this satellite.",
         "mosaicUnavailable": "The daily mosaic did not load.",
         "mosaicAlt": "NASA GIBS {{source}} daily mosaic for {{date}}"
+      }
+    },
+    "site": {
+      "heading": "Monitored site",
+      "loading": "Loading the site's daily record…",
+      "failed": "The site's daily record did not load; reopen the point to retry.",
+      "stale": "No current daily check on record for this site.",
+      "checked": "Checked",
+      "noPass": "No upcoming pass on record",
+      "list": {
+        "hotspot": "hotspot",
+        "conflictZone": "conflict zone",
+        "militaryBase": "military base",
+        "nuclearFacility": "nuclear facility",
+        "port": "port",
+        "chokepoint": "chokepoint",
+        "reservoir": "reservoir"
       }
     }
   },

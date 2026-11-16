@@ -3249,6 +3249,19 @@
         "latestPass": "ultimo passaggio ICESat-2 {{date}}",
         "sparkline": "Livello a 36 mesi con la base stagionale tratteggiata",
         "source": "NASA ICESat-2 ATL13 / ATL06 (NSIDC). Livelli della superficie dell’acqua via lidar da passaggi datati, non letture in tempo reale né volumi."
+      },
+      "water": {
+        "heading": "Acqua a {{name}}",
+        "level": "Livello lidar",
+        "extent": "Estensione dell’acqua via radar",
+        "extentValue": "{{percent}}% di acqua libera ({{area}} km²) il {{date}}",
+        "extentChange": "{{delta}} punti dal {{date}} sulla stessa orbita",
+        "extentNoComparison": "Nessuna misura precedente sulla stessa orbita da confrontare",
+        "extentNone": "Ancora nessuna misura radar",
+        "unavailable": "Caricamento non riuscito; riapri per riprovare",
+        "optical": "Ultima immagine ottica",
+        "opticalNone": "Nessuna immagine ottica entro 30 giorni",
+        "note": "Ogni riga è una misura datata di un passaggio distinto, non una lettura in tempo reale. Il radar misura l’acqua libera nell’area centrale del bacino; l’acqua increspata dal vento può risultare come terra."
       }
     },
     "gridDisruptionClock": {
@@ -5418,6 +5431,12 @@
       "passes_many": "{{count}} passaggi",
       "passes_other": "{{count}} passaggi"
     },
+    "siteSatellites": {
+      "heading": "Satelliti tracciati sopra questo sito · prossime {{hours}} h",
+      "none": "Nessun satellite di imaging tracciato copre questo sito entro {{hours}} h.",
+      "notLoaded": "Riapri il sito per riprovare; gli elementi orbitali non sono stati caricati.",
+      "failed": "Riapri il sito per riprovare; il calcolo dei passaggi non è riuscito."
+    },
     "sheet": {
       "heading": "Prove da immagini satellitari",
       "window": "Ultimi {{days}} giorni, prossime {{hours}} h",
@@ -5514,7 +5533,7 @@
     "privacy": {
       "line": "Il tuo punto va solo agli archivi di immagini.",
       "more": "Dettagli",
-      "body": "I passaggi sono calcolati su questo dispositivo. Per trovare le immagini, il tuo browser invia il punto direttamente a Earth Search, Planetary Computer, NASA GIBS e EUMETSAT; WorldMonitor non lo riceve. Un nome di luogo digitato viene inviato a WorldMonitor e OpenStreetMap Nominatim per essere trovato. I link condivisi mantengono due decimali (0,01°)."
+      "body": "I passaggi sono calcolati su questo dispositivo. Per trovare le immagini, il tuo browser invia il punto direttamente a Earth Search, Planetary Computer, NASA GIBS e EUMETSAT; WorldMonitor non lo riceve. Su un sito monitorato, a WorldMonitor viene chiesto il registro giornaliero di quel sito tramite il suo ID, non tramite il tuo punto. Un nome di luogo digitato viene inviato a WorldMonitor e OpenStreetMap Nominatim per essere trovato. I link condivisi mantengono due decimali (0,01°)."
     },
     "sources": {
       "heading": "Fonti ({{count}})",
@@ -5571,6 +5590,23 @@
         "mosaicNoLayer": "Nessun mosaico giornaliero è disponibile per questo satellite.",
         "mosaicUnavailable": "Il mosaico giornaliero non è stato caricato.",
         "mosaicAlt": "Mosaico giornaliero NASA GIBS {{source}} per {{date}}"
+      }
+    },
+    "site": {
+      "heading": "Sito monitorato",
+      "loading": "Caricamento del registro giornaliero del sito…",
+      "failed": "Il registro giornaliero del sito non è stato caricato; riapri il punto per riprovare.",
+      "stale": "Nessun controllo giornaliero attuale registrato per questo sito.",
+      "checked": "Controllato",
+      "noPass": "Nessun passaggio imminente registrato",
+      "list": {
+        "hotspot": "punto caldo",
+        "conflictZone": "zona di conflitto",
+        "militaryBase": "base militare",
+        "nuclearFacility": "impianto nucleare",
+        "port": "porto",
+        "chokepoint": "stretto",
+        "reservoir": "bacino idrico"
       }
     }
   },

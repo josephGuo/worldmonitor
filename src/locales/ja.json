@@ -3207,6 +3207,19 @@
         "latestPass": "最新の ICESat-2 通過 {{date}}",
         "sparkline": "36か月の水位（季節基準は破線）",
         "source": "NASA ICESat-2 ATL13 / ATL06 (NSIDC)。日付付き通過のライダー水面高で、リアルタイム値や貯水量ではありません。"
+      },
+      "water": {
+        "heading": "{{name}}の水",
+        "level": "ライダー水位",
+        "extent": "レーダー水域面積",
+        "extentValue": "{{date}}時点で開水面 {{percent}}%（{{area}} km²）",
+        "extentChange": "同じ軌道の{{date}}から{{delta}}ポイント",
+        "extentNoComparison": "比較できる同じ軌道の過去の観測はありません",
+        "extentNone": "レーダー観測はまだありません",
+        "unavailable": "読み込めませんでした。開き直して再試行してください",
+        "optical": "最新の光学画像",
+        "opticalNone": "30日以内の光学画像はありません",
+        "note": "各行は別々の通過による日付付きの測定値で、リアルタイムの値ではありません。レーダーは貯水池の中心区域の開水面を測定します。風で波立った水面は陸地と判定されることがあります。"
       }
     },
     "gridDisruptionClock": {
@@ -5354,6 +5367,12 @@
       "count_other": "{{family}}の観測範囲内に{{count}}地点",
       "passes_other": "{{count}}回の通過"
     },
+    "siteSatellites": {
+      "heading": "この地点上空の追跡衛星 · 今後{{hours}}時間",
+      "none": "{{hours}}時間以内にこの地点をカバーする追跡中の撮像衛星はありません。",
+      "notLoaded": "再試行するには地点を開き直してください。衛星の軌道要素を読み込めませんでした。",
+      "failed": "再試行するには地点を開き直してください。通過の計算に失敗しました。"
+    },
     "sheet": {
       "heading": "衛星画像の証拠",
       "window": "過去{{days}}日間、今後{{hours}}時間",
@@ -5442,7 +5461,7 @@
     "privacy": {
       "line": "ご指定のポイントはイメージアーカイブのみに送信されます。",
       "more": "詳細",
-      "body": "パスはこのデバイス上で計算されます。イメージを検索するとき、ブラウザはそのポイントを Earth Search、Planetary Computer、NASA GIBS、EUMETSAT に直接送信します。WorldMonitor は受信しません。入力された地名は WorldMonitor と OpenStreetMap Nominatim に送信され、検索されます。共有リンクは小数点以下2桁（0.01°）を保持します。"
+      "body": "パスはこのデバイス上で計算されます。イメージを検索するとき、ブラウザはそのポイントを Earth Search、Planetary Computer、NASA GIBS、EUMETSAT に直接送信します。WorldMonitor は受信しません。監視対象サイトでは、WorldMonitor にはそのサイトの日次記録をサイト ID で問い合わせ、ポイントは送信しません。入力された地名は WorldMonitor と OpenStreetMap Nominatim に送信され、検索されます。共有リンクは小数点以下2桁（0.01°）を保持します。"
     },
     "sources": {
       "heading": "ソース ({{count}})",
@@ -5499,6 +5518,23 @@
         "mosaicNoLayer": "この衛星の日次モザイクは利用できません。",
         "mosaicUnavailable": "日次モザイクが読み込まれませんでした。",
         "mosaicAlt": "NASA GIBS {{source}} {{date}}の日次モザイク"
+      }
+    },
+    "site": {
+      "heading": "監視対象サイト",
+      "loading": "サイトの日次記録を読み込み中…",
+      "failed": "サイトの日次記録を読み込めませんでした。地点を開き直して再試行してください。",
+      "stale": "このサイトには現在の日次チェックの記録がありません。",
+      "checked": "確認日時",
+      "noPass": "予定されている通過の記録はありません",
+      "list": {
+        "hotspot": "ホットスポット",
+        "conflictZone": "紛争地域",
+        "militaryBase": "軍事基地",
+        "nuclearFacility": "核施設",
+        "port": "港湾",
+        "chokepoint": "海峡",
+        "reservoir": "貯水池"
       }
     }
   },
