@@ -221,7 +221,7 @@ function applyWebPushRowState(
 ): void {
   rowEl.dataset.webPushState = state;
   rowEl.querySelector('.us-notif-error')?.remove();
-  const sub = rowEl.querySelector<HTMLElement>('.us-notif-ch-sub');
+  const sub = rowEl.querySelector<HTMLElement>('.us-notif-ch-sub:not([data-delivery-disabled])');
   if (sub) {
     // Role FIRST: a live region that is created already-populated has no
     // content change for assistive tech to announce.
@@ -468,6 +468,9 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
       ): string {
         const icon = channelIcon(type);
         const name = CHANNEL_LABELS[type];
+        const disabledNotice = channel?.deliveryFailure?.disabledAt !== undefined && !channel.verified
+          ? '<div class="us-notif-ch-sub us-notif-ch-sub-wrap us-notif-ch-sub-warn" data-delivery-disabled role="status">Disabled after repeated delivery failures</div>'
+          : '';
         // #4273: a channel type outside the plan's ladder renders locked
         // behind the upgrade CTA instead of a Connect button. A row that is
         // already connected (written while the account was paid) keeps its
@@ -478,7 +481,7 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
           return `<div class="us-notif-ch-row us-notif-ch-locked" data-channel-type="${type}">
             <div class="us-notif-ch-icon">${icon}</div>
             <div class="us-notif-ch-body">
-              <div class="us-notif-ch-name">${name}</div>
+              <div class="us-notif-ch-name">${name}</div>${disabledNotice}
               <div class="us-notif-ch-sub">Available on Pro</div>
             </div>
             <div class="us-notif-ch-actions">
@@ -503,7 +506,7 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
             return `<div class="us-notif-ch-row us-notif-ch-on" data-channel-type="web_push" data-web-push-state="denied">
               <div class="us-notif-ch-icon">${icon}</div>
               <div class="us-notif-ch-body">
-                <div class="us-notif-ch-name">${name}</div>
+                <div class="us-notif-ch-name">${name}</div>${disabledNotice}
                 <div class="us-notif-ch-sub">${escapeHtml(webPushDeviceLabel(channel))}</div>
                 <div class="us-notif-ch-sub us-notif-ch-sub-wrap us-notif-ch-sub-warn" role="status">${escapeHtml(browserPushBlockedMessage())}</div>
               </div>
@@ -516,7 +519,7 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
           return `<div class="us-notif-ch-row" data-channel-type="web_push" data-web-push-state="denied">
             <div class="us-notif-ch-icon">${icon}</div>
             <div class="us-notif-ch-body">
-              <div class="us-notif-ch-name">${name}</div>
+              <div class="us-notif-ch-name">${name}</div>${disabledNotice}
               <div class="us-notif-ch-sub us-notif-ch-sub-wrap" role="status">${escapeHtml(browserPushBlockedMessage())}</div>
             </div>
             <div class="us-notif-ch-actions">
@@ -568,7 +571,7 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
           return `<div class="us-notif-ch-row us-notif-ch-on" data-channel-type="${type}">
             <div class="us-notif-ch-icon">${icon}</div>
             <div class="us-notif-ch-body">
-              <div class="us-notif-ch-name">${name}</div>
+              <div class="us-notif-ch-name">${name}</div>${disabledNotice}
               <div class="us-notif-ch-sub">${sub}</div>
               ${installHint}
             </div>
@@ -584,7 +587,7 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
           return `<div class="us-notif-ch-row" data-channel-type="telegram">
             <div class="us-notif-ch-icon">${icon}</div>
             <div class="us-notif-ch-body">
-              <div class="us-notif-ch-name">${name}</div>
+              <div class="us-notif-ch-name">${name}</div>${disabledNotice}
               <div class="us-notif-ch-sub">Not connected</div>
             </div>
             <div class="us-notif-ch-actions">
@@ -597,7 +600,7 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
           return `<div class="us-notif-ch-row" data-channel-type="email">
             <div class="us-notif-ch-icon">${icon}</div>
             <div class="us-notif-ch-body">
-              <div class="us-notif-ch-name">${name}</div>
+              <div class="us-notif-ch-name">${name}</div>${disabledNotice}
               <div class="us-notif-ch-sub">Use your account email</div>
             </div>
             <div class="us-notif-ch-actions">
@@ -610,7 +613,7 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
           return `<div class="us-notif-ch-row" data-channel-type="slack">
             <div class="us-notif-ch-icon">${icon}</div>
             <div class="us-notif-ch-body">
-              <div class="us-notif-ch-name">${name}</div>
+              <div class="us-notif-ch-name">${name}</div>${disabledNotice}
               <div class="us-notif-ch-sub">Not connected</div>
             </div>
             <div class="us-notif-ch-actions">
@@ -626,7 +629,7 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
           return `<div class="us-notif-ch-row" data-channel-type="discord">
             <div class="us-notif-ch-icon">${icon}</div>
             <div class="us-notif-ch-body">
-              <div class="us-notif-ch-name">${name}</div>
+              <div class="us-notif-ch-name">${name}</div>${disabledNotice}
               <div class="us-notif-ch-sub">Not connected</div>
             </div>
             <div class="us-notif-ch-actions">
@@ -642,7 +645,7 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
           return `<div class="us-notif-ch-row" data-channel-type="teams">
             <div class="us-notif-ch-icon">${icon}</div>
             <div class="us-notif-ch-body">
-              <div class="us-notif-ch-name">${name}</div>
+              <div class="us-notif-ch-name">${name}</div>${disabledNotice}
               <div class="us-notif-ch-sub">Post alert cards to a channel through a Workflows webhook</div>
             </div>
             <div class="us-notif-ch-actions">
@@ -655,7 +658,7 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
           return `<div class="us-notif-ch-row" data-channel-type="webhook">
             <div class="us-notif-ch-icon">${icon}</div>
             <div class="us-notif-ch-body">
-              <div class="us-notif-ch-name">${name}</div>
+              <div class="us-notif-ch-name">${name}</div>${disabledNotice}
               <div class="us-notif-ch-sub">Send structured JSON to any HTTPS endpoint</div>
             </div>
             <div class="us-notif-ch-actions">
@@ -669,7 +672,7 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
             return `<div class="us-notif-ch-row" data-channel-type="web_push" data-web-push-state="unsupported">
               <div class="us-notif-ch-icon">${icon}</div>
               <div class="us-notif-ch-body">
-                <div class="us-notif-ch-name">${name}</div>
+                <div class="us-notif-ch-name">${name}</div>${disabledNotice}
                 <div class="us-notif-ch-sub us-notif-ch-sub-wrap">${escapeHtml(browserPushUnsupportedMessage())}</div>
               </div>
               <div class="us-notif-ch-actions">
@@ -681,7 +684,7 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
           return `<div class="us-notif-ch-row" data-channel-type="web_push" data-web-push-state="available">
             <div class="us-notif-ch-icon">${icon}</div>
             <div class="us-notif-ch-body">
-              <div class="us-notif-ch-name">${name}</div>
+              <div class="us-notif-ch-name">${name}</div>${disabledNotice}
               <div class="us-notif-ch-sub">Native notifications on this device. Enabling here replaces any previously registered browser.</div>
             </div>
             <div class="us-notif-ch-actions">
@@ -959,9 +962,11 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
           <div class="ai-flow-section-label" style="margin-top:8px">Country scope</div>
           <div class="ai-flow-toggle-desc" style="margin-bottom:6px">${scopeRequired
             ? `Pick 1–${caps.maxCountries} countries (ISO-3166 alpha-2) to follow for alerts — the free plan needs an explicit country scope. Worldwide alerts are available on Pro.`
-            : 'Restrict alerts to specific countries (ISO-3166 alpha-2). Leave empty to receive alerts from all countries. When set, global alerts without a country (markets, shipping stress) are excluded; breaking-news and chokepoint alerts are still delivered.'}</div>
+            : 'Real-time alerts: local events (severe weather, airport disruption, sirens, conflict) reach you only for the countries you pick. Global critical events (a market crash, a shipping shock, a national airspace shutdown) reach you either way.'}</div>
           <div id="usNotifCountryPicker"></div>
-          ${scopeRequired ? '<div id="usCountryScopeWarn" class="us-notif-ch-sub-warn us-notif-scope-warn" role="status" hidden>Alerts are paused until you pick at least one country.</div>' : ''}
+          ${scopeRequired
+            ? '<div id="usCountryScopeWarn" class="us-notif-ch-sub-warn us-notif-scope-warn" role="status" hidden>Alerts are paused until you pick at least one country.</div>'
+            : '<div id="usCountryScopeHint" class="ai-flow-toggle-desc" role="status" hidden>No countries picked: real-time alerts cover global critical events, plus any opt-in alerts you turned on (chokepoints, watchlist, sites, reservoirs). Add countries to get local alerts for them.</div>'}
           <div class="ai-flow-section-label" style="margin-top:8px">Timezone</div>
           <select class="unified-settings-select" id="usSharedTimezone" aria-label="Timezone" style="width:100%">${makeTzOptions(sharedTz)}</select>`;
         return html;
@@ -1093,7 +1098,7 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
             //   (1) preselectCountry from caller (deep-dive "Notify me about
             //       this country" sub-action — PR B U8 R9 pre-fill).
             //   (2) followed-countries from PR A's primitive (smart default).
-            //   (3) [] fallback (all countries; current behavior).
+            //   (3) [] fallback (global critical events plus enabled opt-in alerts, #10873).
             // (1) wins when present; the user explicitly clicked into this
             // form FROM a country deep-dive, so that country should be
             // pre-checked even if it's not in their watchlist.
@@ -1108,10 +1113,12 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
           // #4273: the free plan requires an explicit 1..maxCountries scope —
           // the warning below the picker says so the moment it is empty,
           // before the server's ALERT_COUNTRY_SCOPE_REQUIRED would.
+          // #10873: a paid rule with no countries receives global critical
+          // events only, so the empty state says how to get local alerts.
           const refreshScopeWarn = (): void => {
-            if (!caps.requireCountryScope) return;
-            const warn = contentEl.querySelector<HTMLElement>('#usCountryScopeWarn');
-            if (warn) warn.hidden = (countryPicker?.getValue().length ?? 0) > 0;
+            const empty = (countryPicker?.getValue().length ?? 0) === 0;
+            const warn = contentEl.querySelector<HTMLElement>(caps.requireCountryScope ? '#usCountryScopeWarn' : '#usCountryScopeHint');
+            if (warn) warn.hidden = !empty;
           };
           countryPicker = mountCountryChipPicker(pickerRoot, {
             initial,
