@@ -62,6 +62,7 @@
       "scripts/lib/x-news-accounts.cjs",
       "scripts/lib/x-post-budget.cjs",
       "scripts/lib/x-poll-cycle.cjs",
+      "scripts/lib/wsb-tickers.cjs",
       "scripts/package-lock.json",
       "scripts/package.json",
       "scripts/seed-chokepoint-flows.mjs",
@@ -1845,7 +1846,6 @@
     "entry": "scripts/seed-comtrade-bilateral-hs4-ext.mjs",
     "deployMode": "nixpacks-root-scripts",
     "service": "seed-comtrade-bilateral-hs4-ext",
-    "lifecycle": "planned",
     "requiredEnv": [
       "COMTRADE_API_KEYS"
     ],
