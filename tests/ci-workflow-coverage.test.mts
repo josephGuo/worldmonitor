@@ -171,11 +171,10 @@ describe('root dependency cache (#8710)', () => {
   // 'unit-built-output nested dependency cache' blocks), so they are in the
   // first group.
   for (const [workflowText, jobIds, setupCache] of [
-    [testWorkflow, ['docs-stats', 'sidecar', 'convex-tests', 'dom-tests', 'variant-smoke-shards', 'resilience-validation-smoke', 'unit-shards', 'unit-built-output'], undefined],
-    [testWorkflow, ['variant-smoke-pro-webmcp'], "${{ !startsWith(matrix.part, 'plugin-') && 'npm' || '' }}"],
+    [testWorkflow, ['docs-stats', 'sidecar', 'convex-tests', 'dom-tests', 'variant-smoke-shards', 'resilience-validation-smoke', 'unit-shards', 'unit-built-output', 'variant-smoke-pro-webmcp'], undefined],
     [read(resolve(workflowsDir, 'perf-style-layout-budget.yml')), ['measure'], undefined],
     [lintCodeWorkflow, ['biome', 'markdown'], undefined],
-    [read(resolve(workflowsDir, 'typecheck.yml')), ['typecheck'], 'npm'],
+    [read(resolve(workflowsDir, 'typecheck.yml')), ['typecheck'], undefined],
   ] as const) {
     for (const jobId of jobIds) {
       it(`${jobId} uses the shared action after Node 24 setup with npm fallback`, () => {
@@ -396,7 +395,7 @@ describe('shipped desktop Node coverage (#5909, #9906)', () => {
         mkdirSync(bundledDir, { recursive: true });
         mkdirSync(toolsDir);
         writeFileSync(resolve(bundledDir, 'node'), '#!/bin/sh\necho shipped-node "$@"\n', { mode: 0o755 });
-        writeFileSync(resolve(toolsDir, 'npm'), `#!/bin/sh\n[ "$*" = 'run test:sidecar' ] || exit 99\nnode\nexit ${exitCode}\n`, { mode: 0o755 });
+        writeFileSync(resolve(toolsDir, 'npm'), `#!/bin/sh\n[ "$*" = 'run test:sidecar:desktop' ] || exit 99\nnode\nexit ${exitCode}\n`, { mode: 0o755 });
         const result = spawnSync('bash', ['-e', '-c', shippedTest.run], {
           cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: `${toolsDir}:${process.env.PATH}` },
         });
@@ -3203,6 +3202,32 @@ describe('docker-publish conditions', () => {
     );
 
   const dockerPublish = YAML.parse(read(resolve(workflowsDir, 'docker-publish.yml')));
+  it('checks snapshot freshness before any Docker build can use its cache', () => {
+    const steps = dockerPublish.jobs.docker.steps;
+    const firstBuild = steps.findIndex((step: { uses?: string }) => step.uses?.startsWith('docker/build-push-action@'));
+    for (const command of ['node scripts/check-crawlable-live-pulse.mjs', 'node scripts/github-stars-snapshot.mjs']) {
+      const gate = steps.findIndex((step: { run?: string }) => step.run === command);
+      assert.ok(gate >= 0 && gate < firstBuild, `${command} must run before the first Docker build`);
+      assert.equal(steps[gate].if, undefined);
+      assert.equal(steps[gate]['continue-on-error'], undefined);
+    }
+  });
+
+  it('checks snapshot freshness before the self-hosted app image builds', () => {
+    const selfHosted = YAML.parse(read(resolve(workflowsDir, 'docker-publish-self-hosted.yml')));
+    const job = Object.values(selfHosted.jobs).find((candidate: any) =>
+      candidate.strategy?.matrix?.include?.some((leg: { dockerfile?: string }) => leg.dockerfile === 'Dockerfile'),
+    ) as { steps: Array<{ run?: string; uses?: string; if?: string; 'continue-on-error'?: unknown }> };
+    assert.ok(job, 'docker-publish-self-hosted.yml must build the root Dockerfile');
+    const firstBuild = job.steps.findIndex((step) => step.uses?.startsWith('docker/build-push-action@'));
+    for (const command of ['node scripts/check-crawlable-live-pulse.mjs', 'node scripts/github-stars-snapshot.mjs']) {
+      const gate = job.steps.findIndex((step) => step.run === command);
+      assert.ok(gate >= 0 && gate < firstBuild, `${command} must run before the first Docker build`);
+      assert.equal(job.steps[gate].if, "matrix.image == 'worldmonitor-selfhosted'");
+      assert.equal(job.steps[gate]['continue-on-error'], undefined);
+    }
+  });
+
   const tagEnableExpressions = () => {
     const metaStep = dockerPublish.jobs.docker.steps.find(
       (step: { id?: string }) => step.id === 'meta',
@@ -3619,8 +3644,12 @@ describe('variant-smoke-pro-webmcp runs the /pro gates and the WebMCP smoke on s
   });
 
   it('builds /pro in the webmcp and pro-gates parts and runs each suite in exactly one', () => {
-    const build = flat.find((step) => step.run === 'npm run build:pro');
+    const installPro = flat.find((step) => (step as { uses?: string }).uses === './.github/actions/install-pro-deps');
+    assert.ok(installPro, 'the job must restore/install /pro dependencies via the shared action');
+    assert.equal(installPro.if, "${{ !startsWith(matrix.part, 'plugin-') }}");
+    const build = flat.find((step) => step.run === 'npm --prefix pro-test run build');
     assert.ok(build, 'the job must build /pro');
+    assert.ok(flat.indexOf(installPro) < flat.indexOf(build), 'install-pro-deps must run before the /pro build');
     // The legacy WebMCP tests load /pro/welcome.html; the MCP Apps view parts never read /pro.
     assert.equal(build.if, "${{ !startsWith(matrix.part, 'plugin-') }}");
     const partOf = (script: string) => {
@@ -3653,16 +3682,25 @@ describe('variant-smoke-pro-webmcp runs the /pro gates and the WebMCP smoke on s
     assert.deepEqual([...covered].sort(), [...specs].sort(), 'each e2e/plugin-*.spec.ts must run in exactly one plugin part');
   });
 
-  it('keys setup-node\'s npm cache to the only install that reads it', () => {
-    // node_modules comes from install-root-deps, so ~/.npm serves only
-    // `npm --prefix pro-test ci` inside build:pro. Keyed on the root lockfile
-    // it restored the 583 MB root download cache, and the two parts pulling
-    // that blob at the same moment took 12-62s instead of ~6s (PR #9626).
+  it('restores pro-test/node_modules via install-pro-deps instead of setup-node npm download cache', () => {
     const setup = flat.find((step) => (step as { uses?: string }).uses?.startsWith('actions/setup-node@')) as
       { with: Record<string, string> } | undefined;
-    // The plugin parts never build /pro, so they restore nothing.
-    assert.equal(setup?.with.cache, "${{ !startsWith(matrix.part, 'plugin-') && 'npm' || '' }}");
-    assert.equal(setup?.with['cache-dependency-path'], 'pro-test/package-lock.json');
+    assert.equal(setup?.with.cache, undefined);
+    const proAction = YAML.parse(read(resolve(root, '.github/actions/install-pro-deps/action.yml')));
+    const proSteps = proAction.runs.steps;
+    const restore = proSteps.find((s: { id?: string }) => s.id === 'pro-deps');
+    const install = proSteps.find((s: { run?: string }) => s.run === 'npm --prefix pro-test ci --prefer-offline');
+    const save = proSteps.find((s: { uses?: string }) => s.uses?.startsWith('actions/cache/save@'));
+    assert.ok(restore && install && save, 'install-pro-deps must restore, install on miss, and save pro-test/node_modules');
+    assert.equal(restore.with.path, 'pro-test/node_modules');
+    assert.equal(install.env?.npm_config_allow_scripts, '');
+    assert.equal(install.if, "steps.pro-deps.outputs.cache-hit != 'true'");
+    assert.equal(save.if, "steps.pro-deps.outputs.cache-hit != 'true'");
+    assert.equal(save.with.path, 'pro-test/node_modules');
+    assert.equal(save.with.key, '${{ steps.pro-deps.outputs.cache-primary-key }}');
+    for (const input of ['pro-test/package.json', 'pro-test/package-lock.json', 'pro-test/.npmrc', '.npmrc', 'vendor/**']) {
+      assert.ok(restore.with.key.includes(`'${input}'`), `install-pro-deps key must hash ${input}`);
+    }
   });
 
   it('runs the /pro browser gates in one Playwright run', () => {
