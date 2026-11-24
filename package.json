@@ -19,7 +19,7 @@
   },
   "type": "module",
   "scripts": {
-    "lint": "biome lint ./src ./server ./api ./tests ./e2e ./scripts ./middleware.ts && npm run lint:safe-html",
+    "lint": "npm run lint:constraint-comments && biome lint ./src ./server ./api ./tests ./e2e ./scripts ./middleware.ts && npm run lint:safe-html",
     "lint:fix": "biome check ./src ./server ./api ./tests ./e2e ./scripts ./middleware.ts --fix",
     "lint:boundaries": "node scripts/lint-boundaries.mjs",
     "lint:api-contract": "node scripts/enforce-sebuf-api-contract.mjs",
@@ -135,9 +135,8 @@
     "build:agent-skills": "node scripts/build-agent-skills-index.mjs",
     "prebuild": "npm run docs:dates -- --fetch-history && npm run product:facts && npm run build:openapi && npm run build:agent-skills",
     "build": "npm run security:vite-env-secrets -- --strict-local && npm run build:blog:raw && npm run build:pro && npm run build:crawlable-corpus && npm run build:sitemap && tsc && vite build",
-    "build:sidecar-sebuf": "node scripts/build-sidecar-sebuf.mjs",
     "prebuild:desktop": "npm run product:facts",
-    "build:desktop": "npm run security:vite-env-secrets -- --strict-local && node scripts/generate-third-party-notices.mjs && node scripts/build-sidecar-sebuf.mjs && node scripts/build-sidecar-handlers.mjs && tsc && vite build",
+    "build:desktop": "npm run security:vite-env-secrets -- --strict-local && node scripts/generate-third-party-notices.mjs && node scripts/build-sidecar-handlers.mjs && tsc && vite build",
     "prebuild:full": "npm run docs:dates -- --fetch-history && npm run product:facts",
     "build:plugin": "npm run security:vite-env-secrets -- --strict-local && cross-env VITE_VARIANT=full vite build --config vite.plugin.config.ts",
     "build:full": "npm run security:vite-env-secrets -- --strict-local && npm run build:openapi && npm run build:agent-skills && npm run build:blog:raw && npm run build:pro && npm run build:crawlable-corpus && npm run build:sitemap && cross-env-shell VITE_VARIANT=full \"tsc && vite build\" && npm run build:plugin && npm run check:source-maps",
@@ -248,7 +247,8 @@
     "legal:pdfs:check": "node scripts/build-legal-pdfs.mjs --check",
     "docs:dates": "node scripts/generate-docs-page-dates.mjs",
     "docs:dates:check": "node scripts/generate-docs-page-dates.mjs --check",
-    "freeze:github-stars": "node scripts/freeze-github-stars.mjs"
+    "freeze:github-stars": "node scripts/freeze-github-stars.mjs",
+    "lint:constraint-comments": "node scripts/lint-constraint-comments.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
