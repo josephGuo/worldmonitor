@@ -87,6 +87,8 @@ const PUBLISHER_FAMILY_DATA = {
   },
   'bloomberg': {
     publisher: "Bloomberg",
+    // Google News names the publisher this way in its <source> element (#11266).
+    aliases: ["Bloomberg.com"],
     labels: [
       "Bloomberg",
       "Bloomberg Commodities",
@@ -133,7 +135,7 @@ const PUBLISHER_FAMILY_DATA = {
     publisher: "The Guardian",
     labels: ["Guardian Africa", "Guardian Americas", "Guardian Australia", "Guardian Brazil", "Guardian Caribbean", "Guardian ME", "Guardian Pacific", "Guardian Science", "Guardian World", "Guardian — Angola", "Guardian — Paraguay", "Guardian — Barbados", "Guardian — Bolivia", "Guardian — Kiribati", "Guardian — Laos", "Guardian — Liechtenstein", "Guardian — Marshall Islands", "Guardian — Micronesia", "Guardian — Nauru", "Guardian — Palau", "Guardian — Tuvalu", "Guardian UK"],
   },
-  'hacker-news': { publisher: "Hacker News", labels: ["Hacker News", "Show HN", "YC News"] },
+  'hacker-news': { publisher: "Hacker News", labels: ["Hacker News", "Show HN", "YC Launches"] },
   'hromadske': { publisher: "Hromadske", labels: ["Hromadske", "Hromadske EN"] },
   'infoq': { publisher: "InfoQ", labels: [] },
   'interfax': { publisher: "Interfax", labels: ["Interfax EN", "Interfax RU"] },
@@ -155,6 +157,7 @@ const PUBLISHER_FAMILY_DATA = {
   'washington-post': { publisher: "The Washington Post", labels: ["Washington Post World"] },
   'new-york-times': { publisher: "The New York Times", labels: ["Hard Fork (NYT)", "New York Times World"] },
   'new-voice-of-ukraine': { publisher: "The New Voice of Ukraine", labels: ["NV EN"] },
+  'ukrainska-pravda': { publisher: "Ukrainska Pravda", labels: ["Ukrainska Pravda", "Ukrainska Pravda EN", "Українська правда"] },
   'propublica': { publisher: "ProPublica", labels: ["ProPublica"] },
   'the-atlantic': { publisher: "The Atlantic", labels: ["The Atlantic"] },
   'channel-4-news': { publisher: "Channel 4 News", labels: ["Channel 4 News"] },
@@ -231,9 +234,10 @@ const PUBLISHER_FAMILY_DATA = {
   'rfi': { publisher: "RFI", labels: ["RFI", "RFI Afrique", "RFI Brasil"] },
   // Le Monde Libre controls Le Monde, Courrier international and Le Nouvel Obs.
   'groupe-le-monde': { publisher: "Groupe Le Monde", labels: ["Le Monde", "Le Monde à la une", "Le Monde International", "Courrier international", "Le Nouvel Obs"] },
-  'y-combinator': { publisher: "Y Combinator", labels: ["YC Launches", "Y Combinator Blog"] },
+  'y-combinator': { publisher: "Y Combinator", labels: ["YC News", "Y Combinator Blog"] },
   'yahoo-finance': { publisher: "Yahoo Finance", labels: ["Yahoo Finance", "Yahoo Finance Commodities"] },
   'zdf': { publisher: "ZDF", labels: ["ZDFheute"] },
+  'kalkine': { publisher: "Kalkine Media", labels: [] },
 };
 
 export const PUBLISHER_FAMILIES = Object.freeze(PUBLISHER_FAMILY_DATA);
@@ -311,6 +315,7 @@ const PUBLISHER_FAMILY_DOMAINS = Object.freeze({
   'korea-times': ['koreatimes.co.kr'],
   'deutschlandradio': ['deutschlandfunk.de'],
   'zdf': ['zdfheute.de', 'zdf.de'],
+  'kalkine': ['kalkine.ca'],
   'dw': ['dw.com'],
   'eia': ['eia.gov'],
   'el-mundo': ['elmundo.es'],
@@ -343,6 +348,7 @@ const PUBLISHER_FAMILY_DOMAINS = Object.freeze({
   'washington-post': ['washingtonpost.com'],
   'new-york-times': ['nytimes.com'],
   'new-voice-of-ukraine': ['nv.ua'],
+  'ukrainska-pravda': ['pravda.com.ua'],
   'propublica': ['propublica.org'],
   'the-atlantic': ['theatlantic.com'],
   'channel-4-news': ['channel4.com'],
@@ -432,8 +438,10 @@ for (const [familyId, entry] of Object.entries(PUBLISHER_FAMILY_DATA)) {
 // a curated LABEL always wins over a same-spelling publisher name, so label
 // resolution is unchanged by construction.
 for (const [familyId, entry] of Object.entries(PUBLISHER_FAMILY_DATA)) {
-  const lowerName = entry.publisher.toLowerCase();
-  if (!familyByLowerLabel.has(lowerName)) familyByLowerLabel.set(lowerName, familyId);
+  for (const name of [entry.publisher, ...(entry.aliases ?? [])]) {
+    const lowerName = name.toLowerCase();
+    if (!familyByLowerLabel.has(lowerName)) familyByLowerLabel.set(lowerName, familyId);
+  }
 }
 
 /**

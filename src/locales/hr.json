@@ -1129,8 +1129,11 @@
       "upstreamUnavailable": "Podaci lanaca nabave privremeno nisu dostupni — prikazuju se keširani podaci",
       "spikeAlert": "Detektiran skok — stopa značajno iznad prosjeka od 52 tjedna (tjedno)",
       "warnings": "upozorenje(a)",
-      "aisDisruptions": "Poremećaji praćenja plovila",
+      "aisDisruptions_one": "{{count}} poremećaj praćenja plovila",
+      "aisDisruptions_few": "{{count}} poremećaja praćenja plovila",
+      "aisDisruptions_other": "{{count}} poremećaja praćenja plovila",
       "wowChange": "Promjena od tjedna do tjedna",
+      "asOf": "na dan {{date}}",
       "riskLevel": "Razina rizika",
       "disruption": "Poremećaj",
       "vessels": "brodovi",
@@ -1816,7 +1819,7 @@
       "noData": "nema podataka",
       "enable": "Aktiviraj",
       "convergenceMetric": "Konvergencija",
-      "ciiDeviation": "Odstupanje indeksa nestabilnosti država",
+      "topCiiScore": "Najviši rezultat nestabilnosti države",
       "infraEvents": "Događaji infrastrukture",
       "highAlerts": "Visoki alarmi",
       "topRisks": "Najveći rizici",
@@ -1930,7 +1933,10 @@
       },
       "infoTooltip": "NASA FIRMS VIIRS satelitske toplinske detekcije na monitoriranim područjima sukoba. Visok intenzitet = sjajnost >360K i pouzdanost >80%.",
       "possibleExplosions": "Detektirano {{count}} mogućih eksplozija",
-      "explosionTooltip": "Termalna signatura skladna s eksplozijom (radijacijska snaga vatra >80 MW, sjaj >380 K)"
+      "explosionTooltip": "Termalna signatura skladna s eksplozijom (radijacijska snaga vatra >80 MW, sjaj >380 K)",
+      "agencyReports": "Požari koje su prijavile agencije",
+      "agencyDates": "Datumi agencije",
+      "shownOfTotal": "Prikazano {{shown}} od {{total}} zapisa o požarima"
     },
     "ucdpEvents": {
       "stateBased": "Državni konflikt",
@@ -1995,6 +2001,7 @@
       "refugees": "Izbjeglice",
       "asylumSeekers": "Tražitelji azila",
       "idps": "Interno raseljene osobe",
+      "stateless": "Osobe bez državljanstva",
       "total": "Ukupno",
       "origins": "Zemlje porijekla",
       "hosts": "Zemlje domaćina",
@@ -2394,7 +2401,9 @@
     },
     "fuelPrices": {
       "infoTooltip": "<strong>Cijene goriva</strong> Maloprodajne cijene na crpkama za benzin i dizel u 30+ zemalja, normirane na USD/litar za usporedbu. Cijene potječu iz službenih vladinih programa otvorenih podataka i ažuriraju se tjedno. Najjeftinije i najskupnije zemlje su istaknuté. Promjena tjedna kroz tjedan se prikazuje kada su dostupni podaci iz prethodnog tjedna.",
-      "countries": "zemlje"
+      "countries": "zemlje",
+      "observedStale": "{{date}}, staro {{days}} dana",
+      "monthlyMean": "prosjek za {{month}}"
     },
     "faoFoodPriceIndex": {
       "infoTooltip": "<strong>FAO indeks cijena hrane</strong> Indeks cijena hrane Svjetske organizacije za hranu i poljoprivredu prati međunarodne izvozne cijene za košaricu hrane (Žitarice, Mliječni proizvodi, Meso, Ulja, Šećer), bazna vrijednost 2014-2016=100. Ažurira se mjesečno prvi petak svakog mjeseca.",
@@ -2628,6 +2637,7 @@
       "infoTooltip": "<strong>Indikator financijskog stresa</strong> World Monitor omjer visokorentabilnog kredita i dugoročnih trezorskih obveznica, prilagođen za volatilnost dionica i raspon visokorentabilnog kredita: (HYG / TLT) / (VIX × raspon visokorentabilnog kredita / 100). Ovo nije indeks financijskog stresa Kansas City Feda. Vrijednost od 1,5 ili viša označava nizak stress; ispod 0,3 je visok stress.",
       "title": "Indikator financijskog stresa",
       "usFsiValue": "Vrijednost indeksa financijskog stresa SAD-a",
+      "asOf": "na dan {{date}}",
       "cissTitle": "EU CISS (Sustavni stres evrske zone)",
       "cissStale": "Europska centralna banka nije objavila novu vrijednost — ovo čitanje može biti zastarjelo.",
       "notAvailable": "N/D",
@@ -2976,7 +2986,21 @@
       "saved": "Posljednje poznato ažuriranje {{time}} · Provjera ažuriranja",
       "savedOffline": "Posljednje poznato ažuriranje {{time}} · Izvan mreže",
       "localSignals": "Na temelju učitanih signala nadzorne ploče",
-      "emptySaved": "Nema konvergencije u posljednjem poznatom ažuriranju."
+      "emptySaved": "Nema konvergencije u posljednjem poznatom ažuriranju.",
+      "signalTypes": {
+        "militaryFlight": "Vojni let",
+        "militaryVessel": "Vojno plovilo",
+        "aisGap": "Prekid AIS-a",
+        "conflictEvent": "Sukobni događaj",
+        "escalationOutage": "Prekid komunikacija",
+        "newsSeverity": "Ozbiljne vijesti",
+        "sanctionsNews": "Vijesti o sankcijama",
+        "marketMove": "Kretanje tržišta",
+        "commoditySpike": "Skok robe",
+        "earthquake": "Potres",
+        "infraOutage": "Prekid infrastrukture",
+        "other": "Signal"
+      }
     },
     "thermalEscalation": {
       "title": "Toplinska eskalacija",
@@ -3428,7 +3452,11 @@
     },
     "export": {},
     "runtimeConfig": {},
-    "energyCrisis": {}
+    "energyCrisis": {},
+    "externalNavigation": {
+      "blocked": "Vaš preglednik je blokirao novu karticu.",
+      "openLink": "Otvori {{host}}"
+    }
   },
   "popups": {
     "startDate": "POČETNI DATUM",
@@ -4516,7 +4544,13 @@
     "alert": "Alarm: {{location}}",
     "multipleRegions": "Više regija",
     "trending": "\"{{term}}\" u trendu - {{count}} spominjanja u {{hours}}h",
-    "eventsDetected": "{{count}} događaja detektirano u regiji ({{lat}}°, {{lon}}°)"
+    "eventsDetected": "{{count}} događaja detektirano: {{types}} ({{lat}}°, {{lon}}°)",
+    "eventTypes": {
+      "protest": "prosvjedi",
+      "military_flight": "vojni letovi",
+      "military_vessel": "ratni brodovi",
+      "earthquake": "seizmička aktivnost"
+    }
   },
   "intel": {
     "topics": {

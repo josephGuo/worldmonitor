@@ -4283,6 +4283,7 @@ async function seedGulfQuotes() {
         symbol: meta.symbol, name: meta.name, country: meta.country,
         flag: meta.flag, type: meta.type,
         price: yahoo.price, change: +(yahoo.change).toFixed(2), sparkline: yahoo.sparkline,
+        ...(Number.isFinite(yahoo.lastTradeAt) && yahoo.lastTradeAt > 0 && { priceAt: yahoo.lastTradeAt * 1000 }),
       });
     } else if (isYahooEquityIndex(meta.symbol) && previousBySymbol.has(meta.symbol)) {
       // An index is withheld until its prior close is verified; keep its last row meanwhile.
@@ -4345,6 +4346,7 @@ async function seedEtfFlows() {
     await sleep(150);
   }
   if (etfs.length === 0) { console.warn('[ETF] No data fetched — skipping'); return 0; }
+  etfs.sort((a, b) => b.volume - a.volume);
   const totalVolume = etfs.reduce((s, e) => s + e.volume, 0);
   const totalEstFlow = etfs.reduce((s, e) => s + e.estFlow, 0);
   const payload = {
@@ -8393,6 +8395,13 @@ const TECH_EVENTS_BOOTSTRAP_KEY = 'research:tech-events-bootstrap:v1';
 const TECH_EVENTS_ICS_URL = 'https://www.techmeme.com/newsy_events.ics';
 const TECH_EVENTS_RSS_URL = 'https://dev.events/rss.xml';
 
+// All-day DTEND is exclusive (RFC 5545), so the event's last day is the day before it.
+function inclusiveIcsEndDate(startDate, dtend) {
+  if (!dtend || dtend <= startDate) return startDate;
+  const lastDay = new Date(Date.UTC(Number(dtend.slice(0, 4)), Number(dtend.slice(4, 6)) - 1, Number(dtend.slice(6, 8)) - 1));
+  return lastDay.toISOString().slice(0, 10).replace(/-/g, '');
+}
+
 function techEventsParseICS(icsText) {
   const events = [];
   const blocks = icsText.split('BEGIN:VEVENT').slice(1);
@@ -8407,7 +8416,7 @@ function techEventsParseICS(icsText) {
     const summary = summaryMatch[1].trim();
     const location = locationMatch ? locationMatch[1].trim() : '';
     const startDate = dtstartMatch[1];
-    const endDate = dtendMatch ? dtendMatch[1] : startDate;
+    const endDate = inclusiveIcsEndDate(startDate, dtendMatch?.[1]);
     let type = 'other';
     if (summary.startsWith('Earnings:')) type = 'earnings';
     else if (summary.startsWith('IPO')) type = 'ipo';

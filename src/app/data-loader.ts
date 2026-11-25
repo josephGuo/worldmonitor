@@ -117,7 +117,7 @@ import { mlWorker } from '@/services/ml-worker';
 import { clusterNewsHybrid, clusterNewsWithWorkerFallback } from '@/services/clustering';
 import { ingestProtests, ingestFlights, ingestVessels, ingestEarthquakes, detectGeoConvergence, geoConvergenceToSignal } from '@/services/geo-convergence';
 import { consumeServerAnomalies, fetchLiveAnomalies } from '@/services/temporal-baseline';
-import { fetchAllFires, flattenFires, computeRegionStats, toMapFires } from '@/services/wildfires';
+import { fetchAllFires, flattenFires, summarizeFires, toMapFires } from '@/services/wildfires';
 import type { TheaterPostureSummary } from '@/services/military-surge';
 import { fetchCachedTheaterPosture } from '@/services/cached-theater-posture';
 import { ingestConflictsForCountryData, ingestDisplacementForCountryData, ingestClimateForCountryData, ingestGpsJammingForCountryData, isInLearningMode, type CountryScore } from '@/services/country-instability';
@@ -200,6 +200,7 @@ import { checkMilestones } from '@/services/celebration';
 import { fetchHappinessScores } from '@/services/happiness-data';
 import { fetchRenewableInstallations } from '@/services/renewable-installations';
 import { filterBySentiment } from '@/services/sentiment-gate';
+import { dedupeHappyItems, isBreakthroughStory, isHeroStory, selectCuratedHappyItems } from '@/services/happy-selection';
 import { fetchAllPositiveTopicIntelligence } from '@/services/gdelt-intel';
 import { fetchPositiveGeoEvents, geocodePositiveNewsItems, type PositiveGeoEvent } from '@/services/positive-events-geo';
 import type { HappyContentCategory } from '@/services/positive-classifier';
@@ -2591,7 +2592,8 @@ export class DataLoaderManager implements AppModule {
 
     // Happy variant: run multi-stage positive news pipeline + map layers
     if (SITE_VARIANT === 'happy') {
-      await this.loadHappySupplementaryAndRender();
+      await this.loadHappySupplementaryAndRender(generation);
+      if (!this.isCurrentNewsLoad(generation)) return;
       await Promise.allSettled([
         this.ctx.mapLayers.positiveEvents ? this.loadPositiveEvents() : Promise.resolve(),
         this.ctx.mapLayers.kindness ? Promise.resolve(this.loadKindnessData()) : Promise.resolve(),
@@ -5097,7 +5099,7 @@ export class DataLoaderManager implements AppModule {
       if (fireResult.skipped) {
         this.ctx.intelligenceCache.satelliteFires = [];
         this.ctx.map?.setFires([]);
-        (this.ctx.panels['satellite-fires'] as SatelliteFiresPanel)?.update([], 0);
+        (this.ctx.panels['satellite-fires'] as SatelliteFiresPanel)?.update(summarizeFires({}), 0);
         await runSignalAggregator(this.ctx.statusPanel, 'satellite fires', (aggregator) => aggregator.ingestSatelliteFires([]));
         dataFreshness.recordError('firms', fireResult.reason ?? 'no_data');
         // en.json carries panels.satelliteFires as a flat title string, so the
@@ -5109,7 +5111,6 @@ export class DataLoaderManager implements AppModule {
       const { regions, totalCount } = fireResult;
       if (totalCount > 0) {
         const flat = flattenFires(regions);
-        const stats = computeRegionStats(regions);
         const satelliteFires = flat.map(f => ({
           lat: f.location?.latitude ?? 0,
           lon: f.location?.longitude ?? 0,
@@ -5124,12 +5125,12 @@ export class DataLoaderManager implements AppModule {
 
         this.ctx.map?.setFires(toMapFires(flat));
 
-        (this.ctx.panels['satellite-fires'] as SatelliteFiresPanel)?.update(stats, totalCount);
+        (this.ctx.panels['satellite-fires'] as SatelliteFiresPanel)?.update(summarizeFires(regions), totalCount);
 
         dataFreshness.recordUpdate('firms', totalCount);
       } else {
         this.ctx.intelligenceCache.satelliteFires = [];
-        (this.ctx.panels['satellite-fires'] as SatelliteFiresPanel)?.update([], 0);
+        (this.ctx.panels['satellite-fires'] as SatelliteFiresPanel)?.update(summarizeFires({}), 0);
       }
       this.ctx.statusPanel?.updateApi('FIRMS', { status: 'ok' });
     } catch (e) {
@@ -5185,7 +5186,7 @@ export class DataLoaderManager implements AppModule {
   // synthesized `Date.now()` stamps would fraudulently claim freshness
   // for the 24h gate window. Pre-v2 entries are left to TTL out (no
   // explicit invalidation needed).
-  private static readonly HAPPY_ITEMS_CACHE_KEY = 'happy-all-items:v2';
+  private static readonly HAPPY_ITEMS_CACHE_KEY = 'happy-all-items:v3';
 
   async hydrateHappyPanelsFromCache(): Promise<void> {
     try {
@@ -5199,25 +5200,27 @@ export class DataLoaderManager implements AppModule {
         pubDate: new Date(displayPubDateMs(item)),
       }));
 
-      const scienceSources = ['GNN Science', 'ScienceDaily', 'Nature News', 'Live Science', 'New Scientist', 'Singularity Hub', 'Human Progress', 'Greater Good (Berkeley)'];
-      this.callPanel('breakthroughs', 'setItems',
-        items.filter(item => scienceSources.includes(item.source) || item.happyCategory === 'science-health')
-      );
-      this.callPanel('spotlight', 'setHeroStory',
-        items.filter(item => item.happyCategory === 'humanity-kindness')
-          .sort((a, b) => effectivePubDateMs(b) - effectivePubDateMs(a))[0]
-      );
-      this.callPanel('digest', 'setStories',
-        [...items].sort((a, b) => effectivePubDateMs(b) - effectivePubDateMs(a)).slice(0, 5)
-      );
+      this.renderHappyStoryPanels(items);
       this.callPanel('positive-feed', 'renderPositiveNews', items);
     } catch (err) {
       console.warn('[App] Happy panel cache hydration failed:', err);
     }
   }
 
-  private async loadHappySupplementaryAndRender(): Promise<void> {
-    const curated = [...this.ctx.happyAllItems];
+  private renderHappyStoryPanels(items: NewsItem[]): void {
+    this.callPanel('breakthroughs', 'setItems', items.filter(isBreakthroughStory));
+    this.callPanel('spotlight', 'setHeroStory',
+      items.filter(isHeroStory).sort((a, b) => effectivePubDateMs(b) - effectivePubDateMs(a))[0]
+    );
+    this.callPanel('digest', 'setStories',
+      [...items].sort((a, b) => effectivePubDateMs(b) - effectivePubDateMs(a)).slice(0, 5)
+    );
+  }
+
+  private async loadHappySupplementaryAndRender(generation: number): Promise<void> {
+    const curated = await selectCuratedHappyItems(this.ctx.happyAllItems, filterBySentiment);
+    if (!this.isCurrentNewsLoad(generation)) return;
+    this.ctx.happyAllItems = curated;
     this.callPanel('positive-feed', 'renderPositiveNews', curated);
 
     let supplementary: NewsItem[] = [];
@@ -5235,32 +5238,19 @@ export class DataLoaderManager implements AppModule {
         }))
       );
 
-      supplementary = await filterBySentiment(gdeltItems);
+      supplementary = await selectCuratedHappyItems(gdeltItems, filterBySentiment);
     } catch (err) {
       console.warn('[App] Happy supplementary pipeline failed, using curated only:', err);
     }
+    if (!this.isCurrentNewsLoad(generation)) return;
 
     if (supplementary.length > 0) {
-      const merged = [...curated, ...supplementary];
+      const merged = dedupeHappyItems([...curated, ...supplementary]);
       merged.sort((a, b) => effectivePubDateMs(b) - effectivePubDateMs(a));
       this.callPanel('positive-feed', 'renderPositiveNews', merged);
     }
 
-    const scienceSources = ['GNN Science', 'ScienceDaily', 'Nature News', 'Live Science', 'New Scientist', 'Singularity Hub', 'Human Progress', 'Greater Good (Berkeley)'];
-    const scienceItems = this.ctx.happyAllItems.filter(item =>
-      scienceSources.includes(item.source) || item.happyCategory === 'science-health'
-    );
-    this.callPanel('breakthroughs', 'setItems', scienceItems);
-
-    const heroItem = this.ctx.happyAllItems
-      .filter(item => item.happyCategory === 'humanity-kindness')
-      .sort((a, b) => effectivePubDateMs(b) - effectivePubDateMs(a))[0];
-    this.callPanel('spotlight', 'setHeroStory', heroItem);
-
-    const digestItems = [...this.ctx.happyAllItems]
-      .sort((a, b) => effectivePubDateMs(b) - effectivePubDateMs(a))
-      .slice(0, 5);
-    this.callPanel('digest', 'setStories', digestItems);
+    this.renderHappyStoryPanels(curated);
 
     setPersistentCache(
       DataLoaderManager.HAPPY_ITEMS_CACHE_KEY,

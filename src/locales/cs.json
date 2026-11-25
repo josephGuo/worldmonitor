@@ -1017,8 +1017,12 @@
       "mineral": "Minerál",
       "topProducers": "Největší producenti",
       "risk": "Riziko",
-      "aisDisruptions": "Přerušení sledování lodí",
+      "aisDisruptions_one": "{{count}} přerušení sledování lodí",
+      "aisDisruptions_few": "{{count}} přerušení sledování lodí",
+      "aisDisruptions_many": "{{count}} přerušení sledování lodí",
+      "aisDisruptions_other": "{{count}} přerušení sledování lodí",
       "wowChange": "Změna týden na týden",
+      "asOf": "k {{date}}",
       "riskLevel": "Úroveň rizika",
       "flowUnavailable": "Data o tocích nejsou dostupná",
       "containerRates": "Ceny kontejnerů",
@@ -1645,7 +1649,7 @@
       "noData": "žádná data",
       "enable": "Povolit",
       "convergenceMetric": "Konvergence",
-      "ciiDeviation": "Odchylka Country Instability Index",
+      "topCiiScore": "Nejvyšší skóre nestability země",
       "infraEvents": "Události infra",
       "highAlerts": "Vysoké pohotovosti",
       "topRisks": "Hlavní rizika",
@@ -1760,7 +1764,10 @@
       },
       "infoTooltip": "Satelitní tepelné detekce NASA FIRMS VIIRS napříč monitorovanými zónami konfliktů. Vysoká intenzita = jas >360K & spolehlivost >80 %.",
       "possibleExplosions": "Detekováno {{count}} možná výbucha",
-      "explosionTooltip": "Tepelný podpis odpovídající výbuchu (radiační výkon ohně >80 MW, jas >380 K)"
+      "explosionTooltip": "Tepelný podpis odpovídající výbuchu (radiační výkon ohně >80 MW, jas >380 K)",
+      "agencyReports": "Požáry hlášené úřady",
+      "agencyDates": "Data agentury",
+      "shownOfTotal": "Zobrazeno {{shown}} z {{total}} záznamů o požárech"
     },
     "ucdpEvents": {
       "stateBased": "Státní",
@@ -1825,6 +1832,7 @@
       "refugees": "Uprchlíci",
       "asylumSeekers": "Žadatelé o azyl",
       "idps": "Vnitřně přesídlení",
+      "stateless": "Osoby bez státní příslušnosti",
       "total": "Celkem",
       "origins": "Původy",
       "hosts": "Hostitelé",
@@ -2350,6 +2358,7 @@
       "infoTooltip": "<strong>Financial Stress Indicator</strong> World Monitor poměr vysokovýnosových kreditů k dlouhodobým dluhopisům, upraven o volatilitu akcií a vysokovýnosový spread: (HYG / TLT) / (VIX × High-yield spread / 100). Toto není Kansas City Fed Financial Stress Index. Hodnota 1,5 nebo vyšší značí nízkou zátěž; pod 0,3 vysokou zátěž.",
       "title": "Indikátor finanční stability",
       "usFsiValue": "Hodnota US Financial Stress Indicator",
+      "asOf": "k {{date}}",
       "cissTitle": "EU CISS (Systemické napětí eurozóny)",
       "notAvailable": "N/A",
       "interpretation": {
@@ -2623,7 +2632,9 @@
     },
     "fuelPrices": {
       "infoTooltip": "<strong>Fuel Prices</strong> Maloobchodní ceny benzínu a nafty na čerpacích stanicích v 30+ zemích, normalizované na USD/litr pro srovnání. Ceny pocházejí z oficiálních vládních programů otevřených dat a jsou aktualizovány týdně. Nejlevnější a nejdražší země jsou zvýrazněny. Změna týden na týden je zobrazena, pokud jsou dostupná data z předchozího týdne.",
-      "countries": "zemí"
+      "countries": "zemí",
+      "observedStale": "{{date}}, staré {{days}} dní",
+      "monthlyMean": "průměr {{month}}"
     },
     "faoFoodPriceIndex": {
       "infoTooltip": "<strong>FAO Food Price Index</strong> Index cen potravin Organizace OSN pro potraviny a zemědělství sleduje mezinárodní exportní ceny koše potravinářských komodit (Obiloviny, Mléčné výrobky, Maso, Oleje, Cukr), báze 2014–2016 = 100. Aktualizován měsíčně v první pátek každého měsíce.",
@@ -2919,7 +2930,21 @@
       "saved": "Poslední známá aktualizace {{time}} · Kontrola aktualizací",
       "savedOffline": "Poslední známá aktualizace {{time}} · Bez připojení",
       "localSignals": "Na základě načtených signálů přehledu",
-      "emptySaved": "V poslední známé aktualizaci nebyla zjištěna konvergence."
+      "emptySaved": "V poslední známé aktualizaci nebyla zjištěna konvergence.",
+      "signalTypes": {
+        "militaryFlight": "Vojenský let",
+        "militaryVessel": "Vojenské plavidlo",
+        "aisGap": "Výpadek AIS",
+        "conflictEvent": "Konfliktní událost",
+        "escalationOutage": "Výpadek spojení",
+        "newsSeverity": "Závažné zprávy",
+        "sanctionsNews": "Zprávy o sankcích",
+        "marketMove": "Pohyb trhu",
+        "commoditySpike": "Skok komodit",
+        "earthquake": "Zemětřesení",
+        "infraOutage": "Výpadek infrastruktury",
+        "other": "Signál"
+      }
     },
     "thermalEscalation": {
       "title": "Teplotní eskalace",
@@ -3374,6 +3399,10 @@
       },
       "warningAge": "Od první dosud platné výstrahy",
       "days": "{{amount}} d."
+    },
+    "externalNavigation": {
+      "blocked": "Váš prohlížeč zablokoval novou kartu.",
+      "openLink": "Otevřít {{host}}"
     }
   },
   "popups": {
@@ -4459,7 +4488,13 @@
     "alert": "Upozornění: {{location}}",
     "multipleRegions": "Více regionů",
     "trending": "„{{term}}“ je trendy - {{count}} zmínek za {{hours}} h",
-    "eventsDetected": "V regionu ({{lat}}°, {{lon}}°) bylo detekováno událostí: {{count}}"
+    "eventsDetected": "Detekované události ({{count}}): {{types}} ({{lat}}°, {{lon}}°)",
+    "eventTypes": {
+      "protest": "protesty",
+      "military_flight": "vojenské lety",
+      "military_vessel": "námořní plavidla",
+      "earthquake": "seismická aktivita"
+    }
   },
   "intel": {
     "topics": {
